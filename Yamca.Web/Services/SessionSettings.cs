@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 
 namespace Yamca.Web.Services;
@@ -80,6 +81,7 @@ public sealed class SessionSettings : ISessionSettings
     /// Missing fields fall back to defaults. Silently ignores malformed input.</summary>
     public void HydrateGlobal(string? json)
     {
+        var firstRun = string.IsNullOrWhiteSpace(json);
         var blob = TryDeserialize<GlobalBlob>(json) ?? new GlobalBlob();
 
         Endpoint = new EndpointSettings(
@@ -89,7 +91,25 @@ public sealed class SessionSettings : ISessionSettings
 
         SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
         MarkdownEnabled = blob.MarkdownEnabled ?? true;
-        Global = MapFromDto(blob.Tools);
+        Global = firstRun ? DefaultGlobalToolSettings() : MapFromDto(blob.Tools);
+    }
+
+    // Seeded only when no Global blob has ever been written to localStorage.
+    // Once the user has stored anything, their choices — including explicit "inherit"
+    // (a removed entry) — are respected verbatim.
+    private static ToolSettingsMap DefaultGlobalToolSettings()
+    {
+        static ToolPermissionSettings Workspace(PermissionLevel p) =>
+            new() { Permission = p, RestrictToWorkspace = true };
+
+        return new ToolSettingsMap(new Dictionary<string, ToolPermissionSettings>(StringComparer.Ordinal)
+        {
+            ["read_file"]       = Workspace(PermissionLevel.Allow),
+            ["write_file"]      = Workspace(PermissionLevel.Allow),
+            ["delete_file"]     = Workspace(PermissionLevel.Allow),
+            ["list_directory"]  = Workspace(PermissionLevel.Allow),
+            ["execute_command"] = new ToolPermissionSettings { Permission = PermissionLevel.Ask },
+        });
     }
 
     public void HydrateProject(string? json)
