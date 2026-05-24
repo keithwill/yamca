@@ -2,7 +2,9 @@ html, body {
     overscroll-behavior: none;
 }
 
-
+.mud-main-content {
+    padding-top: 0 !important;
+}
 h1:focus {
     outline: none;
 }

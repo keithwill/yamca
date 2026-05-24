@@ -15,29 +15,7 @@
 else
 {
     <div class="yamca-page">
-        <div class="yamca-scroll" @ref="_scrollContainer">
-            <MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
-                @foreach (var turn in Chat.Turns)
-                {
-                    <ChatTurnView Turn="turn" />
-                }
-
-                @foreach (var approval in Chat.Approvals.ToList())
-                {
-                    <ApprovalPrompt Approval="approval"
-                                    OnResolve="@(d => Chat.ResolveApproval(approval, d.Approved, d.Persistence))" />
-                }
-
-                @if (Chat.Error is not null && (Chat.Turns.Count == 0 || Chat.Turns[^1].Error is null))
-                {
-                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@Chat.Error</MudAlert>
-                }
-
-                <div @ref="_scrollAnchor"></div>
-            </MudContainer>
-        </div>
-
-        <div class="yamca-input-dock pa-2">
+        <div class="yamca-input-dock pa-4">
                 <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
                               Lines="3" Variant="Variant.Text" Immediate="true"
                               OnKeyDown="OnKeyDown" Disabled="Chat.IsRunning" />
@@ -60,6 +38,28 @@ else
                         </MudButtonGroup>
                     }
                 </div>
+        </div>
+
+        <div class="yamca-scroll" @ref="_scrollContainer">
+            <MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+                @foreach (var turn in Chat.Turns)
+                {
+                    <ChatTurnView Turn="turn" />
+                }
+
+                @foreach (var approval in Chat.Approvals.ToList())
+                {
+                    <ApprovalPrompt Approval="approval"
+                                    OnResolve="@(d => Chat.ResolveApproval(approval, d.Approved, d.Persistence))" />
+                }
+
+                @if (Chat.Error is not null && (Chat.Turns.Count == 0 || Chat.Turns[^1].Error is null))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@Chat.Error</MudAlert>
+                }
+
+                <div @ref="_scrollAnchor"></div>
+            </MudContainer>
         </div>
     </div>
 }
