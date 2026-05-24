@@ -18,6 +18,7 @@ public sealed class SessionSettings : ISessionSettings
     public ToolSettingsMap Global { get; private set; } = ToolSettingsMap.Empty;
     public EndpointSettings Endpoint { get; private set; } = EndpointSettings.Default;
     public string SystemPrompt { get; private set; } = DefaultSystemPrompt;
+    public bool MarkdownEnabled { get; private set; } = true;
 
     /// <summary>Fired when the named tier has been mutated. The handler is expected
     /// to serialize that tier and write it to localStorage.</summary>
@@ -35,6 +36,13 @@ public sealed class SessionSettings : ISessionSettings
     public void SetSystemPrompt(string systemPrompt)
     {
         SystemPrompt = systemPrompt ?? string.Empty;
+        Changed?.Invoke(SettingsTier.Global);
+    }
+
+    public void SetMarkdownEnabled(bool enabled)
+    {
+        if (MarkdownEnabled == enabled) return;
+        MarkdownEnabled = enabled;
         Changed?.Invoke(SettingsTier.Global);
     }
 
@@ -80,6 +88,7 @@ public sealed class SessionSettings : ISessionSettings
             Model:   blob.Endpoint?.Model   ?? EndpointSettings.Default.Model);
 
         SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
+        MarkdownEnabled = blob.MarkdownEnabled ?? true;
         Global = MapFromDto(blob.Tools);
     }
 
@@ -95,6 +104,7 @@ public sealed class SessionSettings : ISessionSettings
         {
             Endpoint = new EndpointDto { BaseUrl = Endpoint.BaseUrl, ApiKey = Endpoint.ApiKey, Model = Endpoint.Model },
             SystemPrompt = SystemPrompt,
+            MarkdownEnabled = MarkdownEnabled,
             Tools = MapToDto(Global),
         };
         return JsonSerializer.Serialize(blob, JsonOptions);
@@ -148,6 +158,7 @@ public sealed class SessionSettings : ISessionSettings
     {
         public EndpointDto? Endpoint { get; set; }
         public string? SystemPrompt { get; set; }
+        public bool? MarkdownEnabled { get; set; }
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
     }
 

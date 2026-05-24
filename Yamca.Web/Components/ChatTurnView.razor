@@ -13,8 +13,15 @@
             {
                 @if (item is AssistantTextItem text)
                 {
-                    <MudPaper Class="pa-2 mb-2" Elevation="0" Outlined="true">
-                        <MudText Typo="Typo.body1" Style="white-space: pre-wrap;">@text.Text</MudText>
+                    <MudPaper Class="pa-2 mb-2 yamca-markdown" Elevation="0" Outlined="true">
+                        @if (Session.MarkdownEnabled)
+                        {
+                            @((MarkupString)MarkdownRenderer.ToHtml(text.Text))
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body1" Style="white-space: pre-wrap;">@text.Text</MudText>
+                        }
                     </MudPaper>
                 }
                 else if (item is ToolCallItem tool)
@@ -36,4 +43,5 @@
 
 @code {
     [Parameter, EditorRequired] public ChatTurn Turn { get; set; } = default!;
+    [Inject] private SessionSettings Session { get; set; } = default!;
 }

@@ -132,7 +132,12 @@ public sealed class ChatViewModel : IDisposable
         var chatClient = new ChatClient(endpoint.Model, credential, clientOptions);
         var completion = new OpenAIChatCompletionClient(chatClient);
 
-        var session = new ChatSession(_workspace, _settings.SystemPrompt);
+        var prompt = _settings.SystemPrompt;
+        var hint = _settings.MarkdownEnabled
+            ? "Your responses are rendered as GitHub-flavored Markdown — use fenced code blocks for code, and standard Markdown for emphasis, lists, and tables."
+            : "Your responses are rendered as plain text. Do NOT use Markdown formatting: no `backticks`, no **bold**/*italics*, no #headings, no fenced code blocks, no bullet/numbered lists. Write code and identifiers inline as plain text.";
+        prompt = (string.IsNullOrWhiteSpace(prompt) ? "" : prompt + "\n\n") + hint;
+        var session = new ChatSession(_workspace, prompt);
 
         _loop = new AgentLoop(
             session, completion, _tools, _permissions, _approvals, _permissionStore, _workspace);

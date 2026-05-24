@@ -36,3 +36,36 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+
+.yamca-markdown > :first-child { margin-top: 0; }
+.yamca-markdown > :last-child { margin-bottom: 0; }
+.yamca-markdown p { margin: 0 0 0.6em 0; }
+.yamca-markdown pre {
+    background: rgba(127, 127, 127, 0.12);
+    padding: 0.6em 0.8em;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 0.4em 0;
+}
+.yamca-markdown code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.9em;
+}
+.yamca-markdown :not(pre) > code {
+    background: rgba(127, 127, 127, 0.18);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+}
+.yamca-markdown pre > code { background: transparent; padding: 0; }
+.yamca-markdown ul, .yamca-markdown ol { margin: 0.2em 0 0.6em 1.4em; padding: 0; }
+.yamca-markdown blockquote {
+    border-left: 3px solid rgba(127, 127, 127, 0.4);
+    margin: 0.4em 0;
+    padding: 0 0.8em;
+    color: rgba(200, 200, 200, 0.85);
+}
+.yamca-markdown table { border-collapse: collapse; margin: 0.4em 0; }
+.yamca-markdown th, .yamca-markdown td {
+    border: 1px solid rgba(127, 127, 127, 0.35);
+    padding: 0.25em 0.6em;
+}
