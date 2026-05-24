@@ -1,0 +1,115 @@
+@page "/"
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>Chat — yamca</PageTitle>
+
+<div class="d-flex align-center mb-3">
+    <MudText Typo="Typo.h4">Chat</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="OnClear"
+               StartIcon="@Icons.Material.Filled.Refresh" Disabled="Chat.IsRunning">
+        New chat
+    </MudButton>
+</div>
+
+@if (!_hydrated)
+{
+    <MudProgressCircular Indeterminate="true" />
+    <MudText Class="ml-2 d-inline" Typo="Typo.body2">Loading settings…</MudText>
+}
+else
+{
+    @if (Chat.Turns.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+            Endpoint: <code>@Session.Endpoint.BaseUrl</code> · model <code>@Session.Endpoint.Model</code>.
+            Send a prompt below. Tool calls that resolve to <code>Ask</code> will surface an approval card here.
+        </MudAlert>
+    }
+
+    @foreach (var turn in Chat.Turns)
+    {
+        <ChatTurnView Turn="turn" />
+    }
+
+    @foreach (var approval in Chat.Approvals.ToList())
+    {
+        <ApprovalPrompt Approval="approval"
+                        OnResolve="@(d => Chat.ResolveApproval(approval, d.Approved, d.Persistence))" />
+    }
+
+    @if (Chat.Error is not null && (Chat.Turns.Count == 0 || Chat.Turns[^1].Error is null))
+    {
+        <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@Chat.Error</MudAlert>
+    }
+
+    <MudPaper Class="pa-2 mt-3" Elevation="0" Outlined="true">
+        <MudTextField @bind-Value="_prompt" T="string" Placeholder="Ask the model…"
+                      Lines="3" Variant="Variant.Text" Immediate="true"
+                      OnKeyDown="OnKeyDown" Disabled="Chat.IsRunning" />
+        <div class="d-flex mt-2">
+            <MudSpacer />
+            @if (Chat.IsRunning)
+            {
+                <MudButton Color="Color.Warning" Variant="Variant.Outlined" OnClick="OnCancel"
+                           StartIcon="@Icons.Material.Filled.Stop">Cancel</MudButton>
+            }
+            else
+            {
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="OnSend"
+                           StartIcon="@Icons.Material.Filled.Send"
+                           Disabled="@(string.IsNullOrWhiteSpace(_prompt))">Send</MudButton>
+            }
+        </div>
+    </MudPaper>
+}
+
+@code {
+    [Inject] private ChatViewModel Chat { get; set; } = default!;
+    [Inject] private SessionSettings Session { get; set; } = default!;
+    [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
+
+    private bool _hydrated;
+    private string _prompt = "";
+
+    protected override void OnInitialized()
+    {
+        Chat.Changed += OnChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Hydrator.HydrateAsync();
+        _hydrated = true;
+        StateHasChanged();
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task OnSend()
+    {
+        if (string.IsNullOrWhiteSpace(_prompt) || Chat.IsRunning) return;
+        var p = _prompt;
+        _prompt = "";
+        await Chat.SendAsync(p);
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await OnSend();
+        }
+    }
+
+    private void OnCancel() => Chat.Cancel();
+
+    private void OnClear() => Chat.Clear();
+
+    public void Dispose()
+    {
+        Chat.Changed -= OnChanged;
+    }
+}

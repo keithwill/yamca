@@ -1,0 +1,42 @@
+using System.Text;
+
+namespace Yamca.Web.Services;
+
+public sealed class ChatTurn
+{
+    public ChatTurn(string userMessage)
+    {
+        UserMessage = userMessage;
+    }
+
+    public string UserMessage { get; }
+    public List<ChatTurnItem> Items { get; } = new();
+    public bool IsRunning { get; internal set; } = true;
+    public string? Error { get; internal set; }
+}
+
+public abstract class ChatTurnItem;
+
+public sealed class AssistantTextItem : ChatTurnItem
+{
+    public StringBuilder Buffer { get; } = new();
+    public bool IsComplete { get; internal set; }
+    public string Text => Buffer.ToString();
+}
+
+public enum ToolCallState
+{
+    Pending,    // approved (or didn't need approval), about to run
+    Succeeded,
+    Failed,
+    Denied,
+}
+
+public sealed class ToolCallItem : ChatTurnItem
+{
+    public required string CallId { get; init; }
+    public required string ToolName { get; init; }
+    public required string ArgumentsJson { get; init; }
+    public ToolCallState State { get; internal set; } = ToolCallState.Pending;
+    public string? Result { get; internal set; }
+}

@@ -1,0 +1,79 @@
+<MudPaper Class="pa-2 my-1" Elevation="0" Outlined="true">
+    <MudExpansionPanels Elevation="0" Dense="true" MultiExpansion="false">
+        <MudExpansionPanel Dense="true">
+            <TitleContent>
+                <div class="d-flex align-center" style="width: 100%; gap: 0.5rem;">
+                    <MudIcon Icon="@StateIcon" Color="@StateColor" Size="Size.Small" />
+                    <MudText Typo="Typo.body2"><code>@Item.ToolName</code></MudText>
+                    <MudSpacer />
+                    <MudChip T="string" Size="Size.Small" Color="@StateColor" Variant="Variant.Outlined">
+                        @StateLabel
+                    </MudChip>
+                </div>
+            </TitleContent>
+            <ChildContent>
+                @if (!string.IsNullOrWhiteSpace(Item.ArgumentsJson))
+                {
+                    <MudText Typo="Typo.caption">Arguments</MudText>
+                    <pre style="overflow:auto; max-height: 200px; font-size: 0.8rem;">@PrettyArgs</pre>
+                }
+                @if (Item.Result is not null)
+                {
+                    <MudText Typo="Typo.caption" Class="mt-2">Result</MudText>
+                    <pre style="overflow:auto; max-height: 300px; font-size: 0.8rem;">@Item.Result</pre>
+                }
+                else if (Item.State == ToolCallState.Pending)
+                {
+                    <MudProgressLinear Indeterminate="true" Class="mt-2" />
+                }
+            </ChildContent>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public ToolCallItem Item { get; set; } = default!;
+
+    private string PrettyArgs
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(Item.ArgumentsJson)) return "";
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(Item.ArgumentsJson);
+                return System.Text.Json.JsonSerializer.Serialize(
+                    doc.RootElement,
+                    new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            }
+            catch { return Item.ArgumentsJson; }
+        }
+    }
+
+    private string StateLabel => Item.State switch
+    {
+        ToolCallState.Pending   => "running",
+        ToolCallState.Succeeded => "ok",
+        ToolCallState.Failed    => "error",
+        ToolCallState.Denied    => "denied",
+        _ => Item.State.ToString(),
+    };
+
+    private string StateIcon => Item.State switch
+    {
+        ToolCallState.Pending   => Icons.Material.Filled.HourglassEmpty,
+        ToolCallState.Succeeded => Icons.Material.Filled.CheckCircle,
+        ToolCallState.Failed    => Icons.Material.Filled.Error,
+        ToolCallState.Denied    => Icons.Material.Filled.Block,
+        _ => Icons.Material.Filled.Help,
+    };
+
+    private Color StateColor => Item.State switch
+    {
+        ToolCallState.Pending   => Color.Info,
+        ToolCallState.Succeeded => Color.Success,
+        ToolCallState.Failed    => Color.Error,
+        ToolCallState.Denied    => Color.Warning,
+        _ => Color.Default,
+    };
+}

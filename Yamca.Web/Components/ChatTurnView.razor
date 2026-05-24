@@ -1,0 +1,39 @@
+<div class="yamca-turn mb-4">
+    <div class="d-flex mb-2">
+        <MudAvatar Color="Color.Primary" Size="Size.Small" Class="mr-2">U</MudAvatar>
+        <MudPaper Class="pa-2 flex-grow-1" Elevation="0" Outlined="true">
+            <MudText Typo="Typo.body1" Style="white-space: pre-wrap;">@Turn.UserMessage</MudText>
+        </MudPaper>
+    </div>
+
+    <div class="d-flex">
+        <MudAvatar Color="Color.Secondary" Size="Size.Small" Class="mr-2">A</MudAvatar>
+        <div class="flex-grow-1">
+            @foreach (var item in Turn.Items)
+            {
+                @if (item is AssistantTextItem text)
+                {
+                    <MudPaper Class="pa-2 mb-2" Elevation="0" Outlined="true">
+                        <MudText Typo="Typo.body1" Style="white-space: pre-wrap;">@text.Text</MudText>
+                    </MudPaper>
+                }
+                else if (item is ToolCallItem tool)
+                {
+                    <ToolCallCard Item="tool" />
+                }
+            }
+            @if (Turn.IsRunning && Turn.Items.Count == 0)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+            @if (Turn.Error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@Turn.Error</MudAlert>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ChatTurn Turn { get; set; } = default!;
+}

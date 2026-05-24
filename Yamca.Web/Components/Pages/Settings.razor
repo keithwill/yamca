@@ -1,0 +1,177 @@
+@page "/settings"
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>Settings — yamca</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Settings</MudText>
+
+@if (!_hydrated)
+{
+    <MudProgressCircular Indeterminate="true" />
+    <MudText Typo="Typo.body2" Class="ml-2 d-inline">Loading from localStorage&hellip;</MudText>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-2">Endpoint</MudText>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            OpenAI-compatible local server (llama.cpp, vllm, etc.). Stored in <code>@Keys.GlobalKey</code>.
+        </MudText>
+        <MudTextField Value="Session.Endpoint.BaseUrl"
+                      ValueChanged="@((string v) => UpdateEndpoint(Session.Endpoint with { BaseUrl = v }))"
+                      T="string" Label="Base URL" Variant="Variant.Outlined" Class="mb-2" />
+        <MudTextField Value="Session.Endpoint.ApiKey"
+                      ValueChanged="@((string v) => UpdateEndpoint(Session.Endpoint with { ApiKey = v }))"
+                      T="string" Label="API key" Variant="Variant.Outlined"
+                      InputType="InputType.Password" Class="mb-2" />
+        <MudTextField Value="Session.Endpoint.Model"
+                      ValueChanged="@((string v) => UpdateEndpoint(Session.Endpoint with { Model = v }))"
+                      T="string" Label="Model" Variant="Variant.Outlined" />
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-2">System prompt</MudText>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            <code>{{workspace}}</code> is substituted with the current workspace path.
+        </MudText>
+        <MudTextField Value="Session.SystemPrompt"
+                      ValueChanged="@((string v) => UpdateSystemPrompt(v))"
+                      T="string" Variant="Variant.Outlined" Lines="4" />
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.h6">Tool permissions</MudText>
+            <MudSpacer />
+            <MudTabs @bind-ActivePanelIndex="_tierIndex" Rounded="true" Color="Color.Primary">
+                <MudTabPanel Text="Project" />
+                <MudTabPanel Text="Global" />
+            </MudTabs>
+        </div>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            Project overrides Global. Unset (<em>inherit</em>) falls through to Global, then to the tool's default.
+            @if (_tierIndex == 0) { <text>Stored in <code>@Keys.ProjectKey</code>.</text> }
+            else { <text>Stored in <code>@Keys.GlobalKey</code>.</text> }
+        </MudText>
+
+        <MudTable Items="Tools.Tools" Hover="true" Dense="true" Class="mud-table-bordered">
+            <HeaderContent>
+                <MudTh>Tool</MudTh>
+                <MudTh>Permission</MudTh>
+                <MudTh>Restrict to workspace</MudTh>
+                <MudTh>Effective</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudText Typo="Typo.body2"><b>@context.Name</b></MudText>
+                    <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+                        @context.Description
+                    </MudText>
+                </MudTd>
+                <MudTd>
+                    @{
+                        var entry = CurrentMap.Get(context.Name);
+                        var selected = entry?.Permission;
+                    }
+                    <MudSelect T="PermissionLevel?" Value="selected"
+                               ValueChanged="@((PermissionLevel? p) => SetPermission(context.Name, p))"
+                               Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                        <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)null)">inherit</MudSelectItem>
+                        <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Allow)">Allow</MudSelectItem>
+                        <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Ask)">Ask</MudSelectItem>
+                        <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Deny)">Deny</MudSelectItem>
+                    </MudSelect>
+                </MudTd>
+                <MudTd>
+                    @if (context.SupportsWorkspaceRestriction)
+                    {
+                        var restrict = CurrentMap.Get(context.Name)?.RestrictToWorkspace;
+                        <MudSelect T="bool?" Value="restrict"
+                                   ValueChanged="@((bool? b) => SetRestrict(context.Name, b))"
+                                   Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                            <MudSelectItem T="bool?" Value="@((bool?)null)">inherit</MudSelectItem>
+                            <MudSelectItem T="bool?" Value="@((bool?)true)">On</MudSelectItem>
+                            <MudSelectItem T="bool?" Value="@((bool?)false)">Off</MudSelectItem>
+                        </MudSelect>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">n/a</MudText>
+                    }
+                </MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@PermColor(Resolver.Resolve(context.Name))">
+                        @Resolver.Resolve(context.Name)
+                    </MudChip>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+@code {
+    [Inject] private SessionSettings Session { get; set; } = default!;
+    [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
+    [Inject] private IToolRegistry Tools { get; set; } = default!;
+    [Inject] private IPermissionResolver Resolver { get; set; } = default!;
+    [Inject] private WorkspaceKey Keys { get; set; } = default!;
+
+    private bool _hydrated;
+    private int _tierIndex; // 0 = Project, 1 = Global
+
+    private SettingsTier CurrentTier => _tierIndex == 0 ? SettingsTier.Project : SettingsTier.Global;
+    private ToolSettingsMap CurrentMap => CurrentTier == SettingsTier.Project ? Session.Project : Session.Global;
+
+    protected override void OnInitialized()
+    {
+        Session.Changed += OnSettingsChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Hydrator.HydrateAsync();
+        _hydrated = true;
+        StateHasChanged();
+    }
+
+    private void OnSettingsChanged(SettingsTier _) => InvokeAsync(StateHasChanged);
+
+    private void UpdateEndpoint(EndpointSettings ep) => Session.SetEndpoint(ep);
+
+    private void UpdateSystemPrompt(string value) => Session.SetSystemPrompt(value);
+
+    private void SetPermission(string toolName, PermissionLevel? perm)
+    {
+        var existing = CurrentMap.Get(toolName) ?? new ToolPermissionSettings();
+        var next = existing with { Permission = perm };
+        ApplyEntry(toolName, next);
+    }
+
+    private void SetRestrict(string toolName, bool? restrict)
+    {
+        var existing = CurrentMap.Get(toolName) ?? new ToolPermissionSettings();
+        var next = existing with { RestrictToWorkspace = restrict };
+        ApplyEntry(toolName, next);
+    }
+
+    private void ApplyEntry(string toolName, ToolPermissionSettings entry)
+    {
+        // Drop the entry entirely if nothing is set, so the JSON stays clean.
+        var collapsed = (entry.Permission is null && entry.RestrictToWorkspace is null) ? null : entry;
+        Session.SetToolEntry(CurrentTier, toolName, collapsed);
+    }
+
+    private static Color PermColor(PermissionLevel level) => level switch
+    {
+        PermissionLevel.Allow => Color.Success,
+        PermissionLevel.Deny  => Color.Error,
+        _                     => Color.Warning,
+    };
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSettingsChanged;
+    }
+}

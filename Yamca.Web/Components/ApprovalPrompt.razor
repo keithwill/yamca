@@ -1,0 +1,34 @@
+<MudPaper Class="pa-3 mb-2" Elevation="0" Outlined="true" Style="border-color: var(--mud-palette-warning);">
+    <div class="d-flex align-center mb-2">
+        <MudIcon Icon="@Icons.Material.Filled.Lock" Color="Color.Warning" Class="mr-2" />
+        <MudText Typo="Typo.subtitle1">
+            Approve <code>@Approval.ToolName</code>?
+        </MudText>
+    </div>
+
+    <MudText Typo="Typo.caption" Class="mb-1">Arguments</MudText>
+    <pre class="mud-paper-outlined pa-2" style="overflow:auto; max-height: 240px; font-size: 0.8rem;">@Approval.ArgumentsPretty</pre>
+
+    <MudRadioGroup T="ApprovalPersistence" Value="_persistence" ValueChanged="@((ApprovalPersistence p) => _persistence = p)" Class="mt-2">
+        <MudRadio T="ApprovalPersistence" Value="ApprovalPersistence.None" Dense="true">Just once</MudRadio>
+        <MudRadio T="ApprovalPersistence" Value="ApprovalPersistence.Project" Dense="true">Save for this project</MudRadio>
+        <MudRadio T="ApprovalPersistence" Value="ApprovalPersistence.Global" Dense="true">Save everywhere</MudRadio>
+    </MudRadioGroup>
+
+    <div class="d-flex mt-2" style="gap: 0.5rem;">
+        <MudButton Color="Color.Success" Variant="Variant.Filled" OnClick="OnAllow"
+                   StartIcon="@Icons.Material.Filled.Check">Allow</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Outlined" OnClick="OnDeny"
+                   StartIcon="@Icons.Material.Filled.Block">Deny</MudButton>
+    </div>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public PendingApproval Approval { get; set; } = default!;
+    [Parameter, EditorRequired] public EventCallback<(bool Approved, ApprovalPersistence Persistence)> OnResolve { get; set; }
+
+    private ApprovalPersistence _persistence = ApprovalPersistence.None;
+
+    private Task OnAllow() => OnResolve.InvokeAsync((true, _persistence));
+    private Task OnDeny() => OnResolve.InvokeAsync((false, _persistence));
+}
