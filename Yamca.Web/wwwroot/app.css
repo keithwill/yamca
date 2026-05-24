@@ -42,9 +42,7 @@ h1:focus {
     bottom: 0;
     z-index: 10;
     background: var(--mud-palette-background);
-    padding-top: 12px;
-    padding-bottom: 8px;
-    border-top: 1px solid var(--mud-palette-divider);
+    padding-bottom: 19px;
 }
 
 .yamca-markdown > :first-child { margin-top: 0; }

@@ -3,16 +3,7 @@
 @implements IDisposable
 @using Microsoft.JSInterop
 
-<PageTitle>Chat — yamca</PageTitle>
-
-<div class="d-flex align-center mb-3">
-    <MudText Typo="Typo.h4">Chat</MudText>
-    <MudSpacer />
-    <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="OnClear"
-               StartIcon="@Icons.Material.Filled.Refresh" Disabled="Chat.IsRunning">
-        New chat
-    </MudButton>
-</div>
+<PageTitle>Yamca - @System.IO.Path.GetFileName(Workspace.RootPath.TrimEnd('\\', '/'))</PageTitle>
 
 @if (!_hydrated)
 {
@@ -21,13 +12,6 @@
 }
 else
 {
-    @if (Chat.Turns.Count == 0)
-    {
-        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
-            Endpoint: <code>@Session.Endpoint.BaseUrl</code> · model <code>@Session.Endpoint.Model</code>.
-            Send a prompt below. Tool calls that resolve to <code>Ask</code> will surface an approval card here.
-        </MudAlert>
-    }
 
     @foreach (var turn in Chat.Turns)
     {
@@ -47,7 +31,7 @@ else
 
     <div class="yamca-input-dock">
         <MudPaper Class="pa-2" Elevation="0" Outlined="true">
-            <MudTextField @bind-Value="_prompt" T="string" Placeholder="Ask the model…"
+            <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
                           Lines="3" Variant="Variant.Text" Immediate="true"
                           OnKeyDown="OnKeyDown" Disabled="Chat.IsRunning" />
             <div class="d-flex mt-2">
@@ -59,9 +43,14 @@ else
                 }
                 else
                 {
-                    <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="OnSend"
-                               StartIcon="@Icons.Material.Filled.Send"
-                               Disabled="@(string.IsNullOrWhiteSpace(_prompt))">Send</MudButton>
+                    <MudButtonGroup OverrideStyles="false" Variant="Variant.Filled">
+                        <MudButton Color="Color.Secondary" Variant="Variant.Filled" OnClick="OnClear"
+                                   StartIcon="@Icons.Material.Filled.Refresh"
+                                   Disabled="Chat.IsRunning">New</MudButton>
+                        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="OnSend"
+                                   StartIcon="@Icons.Material.Filled.Send"
+                                   Disabled="@(string.IsNullOrWhiteSpace(_prompt))">Send</MudButton>
+                    </MudButtonGroup>
                 }
             </div>
         </MudPaper>
@@ -71,10 +60,12 @@ else
 }
 
 @code {
+    [Inject] private IWorkspace Workspace { get; set; } = default!;
     [Inject] private ChatViewModel Chat { get; set; } = default!;
     [Inject] private SessionSettings Session { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private IDialogService Dialogs { get; set; } = default!;
 
     private bool _hydrated;
     private string _prompt = "";
@@ -119,10 +110,26 @@ else
 
     private void OnCancel() => Chat.Cancel();
 
-    private void OnClear()
+    private async Task OnClear()
     {
-        Chat.Clear();
-        _ = SafeInvokeAsync("yamcaChat.reset");
+        if (Chat.Turns.Count == 0 && Chat.Approvals.Count == 0)
+        {
+            Chat.Clear();
+            _ = SafeInvokeAsync("yamcaChat.reset");
+            return;
+        }
+
+        var confirmed = await Dialogs.ShowMessageBoxAsync(
+            title: "Start a new chat?",
+            message: "This will clear the current conversation. Continue?",
+            yesText: "New chat",
+            cancelText: "Cancel");
+
+        if (confirmed == true)
+        {
+            Chat.Clear();
+            _ = SafeInvokeAsync("yamcaChat.reset");
+        }
     }
 
     private async Task SafeInvokeAsync(string identifier, params object?[] args)
