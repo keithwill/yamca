@@ -1,3 +1,8 @@
+html, body {
+    overscroll-behavior: none;
+}
+
+
 h1:focus {
     outline: none;
 }
@@ -37,12 +42,19 @@ h1:focus {
     text-align: start;
 }
 
+.yamca-page {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+.yamca-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
 .yamca-input-dock {
-    position: sticky;
-    bottom: 0;
+    flex: 0 0 auto;
     z-index: 10;
-    background: var(--mud-palette-background);
-    padding-bottom: 19px;
 }
 
 .yamca-markdown > :first-child { margin-top: 0; }

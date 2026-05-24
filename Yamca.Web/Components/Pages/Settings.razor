@@ -4,6 +4,8 @@
 
 <PageTitle>Settings — yamca</PageTitle>
 
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+
 @if (!_hydrated)
 {
     <MudProgressCircular Indeterminate="true" />
@@ -114,6 +116,8 @@ else
         </MudTable>
     </MudPaper>
 }
+
+</MudContainer>
 
 @code {
     [Inject] private SessionSettings Session { get; set; } = default!;

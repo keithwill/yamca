@@ -7,56 +7,61 @@
 
 @if (!_hydrated)
 {
-    <MudProgressCircular Indeterminate="true" />
-    <MudText Class="ml-2 d-inline" Typo="Typo.body2">Loading settings…</MudText>
+    <MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+        <MudProgressCircular Indeterminate="true" />
+        <MudText Class="ml-2 d-inline" Typo="Typo.body2">Loading settings…</MudText>
+    </MudContainer>
 }
 else
 {
-
-    @foreach (var turn in Chat.Turns)
-    {
-        <ChatTurnView Turn="turn" />
-    }
-
-    @foreach (var approval in Chat.Approvals.ToList())
-    {
-        <ApprovalPrompt Approval="approval"
-                        OnResolve="@(d => Chat.ResolveApproval(approval, d.Approved, d.Persistence))" />
-    }
-
-    @if (Chat.Error is not null && (Chat.Turns.Count == 0 || Chat.Turns[^1].Error is null))
-    {
-        <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@Chat.Error</MudAlert>
-    }
-
-    <div class="yamca-input-dock">
-        <MudPaper Class="pa-2" Elevation="0" Outlined="true">
-            <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
-                          Lines="3" Variant="Variant.Text" Immediate="true"
-                          OnKeyDown="OnKeyDown" Disabled="Chat.IsRunning" />
-            <div class="d-flex mt-2">
-                <MudSpacer />
-                @if (Chat.IsRunning)
+    <div class="yamca-page">
+        <div class="yamca-scroll" @ref="_scrollContainer">
+            <MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+                @foreach (var turn in Chat.Turns)
                 {
-                    <MudButton Color="Color.Warning" Variant="Variant.Outlined" OnClick="OnCancel"
-                               StartIcon="@Icons.Material.Filled.Stop">Cancel</MudButton>
+                    <ChatTurnView Turn="turn" />
                 }
-                else
+
+                @foreach (var approval in Chat.Approvals.ToList())
                 {
-                    <MudButtonGroup OverrideStyles="false" Variant="Variant.Filled">
-                        <MudButton Color="Color.Secondary" Variant="Variant.Filled" OnClick="OnClear"
-                                   StartIcon="@Icons.Material.Filled.Refresh"
-                                   Disabled="Chat.IsRunning">New</MudButton>
-                        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="OnSend"
-                                   StartIcon="@Icons.Material.Filled.Send"
-                                   Disabled="@(string.IsNullOrWhiteSpace(_prompt))">Send</MudButton>
-                    </MudButtonGroup>
+                    <ApprovalPrompt Approval="approval"
+                                    OnResolve="@(d => Chat.ResolveApproval(approval, d.Approved, d.Persistence))" />
                 }
-            </div>
-        </MudPaper>
+
+                @if (Chat.Error is not null && (Chat.Turns.Count == 0 || Chat.Turns[^1].Error is null))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@Chat.Error</MudAlert>
+                }
+
+                <div @ref="_scrollAnchor"></div>
+            </MudContainer>
+        </div>
+
+        <div class="yamca-input-dock pa-2">
+                <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
+                              Lines="3" Variant="Variant.Text" Immediate="true"
+                              OnKeyDown="OnKeyDown" Disabled="Chat.IsRunning" />
+                <div class="d-flex mt-2">
+                    <MudSpacer />
+                    @if (Chat.IsRunning)
+                    {
+                        <MudButton Color="Color.Warning" Variant="Variant.Outlined" OnClick="OnCancel"
+                                   StartIcon="@Icons.Material.Filled.Stop">Cancel</MudButton>
+                    }
+                    else
+                    {
+                        <MudButtonGroup OverrideStyles="false" Variant="Variant.Filled">
+                            <MudButton Color="Color.Secondary" Variant="Variant.Filled" OnClick="OnClear"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       Disabled="Chat.IsRunning">New</MudButton>
+                            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="OnSend"
+                                       StartIcon="@Icons.Material.Filled.Send"
+                                       Disabled="@(string.IsNullOrWhiteSpace(_prompt))">Send</MudButton>
+                        </MudButtonGroup>
+                    }
+                </div>
+        </div>
     </div>
-
-    <div @ref="_scrollAnchor"></div>
 }
 
 @code {
@@ -70,6 +75,7 @@ else
     private bool _hydrated;
     private string _prompt = "";
     private ElementReference _scrollAnchor;
+    private ElementReference _scrollContainer;
 
     protected override void OnInitialized()
     {
@@ -81,12 +87,12 @@ else
         if (firstRender)
         {
             await Hydrator.HydrateAsync();
-            await SafeInvokeAsync("yamcaChat.init");
             _hydrated = true;
             StateHasChanged();
             return;
         }
 
+        await SafeInvokeAsync("yamcaChat.init", _scrollContainer);
         await SafeInvokeAsync("yamcaChat.scrollIfSticky", _scrollAnchor);
     }
 
