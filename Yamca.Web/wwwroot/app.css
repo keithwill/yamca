@@ -37,6 +37,16 @@ h1:focus {
     text-align: start;
 }
 
+.yamca-input-dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    background: var(--mud-palette-background);
+    padding-top: 12px;
+    padding-bottom: 8px;
+    border-top: 1px solid var(--mud-palette-divider);
+}
+
 .yamca-markdown > :first-child { margin-top: 0; }
 .yamca-markdown > :last-child { margin-bottom: 0; }
 .yamca-markdown p { margin: 0 0 0.6em 0; }

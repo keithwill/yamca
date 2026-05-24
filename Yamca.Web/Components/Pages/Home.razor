@@ -1,6 +1,7 @@
 @page "/"
 @rendermode InteractiveServer
 @implements IDisposable
+@using Microsoft.JSInterop
 
 <PageTitle>Chat — yamca</PageTitle>
 
@@ -44,34 +45,40 @@ else
         <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@Chat.Error</MudAlert>
     }
 
-    <MudPaper Class="pa-2 mt-3" Elevation="0" Outlined="true">
-        <MudTextField @bind-Value="_prompt" T="string" Placeholder="Ask the model…"
-                      Lines="3" Variant="Variant.Text" Immediate="true"
-                      OnKeyDown="OnKeyDown" Disabled="Chat.IsRunning" />
-        <div class="d-flex mt-2">
-            <MudSpacer />
-            @if (Chat.IsRunning)
-            {
-                <MudButton Color="Color.Warning" Variant="Variant.Outlined" OnClick="OnCancel"
-                           StartIcon="@Icons.Material.Filled.Stop">Cancel</MudButton>
-            }
-            else
-            {
-                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="OnSend"
-                           StartIcon="@Icons.Material.Filled.Send"
-                           Disabled="@(string.IsNullOrWhiteSpace(_prompt))">Send</MudButton>
-            }
-        </div>
-    </MudPaper>
+    <div class="yamca-input-dock">
+        <MudPaper Class="pa-2" Elevation="0" Outlined="true">
+            <MudTextField @bind-Value="_prompt" T="string" Placeholder="Ask the model…"
+                          Lines="3" Variant="Variant.Text" Immediate="true"
+                          OnKeyDown="OnKeyDown" Disabled="Chat.IsRunning" />
+            <div class="d-flex mt-2">
+                <MudSpacer />
+                @if (Chat.IsRunning)
+                {
+                    <MudButton Color="Color.Warning" Variant="Variant.Outlined" OnClick="OnCancel"
+                               StartIcon="@Icons.Material.Filled.Stop">Cancel</MudButton>
+                }
+                else
+                {
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="OnSend"
+                               StartIcon="@Icons.Material.Filled.Send"
+                               Disabled="@(string.IsNullOrWhiteSpace(_prompt))">Send</MudButton>
+                }
+            </div>
+        </MudPaper>
+    </div>
+
+    <div @ref="_scrollAnchor"></div>
 }
 
 @code {
     [Inject] private ChatViewModel Chat { get; set; } = default!;
     [Inject] private SessionSettings Session { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
 
     private bool _hydrated;
     private string _prompt = "";
+    private ElementReference _scrollAnchor;
 
     protected override void OnInitialized()
     {
@@ -80,10 +87,16 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
-        await Hydrator.HydrateAsync();
-        _hydrated = true;
-        StateHasChanged();
+        if (firstRender)
+        {
+            await Hydrator.HydrateAsync();
+            await SafeInvokeAsync("yamcaChat.init");
+            _hydrated = true;
+            StateHasChanged();
+            return;
+        }
+
+        await SafeInvokeAsync("yamcaChat.scrollIfSticky", _scrollAnchor);
     }
 
     private void OnChanged() => InvokeAsync(StateHasChanged);
@@ -106,7 +119,21 @@ else
 
     private void OnCancel() => Chat.Cancel();
 
-    private void OnClear() => Chat.Clear();
+    private void OnClear()
+    {
+        Chat.Clear();
+        _ = SafeInvokeAsync("yamcaChat.reset");
+    }
+
+    private async Task SafeInvokeAsync(string identifier, params object?[] args)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync(identifier, args);
+        }
+        catch (JSDisconnectedException) { /* circuit gone */ }
+        catch (TaskCanceledException)   { /* tab closing */ }
+    }
 
     public void Dispose()
     {
