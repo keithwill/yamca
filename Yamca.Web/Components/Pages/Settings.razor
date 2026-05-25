@@ -103,7 +103,12 @@ else
     <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
         <MudText Typo="Typo.h6" Class="mb-2">Workspace</MudText>
         <MudText Typo="Typo.body2">Root: <code>@Workspace.RootPath</code></MudText>
-        <MudText Typo="Typo.caption">localStorage key: <code>@Keys.ProjectKey</code></MudText>
+        <MudText Typo="Typo.caption">
+            localStorage key:
+            <MudTooltip Text="@Keys.ProjectKey" Placement="Placement.Top">
+                <code>@ShortKey(Keys.ProjectKey)</code>
+            </MudTooltip>
+        </MudText>
     </MudPaper>
 
     <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
@@ -134,7 +139,11 @@ else
         </div>
         <MudText Typo="Typo.caption" Class="mb-3">
             Project overrides Global. Unset (<em>inherit</em>) falls through to Global, then to the tool's default.
-            @if (_tierIndex == 0) { <text>Stored in <code>@Keys.ProjectKey</code>.</text> }
+            @if (_tierIndex == 0)
+            {
+                <text>Stored in </text>
+                <MudTooltip Text="@Keys.ProjectKey" Placement="Placement.Top"><code>@ShortKey(Keys.ProjectKey)</code></MudTooltip><text>.</text>
+            }
             else { <text>Stored in <code>@Keys.GlobalKey</code>.</text> }
         </MudText>
 
@@ -147,10 +156,9 @@ else
             </HeaderContent>
             <RowTemplate>
                 <MudTd>
-                    <MudText Typo="Typo.body2"><b>@context.Name</b></MudText>
-                    <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
-                        @context.Description
-                    </MudText>
+                    <MudTooltip Text="@context.Description" Placement="Placement.Right">
+                        <MudText Typo="Typo.body2"><b>@context.Name</b></MudText>
+                    </MudTooltip>
                 </MudTd>
                 <MudTd>
                     @{
@@ -203,7 +211,11 @@ else
         </div>
         <MudText Typo="Typo.caption" Class="mb-3">
             Files read from the current workspace and added to the chat context as additional system messages at session start. Each entry is a bare filename or a relative path; absolute paths are not allowed. Missing files are silently skipped.
-            @if (_instrTierIndex == 0) { <text> Stored in <code>@Keys.ProjectKey</code>.</text> }
+            @if (_instrTierIndex == 0)
+            {
+                <text> Stored in </text>
+                <MudTooltip Text="@Keys.ProjectKey" Placement="Placement.Top"><code>@ShortKey(Keys.ProjectKey)</code></MudTooltip><text>.</text>
+            }
             else { <text> Stored in <code>@Keys.GlobalKey</code>.</text> }
         </MudText>
 
@@ -348,6 +360,16 @@ else
     private bool? _modelValid;
     private string? _modelValidationError;
     private CancellationTokenSource? _validateCts;
+
+    private static string ShortKey(string key)
+    {
+        const string prefix = "yamca.project.";
+        if (key.StartsWith(prefix, StringComparison.Ordinal) && key.Length > prefix.Length + 8)
+        {
+            return $"{prefix}{key.AsSpan(prefix.Length, 8)}…";
+        }
+        return key;
+    }
 
     private SettingsTier CurrentTier => _tierIndex == 0 ? SettingsTier.Project : SettingsTier.Global;
     private ToolSettingsMap CurrentMap => CurrentTier == SettingsTier.Project ? Session.Project : Session.Global;
