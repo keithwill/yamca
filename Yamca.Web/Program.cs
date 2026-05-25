@@ -41,8 +41,7 @@ if (cli.WorkspacePath is not null)
 }
 
 // Fixed default port so browser localStorage (keyed by origin) persists across
-// runs. 9001 is an in-joke — "It's over 9000!" — and explicit via --port if
-// the user needs to move it.
+// runs and explicit via --port if the user needs to move it.
 const int DefaultPort = 9001;
 var port = cli.Port ?? DefaultPort;
 if (!IsTcpPortAvailable(port))
