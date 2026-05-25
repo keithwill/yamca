@@ -74,6 +74,12 @@ public sealed class AgentLoop
                     case LlmContentDelta delta:
                         yield return new AssistantTokenEvent(delta.Text);
                         break;
+                    case LlmReasoningDelta rdelta:
+                        yield return new ReasoningTokenEvent(rdelta.Text);
+                        break;
+                    case LlmReasoningClose:
+                        yield return ReasoningCompleteEvent.Instance;
+                        break;
                     case LlmAssistantTurnComplete done:
                         content = done.Content;
                         toolCalls = done.ToolCalls;

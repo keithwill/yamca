@@ -8,6 +8,17 @@ public abstract record ChatStreamEvent;
 /// <summary>Incremental assistant text token.</summary>
 public sealed record AssistantTokenEvent(string Delta) : ChatStreamEvent;
 
+/// <summary>Incremental reasoning / chain-of-thought token (extracted from
+/// inline <c>&lt;think&gt;</c>-style tags by the completion client).</summary>
+public sealed record ReasoningTokenEvent(string Delta) : ChatStreamEvent;
+
+/// <summary>The reasoning block has finished (closing tag observed). The UI
+/// uses this to auto-collapse the streaming reasoning panel.</summary>
+public sealed record ReasoningCompleteEvent : ChatStreamEvent
+{
+    public static readonly ReasoningCompleteEvent Instance = new();
+}
+
 /// <summary>Assistant produced a complete message (with optional tool calls).
 /// Emitted once per assistant turn after the LLM finishes generating.</summary>
 public sealed record AssistantMessageEvent(

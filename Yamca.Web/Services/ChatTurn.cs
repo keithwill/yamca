@@ -40,6 +40,25 @@ public sealed class AssistantTextItem : ChatTurnItem
     }
 }
 
+public sealed class ReasoningItem : ChatTurnItem
+{
+    private readonly StringBuilder _buffer = new();
+    private readonly object _gate = new();
+
+    public bool IsComplete { get; internal set; }
+
+    public void Append(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return;
+        lock (_gate) _buffer.Append(value);
+    }
+
+    public string Text
+    {
+        get { lock (_gate) return _buffer.ToString(); }
+    }
+}
+
 public enum ToolCallState
 {
     Pending,    // approved (or didn't need approval), about to run

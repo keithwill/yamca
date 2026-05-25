@@ -184,6 +184,16 @@ public sealed class ChatViewModel : IDisposable
                 text.Append(token.Delta);
                 break;
 
+            case ReasoningTokenEvent rtoken:
+                var rItem = CurrentOrNewReasoning(turn);
+                rItem.Append(rtoken.Delta);
+                break;
+
+            case ReasoningCompleteEvent:
+                var openR = CurrentReasoning(turn);
+                if (openR is not null) openR.IsComplete = true;
+                break;
+
             case AssistantMessageEvent msg:
                 // The streaming buffer already holds the same content; just mark complete.
                 var current = CurrentText(turn);
@@ -250,6 +260,17 @@ public sealed class ChatViewModel : IDisposable
 
     private static AssistantTextItem? CurrentText(ChatTurn turn) =>
         turn.Items.OfType<AssistantTextItem>().LastOrDefault(t => !t.IsComplete);
+
+    private static ReasoningItem CurrentOrNewReasoning(ChatTurn turn)
+    {
+        if (turn.Items.LastOrDefault() is ReasoningItem r && !r.IsComplete) return r;
+        var fresh = new ReasoningItem();
+        turn.Items.Add(fresh);
+        return fresh;
+    }
+
+    private static ReasoningItem? CurrentReasoning(ChatTurn turn) =>
+        turn.Items.OfType<ReasoningItem>().LastOrDefault(r => !r.IsComplete);
 
     private static bool TryFind(ChatTurn turn, string callId, out ToolCallItem item)
     {

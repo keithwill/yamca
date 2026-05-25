@@ -126,6 +126,19 @@ else
         <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
             A capability hint is appended to the system prompt either way: when on, the model is told its replies are rendered as Markdown; when off, it's told to reply in plain text.
         </MudText>
+
+        <MudSelect T="ReasoningDisplay" Value="Session.ReasoningDisplay"
+                   ValueChanged="@((ReasoningDisplay v) => Session.SetReasoningDisplay(v))"
+                   Label="Reasoning blocks"
+                   Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense"
+                   Class="mt-3">
+            <MudSelectItem T="ReasoningDisplay" Value="ReasoningDisplay.Hidden">Hidden</MudSelectItem>
+            <MudSelectItem T="ReasoningDisplay" Value="ReasoningDisplay.Collapsed">Collapsed (default)</MudSelectItem>
+            <MudSelectItem T="ReasoningDisplay" Value="ReasoningDisplay.Expanded">Expanded</MudSelectItem>
+        </MudSelect>
+        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+            How to display chain-of-thought emitted by reasoning models inside <code>&lt;think&gt;</code>, <code>&lt;thinking&gt;</code>, or <code>&lt;reasoning&gt;</code> tags (Qwen3, QwQ, DeepSeek-R1, etc.). Collapsed mode shows it live while streaming and auto-closes when the answer begins.
+        </MudText>
     </MudPaper>
 
     <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">

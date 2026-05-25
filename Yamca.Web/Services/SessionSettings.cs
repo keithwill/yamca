@@ -23,6 +23,7 @@ public sealed class SessionSettings : ISessionSettings
     public EndpointSettings Endpoint { get; private set; } = EndpointSettings.Default;
     public string SystemPrompt { get; private set; } = DefaultSystemPrompt;
     public bool MarkdownEnabled { get; private set; } = true;
+    public ReasoningDisplay ReasoningDisplay { get; private set; } = ReasoningDisplay.Collapsed;
 
     public IReadOnlyList<string> GlobalInstructionFiles { get; private set; } = DefaultGlobalInstructionFiles;
     public IReadOnlyList<string> ProjectInstructionFiles { get; private set; } = Array.Empty<string>();
@@ -51,6 +52,13 @@ public sealed class SessionSettings : ISessionSettings
     {
         if (MarkdownEnabled == enabled) return;
         MarkdownEnabled = enabled;
+        Changed?.Invoke(SettingsTier.Global);
+    }
+
+    public void SetReasoningDisplay(ReasoningDisplay display)
+    {
+        if (ReasoningDisplay == display) return;
+        ReasoningDisplay = display;
         Changed?.Invoke(SettingsTier.Global);
     }
 
@@ -116,6 +124,7 @@ public sealed class SessionSettings : ISessionSettings
 
         SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
         MarkdownEnabled = blob.MarkdownEnabled ?? true;
+        ReasoningDisplay = blob.ReasoningDisplay ?? ReasoningDisplay.Collapsed;
         Global = firstRun ? DefaultGlobalToolSettings() : MapFromDto(blob.Tools);
         GlobalInstructionFiles = firstRun
             ? DefaultGlobalInstructionFiles
@@ -155,6 +164,7 @@ public sealed class SessionSettings : ISessionSettings
             Endpoint = new EndpointDto { BaseUrl = Endpoint.BaseUrl, ApiKey = Endpoint.ApiKey, Model = Endpoint.Model },
             SystemPrompt = SystemPrompt,
             MarkdownEnabled = MarkdownEnabled,
+            ReasoningDisplay = ReasoningDisplay,
             Tools = MapToDto(Global),
             InstructionFiles = NonEmpty(GlobalInstructionFiles),
         };
@@ -192,6 +202,7 @@ public sealed class SessionSettings : ISessionSettings
                 Endpoint = endpointDto,
                 SystemPrompt = SystemPrompt,
                 MarkdownEnabled = MarkdownEnabled,
+                ReasoningDisplay = ReasoningDisplay,
                 Tools = MapToDto(Global),
                 InstructionFiles = NonEmpty(GlobalInstructionFiles),
             },
@@ -242,6 +253,7 @@ public sealed class SessionSettings : ISessionSettings
             Model:   blob.Endpoint?.Model   ?? EndpointSettings.Default.Model);
         SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
         MarkdownEnabled = blob.MarkdownEnabled ?? true;
+        ReasoningDisplay = blob.ReasoningDisplay ?? ReasoningDisplay.Collapsed;
         Global = MapFromDto(blob.Tools);
         GlobalInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
     }
@@ -306,6 +318,7 @@ public sealed class SessionSettings : ISessionSettings
         public EndpointDto? Endpoint { get; set; }
         public string? SystemPrompt { get; set; }
         public bool? MarkdownEnabled { get; set; }
+        public ReasoningDisplay? ReasoningDisplay { get; set; }
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
         public List<string>? InstructionFiles { get; set; }
     }
