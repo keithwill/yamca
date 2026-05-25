@@ -63,6 +63,8 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddMudServices();
 
+builder.Services.AddHttpClient();
+
 // --- Agent services -----------------------------------------------------------
 // Workspace is bound once at process start, either to a path supplied as the
 // first positional CLI argument or, if none was supplied, to the directory the

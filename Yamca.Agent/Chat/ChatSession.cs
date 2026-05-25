@@ -1,14 +1,13 @@
 using System.Text;
-using OpenAI.Chat;
 using Yamca.Agent.Workspace;
 
 namespace Yamca.Agent.Chat;
 
 /// <summary>Ordered message log for one chat conversation. All system-role content
 /// (user-authored system prompt, workspace context, instruction-file bodies) is
-/// concatenated into a single <see cref="SystemChatMessage"/> at index 0, separated
-/// by blank lines. This is for maximal compatibility with OpenAI-compatible servers
-/// whose chat templates only honor the first <c>system</c> role.</summary>
+/// concatenated into a single system message at index 0, separated by blank lines.
+/// This is for maximal compatibility with OpenAI-compatible servers whose chat
+/// templates only honor the first <c>system</c> role.</summary>
 public sealed class ChatSession
 {
     private readonly List<ChatMessage> _messages;
@@ -51,7 +50,7 @@ public sealed class ChatSession
         }
 
         var systemContent = sb.ToString();
-        _messages = new List<ChatMessage> { new SystemChatMessage(systemContent) };
+        _messages = new List<ChatMessage> { new ChatMessage(ChatRole.System, systemContent) };
         _estimatedChars = systemContent.Length;
     }
 
@@ -60,16 +59,13 @@ public sealed class ChatSession
     public IReadOnlyList<ChatMessage> Messages => _messages;
 
     /// <summary>Rough char/4 estimate of the input tokens the next LLM call will see.
-    /// Updated synchronously as messages are appended. The OpenAI .NET SDK 2.10 does
-    /// not yet expose <c>stream_options.include_usage</c> publicly (tracked in
-    /// openai-dotnet#616), so we estimate rather than depend on internals — swap to
-    /// server-reported usage when that property goes public.</summary>
+    /// Updated synchronously as messages are appended.</summary>
     public int EstimatedInputTokens => (_estimatedChars + 3) / 4;
 
     public void AppendUser(string content)
     {
         ArgumentNullException.ThrowIfNull(content);
-        _messages.Add(new UserChatMessage(content));
+        _messages.Add(new ChatMessage(ChatRole.User, content));
         _estimatedChars += content.Length;
     }
 
@@ -78,20 +74,16 @@ public sealed class ChatSession
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(toolCalls);
 
-        AssistantChatMessage msg;
-        if (toolCalls.Count == 0)
+        IReadOnlyList<ChatToolCall>? calls = null;
+        if (toolCalls.Count > 0)
         {
-            msg = new AssistantChatMessage(content);
+            var list = new List<ChatToolCall>(toolCalls.Count);
+            foreach (var tc in toolCalls)
+                list.Add(new ChatToolCall(tc.CallId, tc.ToolName, tc.ArgumentsJson));
+            calls = list;
         }
-        else
-        {
-            var calls = toolCalls.Select(tc => ChatToolCall.CreateFunctionToolCall(
-                tc.CallId, tc.ToolName, BinaryData.FromString(tc.ArgumentsJson))).ToList();
-            msg = new AssistantChatMessage(calls);
-            if (!string.IsNullOrEmpty(content))
-                msg.Content.Add(ChatMessageContentPart.CreateTextPart(content));
-        }
-        _messages.Add(msg);
+
+        _messages.Add(new ChatMessage(ChatRole.Assistant, content, ToolCalls: calls));
         _estimatedChars += content.Length;
         foreach (var tc in toolCalls)
             _estimatedChars += tc.ToolName.Length + tc.ArgumentsJson.Length;
@@ -101,7 +93,7 @@ public sealed class ChatSession
     {
         ArgumentNullException.ThrowIfNull(toolCallId);
         ArgumentNullException.ThrowIfNull(content);
-        _messages.Add(new ToolChatMessage(toolCallId, content));
+        _messages.Add(new ChatMessage(ChatRole.Tool, content, ToolCallId: toolCallId));
         _estimatedChars += content.Length;
     }
 }

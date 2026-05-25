@@ -51,11 +51,9 @@ public class ToolRegistryTests
         var chatTools = registry.GetChatTools();
 
         Assert.That(chatTools.Count, Is.EqualTo(5));
-        // Each function's parameters payload should be parseable JSON containing the
-        // schema declared by the corresponding tool (sanity-check the round-trip).
         for (var i = 0; i < chatTools.Count; i++)
         {
-            var payload = chatTools[i].FunctionParameters.ToString();
+            var payload = chatTools[i].ParametersJsonSchema;
             Assert.That(payload, Does.Contain("\"type\""));
             Assert.That(payload, Does.Contain("\"properties\""));
         }

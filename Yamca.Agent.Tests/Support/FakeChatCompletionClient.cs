@@ -1,4 +1,3 @@
-using OpenAI.Chat;
 using Yamca.Agent.Chat;
 
 namespace Yamca.Agent.Tests.Support;

@@ -1,6 +1,4 @@
-using System.ClientModel;
-using OpenAI;
-using OpenAI.Chat;
+using System.Net.Http.Headers;
 using Yamca.Agent.Chat;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Tools;
@@ -20,6 +18,7 @@ public sealed class ChatViewModel : IDisposable
     private readonly IPermissionStore _permissionStore;
     private readonly SessionSettings _settings;
     private readonly InstructionFilesLoader _instructionLoader;
+    private readonly IHttpClientFactory _httpFactory;
 
     private AgentLoop? _loop;
     private CancellationTokenSource? _runCts;
@@ -33,7 +32,8 @@ public sealed class ChatViewModel : IDisposable
         IApprovalCoordinator approvals,
         IPermissionStore permissionStore,
         SessionSettings settings,
-        InstructionFilesLoader instructionLoader)
+        InstructionFilesLoader instructionLoader,
+        IHttpClientFactory httpFactory)
     {
         _workspace = workspace;
         _tools = tools;
@@ -42,6 +42,7 @@ public sealed class ChatViewModel : IDisposable
         _permissionStore = permissionStore;
         _settings = settings;
         _instructionLoader = instructionLoader;
+        _httpFactory = httpFactory;
     }
 
     public List<ChatTurn> Turns { get; } = new();
@@ -134,12 +135,17 @@ public sealed class ChatViewModel : IDisposable
         if (_loop is not null) return;
 
         var endpoint = _settings.Endpoint;
-        var credential = new ApiKeyCredential(
-            string.IsNullOrWhiteSpace(endpoint.ApiKey) ? "sk-local" : endpoint.ApiKey);
-        var clientOptions = new OpenAIClientOptions { Endpoint = new Uri(endpoint.BaseUrl) };
         var modelId = string.IsNullOrWhiteSpace(endpoint.Model) ? "local-model" : endpoint.Model;
-        var chatClient = new ChatClient(modelId, credential, clientOptions);
-        var completion = new OpenAIChatCompletionClient(chatClient);
+        var baseUrl = endpoint.BaseUrl.EndsWith('/') ? endpoint.BaseUrl : endpoint.BaseUrl + "/";
+
+        var http = _httpFactory.CreateClient("yamca-llm");
+        http.BaseAddress = new Uri(baseUrl);
+        http.DefaultRequestHeaders.Authorization = string.IsNullOrWhiteSpace(endpoint.ApiKey)
+            ? null
+            : new AuthenticationHeaderValue("Bearer", endpoint.ApiKey);
+        http.Timeout = Timeout.InfiniteTimeSpan;
+
+        var completion = new OpenAIChatCompletionClient(http, modelId);
 
         var prompt = _settings.SystemPrompt;
         var hint = _settings.MarkdownEnabled

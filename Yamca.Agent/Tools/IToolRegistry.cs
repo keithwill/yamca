@@ -1,4 +1,4 @@
-using OpenAI.Chat;
+using Yamca.Agent.Chat;
 
 namespace Yamca.Agent.Tools;
 
@@ -8,6 +8,6 @@ public interface IToolRegistry
 
     ITool? Get(string name);
 
-    /// <summary>OpenAI ChatTool definitions to send with a chat completion request.</summary>
+    /// <summary>ChatTool definitions to send with a chat completion request.</summary>
     IReadOnlyList<ChatTool> GetChatTools();
 }

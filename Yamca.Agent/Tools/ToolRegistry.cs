@@ -1,4 +1,4 @@
-using OpenAI.Chat;
+using Yamca.Agent.Chat;
 
 namespace Yamca.Agent.Tools;
 
@@ -26,16 +26,6 @@ public sealed class ToolRegistry : IToolRegistry
     public ITool? Get(string name) =>
         name is not null && _byName.TryGetValue(name, out var tool) ? tool : null;
 
-    public IReadOnlyList<ChatTool> GetChatTools()
-    {
-        var result = new List<ChatTool>(_ordered.Count);
-        foreach (var tool in _ordered)
-        {
-            result.Add(ChatTool.CreateFunctionTool(
-                functionName: tool.Name,
-                functionDescription: tool.Description,
-                functionParameters: BinaryData.FromString(tool.ParametersSchema)));
-        }
-        return result;
-    }
+    public IReadOnlyList<ChatTool> GetChatTools() =>
+        _ordered.Select(t => new ChatTool(t.Name, t.Description, t.ParametersSchema)).ToList();
 }

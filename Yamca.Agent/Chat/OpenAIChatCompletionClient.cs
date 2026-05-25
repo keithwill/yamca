@@ -1,23 +1,35 @@
+using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
-using OpenAI.Chat;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Yamca.Agent.Chat;
 
-/// <summary>Production <see cref="IChatCompletionClient"/> backed by the official
-/// <see cref="OpenAI.Chat.ChatClient"/>. Aggregates the SDK's fragmented
-/// <see cref="StreamingChatCompletionUpdate"/> chunks into our simpler event stream
-/// and splits inline reasoning tags (<c>&lt;think&gt;</c>, <c>&lt;thinking&gt;</c>,
-/// <c>&lt;reasoning&gt;</c>) out of the visible content stream.</summary>
+/// <summary>Production <see cref="IChatCompletionClient"/> that POSTs to an
+/// OpenAI-compatible <c>/v1/chat/completions</c> endpoint and parses the SSE
+/// stream by hand. Surfaces <c>delta.reasoning_content</c> (the llama.cpp / vLLM
+/// extension) directly as <see cref="LlmReasoningDelta"/>; falls back to
+/// <see cref="ReasoningTagStripper"/> for servers that inline <c>&lt;think&gt;</c>
+/// tags into the visible content stream.</summary>
 public sealed class OpenAIChatCompletionClient : IChatCompletionClient
 {
-    private readonly ChatClient _client;
+    private static readonly JsonSerializerOptions RequestJson = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+    };
+
+    private readonly HttpClient _http;
+    private readonly string _model;
     private readonly IReadOnlyList<string> _reasoningTags;
 
-    public OpenAIChatCompletionClient(ChatClient client, IReadOnlyList<string>? reasoningTags = null)
+    public OpenAIChatCompletionClient(HttpClient http, string model, IReadOnlyList<string>? reasoningTags = null)
     {
-        ArgumentNullException.ThrowIfNull(client);
-        _client = client;
+        ArgumentNullException.ThrowIfNull(http);
+        ArgumentException.ThrowIfNullOrWhiteSpace(model);
+        _http = http;
+        _model = model;
         _reasoningTags = reasoningTags ?? ReasoningTagStripper.DefaultTags;
     }
 
@@ -26,60 +38,134 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient
         IReadOnlyList<ChatTool> tools,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var options = new ChatCompletionOptions();
-        foreach (var tool in tools) options.Tools.Add(tool);
+        var payload = BuildRequest(messages, tools);
+        var json = JsonSerializer.Serialize(payload, RequestJson);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var response = await _http
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var snippet = body.Length > 500 ? body[..500] + "…" : body;
+            throw new HttpRequestException(
+                $"Chat completion request failed: {(int)response.StatusCode} {response.ReasonPhrase}. Body: {snippet}");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
 
         var content = new StringBuilder();
         var reasoning = new StringBuilder();
         var stripper = new ReasoningTagStripper(_reasoningTags);
         var toolCalls = new SortedDictionary<int, ToolCallBuilder>();
+        var reasoningOpen = false;
         string? finishReason = null;
 
-        var stream = _client.CompleteChatStreamingAsync(messages, options, cancellationToken);
-        await foreach (var update in stream.ConfigureAwait(false))
+        while (true)
         {
-            foreach (var part in update.ContentUpdate)
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (line is null) break;
+            if (line.Length == 0) continue;
+            if (line.StartsWith(":", StringComparison.Ordinal)) continue; // SSE comment (keepalive)
+            if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+
+            var payloadText = line.AsSpan(5).TrimStart().ToString();
+            if (payloadText == "[DONE]") break;
+
+            JsonDocument doc;
+            try { doc = JsonDocument.Parse(payloadText); }
+            catch (JsonException) { continue; }
+
+            using (doc)
             {
-                if (string.IsNullOrEmpty(part.Text)) continue;
-                var split = stripper.Process(part.Text);
-                if (split.Reasoning.Length > 0)
+                if (!doc.RootElement.TryGetProperty("choices", out var choices) ||
+                    choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
                 {
-                    reasoning.Append(split.Reasoning);
-                    yield return new LlmReasoningDelta(split.Reasoning);
+                    continue;
                 }
-                if (split.Visible.Length > 0)
+
+                var choice = choices[0];
+                if (choice.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.Object)
                 {
-                    content.Append(split.Visible);
-                    yield return new LlmContentDelta(split.Visible);
+                    var reasoningText = TryGetString(delta, "reasoning_content");
+                    var contentText = TryGetString(delta, "content");
+
+                    if (!string.IsNullOrEmpty(reasoningText))
+                    {
+                        reasoning.Append(reasoningText);
+                        reasoningOpen = true;
+                        yield return new LlmReasoningDelta(reasoningText);
+                    }
+
+                    // Transition: reasoning streamed earlier, this chunk has no reasoning but has content.
+                    if (reasoningOpen && string.IsNullOrEmpty(reasoningText) && !string.IsNullOrEmpty(contentText))
+                    {
+                        reasoningOpen = false;
+                        yield return LlmReasoningClose.Instance;
+                    }
+
+                    if (!string.IsNullOrEmpty(contentText))
+                    {
+                        // Defense in depth: handle inline <think> tags for servers that don't extract reasoning.
+                        var split = stripper.Process(contentText);
+                        if (split.Reasoning.Length > 0)
+                        {
+                            reasoning.Append(split.Reasoning);
+                            yield return new LlmReasoningDelta(split.Reasoning);
+                        }
+                        if (split.Visible.Length > 0)
+                        {
+                            content.Append(split.Visible);
+                            yield return new LlmContentDelta(split.Visible);
+                        }
+                        if (split.JustClosed)
+                        {
+                            yield return LlmReasoningClose.Instance;
+                        }
+                    }
+
+                    if (delta.TryGetProperty("tool_calls", out var calls) &&
+                        calls.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var tc in calls.EnumerateArray())
+                        {
+                            var idx = tc.TryGetProperty("index", out var iEl) && iEl.TryGetInt32(out var i) ? i : 0;
+                            if (!toolCalls.TryGetValue(idx, out var builder))
+                            {
+                                builder = new ToolCallBuilder();
+                                toolCalls[idx] = builder;
+                            }
+                            var id = TryGetString(tc, "id");
+                            if (!string.IsNullOrEmpty(id)) builder.Id = id;
+
+                            if (tc.TryGetProperty("function", out var fn) && fn.ValueKind == JsonValueKind.Object)
+                            {
+                                var name = TryGetString(fn, "name");
+                                if (!string.IsNullOrEmpty(name)) builder.Name = name;
+                                var args = TryGetString(fn, "arguments");
+                                if (!string.IsNullOrEmpty(args)) builder.Arguments.Append(args);
+                            }
+                        }
+                    }
                 }
-                if (split.JustClosed)
+
+                if (choice.TryGetProperty("finish_reason", out var fr) && fr.ValueKind == JsonValueKind.String)
                 {
-                    yield return LlmReasoningClose.Instance;
+                    finishReason = fr.GetString();
                 }
             }
-
-            foreach (var tcu in update.ToolCallUpdates)
-            {
-                if (!toolCalls.TryGetValue(tcu.Index, out var builder))
-                {
-                    builder = new ToolCallBuilder();
-                    toolCalls[tcu.Index] = builder;
-                }
-                if (!string.IsNullOrEmpty(tcu.ToolCallId)) builder.Id = tcu.ToolCallId;
-                if (!string.IsNullOrEmpty(tcu.FunctionName)) builder.Name = tcu.FunctionName;
-                if (tcu.FunctionArgumentsUpdate is { } argsDelta)
-                {
-                    var s = argsDelta.ToString();
-                    if (!string.IsNullOrEmpty(s)) builder.Arguments.Append(s);
-                }
-            }
-
-            if (update.FinishReason is { } reason) finishReason = reason.ToString();
         }
 
-        // Drain any partial tag the stream ended on (e.g. a model that opened
-        // <think> but never closed it). Pushed to whichever sink the stripper
-        // is currently in.
+        // Drain any partial tag the stream ended on.
         var tail = stripper.Flush();
         if (tail.Reasoning.Length > 0)
         {
@@ -106,10 +192,76 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient
             content.ToString(), completed, finishReason, reasoning.ToString());
     }
 
+    private ChatRequestDto BuildRequest(IReadOnlyList<ChatMessage> messages, IReadOnlyList<ChatTool> tools)
+    {
+        var msgDtos = new List<MessageDto>(messages.Count);
+        foreach (var m in messages)
+        {
+            List<ToolCallDto>? tcs = null;
+            if (m.ToolCalls is { Count: > 0 })
+            {
+                tcs = new List<ToolCallDto>(m.ToolCalls.Count);
+                foreach (var tc in m.ToolCalls)
+                    tcs.Add(new ToolCallDto(tc.Id, "function", new FunctionCallDto(tc.Name, tc.ArgumentsJson)));
+            }
+            msgDtos.Add(new MessageDto(
+                Role: RoleString(m.Role),
+                Content: m.Content,
+                ToolCallId: m.ToolCallId,
+                ToolCalls: tcs));
+        }
+
+        List<ToolDto>? toolDtos = null;
+        if (tools.Count > 0)
+        {
+            toolDtos = new List<ToolDto>(tools.Count);
+            foreach (var t in tools)
+            {
+                using var schema = JsonDocument.Parse(t.ParametersJsonSchema);
+                toolDtos.Add(new ToolDto("function",
+                    new FunctionDefDto(t.Name, t.Description, schema.RootElement.Clone())));
+            }
+        }
+
+        return new ChatRequestDto(_model, Stream: true, msgDtos, toolDtos);
+    }
+
+    private static string RoleString(ChatRole role) => role switch
+    {
+        ChatRole.System => "system",
+        ChatRole.User => "user",
+        ChatRole.Assistant => "assistant",
+        ChatRole.Tool => "tool",
+        _ => throw new ArgumentOutOfRangeException(nameof(role), role, null),
+    };
+
+    private static string? TryGetString(JsonElement el, string name) =>
+        el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
     private sealed class ToolCallBuilder
     {
         public string? Id;
         public string? Name;
         public StringBuilder Arguments { get; } = new();
     }
+
+    private sealed record ChatRequestDto(
+        string Model,
+        bool Stream,
+        IReadOnlyList<MessageDto> Messages,
+        IReadOnlyList<ToolDto>? Tools);
+
+    private sealed record MessageDto(
+        string Role,
+        string? Content,
+        string? ToolCallId,
+        IReadOnlyList<ToolCallDto>? ToolCalls);
+
+    private sealed record ToolCallDto(string Id, string Type, FunctionCallDto Function);
+
+    private sealed record FunctionCallDto(string Name, string Arguments);
+
+    private sealed record ToolDto(string Type, FunctionDefDto Function);
+
+    private sealed record FunctionDefDto(string Name, string Description, JsonElement Parameters);
 }
