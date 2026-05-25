@@ -161,6 +161,91 @@ public sealed class SessionSettings : ISessionSettings
         return JsonSerializer.Serialize(blob, JsonOptions);
     }
 
+    private static readonly JsonSerializerOptions ExportJsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter() },
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    private const string ExportFormat = "yamca.settings";
+    private const int ExportVersion = 1;
+
+    public string ExportGlobal(bool includeApiKey)
+    {
+        var endpointDto = new EndpointDto
+        {
+            BaseUrl = Endpoint.BaseUrl,
+            ApiKey = includeApiKey ? Endpoint.ApiKey : string.Empty,
+            Model = Endpoint.Model,
+        };
+
+        var envelope = new SettingsExportEnvelope
+        {
+            Format = ExportFormat,
+            Version = ExportVersion,
+            Tier = "global",
+            ExportedAt = DateTimeOffset.UtcNow,
+            Global = new GlobalBlob
+            {
+                Endpoint = endpointDto,
+                SystemPrompt = SystemPrompt,
+                MarkdownEnabled = MarkdownEnabled,
+                Tools = MapToDto(Global),
+                InstructionFiles = NonEmpty(GlobalInstructionFiles),
+            },
+        };
+        return JsonSerializer.Serialize(envelope, ExportJsonOptions);
+    }
+
+    public sealed record ImportResult(bool Success, string? Error)
+    {
+        public static ImportResult Ok() => new(true, null);
+        public static ImportResult Fail(string error) => new(false, error);
+    }
+
+    public ImportResult ImportGlobal(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return ImportResult.Fail("File is empty.");
+
+        SettingsExportEnvelope? envelope;
+        try
+        {
+            envelope = JsonSerializer.Deserialize<SettingsExportEnvelope>(json, JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            return ImportResult.Fail($"Not valid JSON: {ex.Message}");
+        }
+
+        if (envelope is null)
+            return ImportResult.Fail("File is empty or not a JSON object.");
+        if (!string.Equals(envelope.Format, ExportFormat, StringComparison.Ordinal))
+            return ImportResult.Fail($"Unrecognized file format (expected \"{ExportFormat}\").");
+        if (envelope.Version != ExportVersion)
+            return ImportResult.Fail($"Unsupported export version {envelope.Version} (this build expects {ExportVersion}).");
+        if (envelope.Global is null)
+            return ImportResult.Fail("File is missing the \"global\" section.");
+
+        ApplyGlobalBlob(envelope.Global);
+        Changed?.Invoke(SettingsTier.Global);
+        return ImportResult.Ok();
+    }
+
+    private void ApplyGlobalBlob(GlobalBlob blob)
+    {
+        Endpoint = new EndpointSettings(
+            BaseUrl: blob.Endpoint?.BaseUrl ?? EndpointSettings.Default.BaseUrl,
+            ApiKey:  blob.Endpoint?.ApiKey  ?? EndpointSettings.Default.ApiKey,
+            Model:   blob.Endpoint?.Model   ?? EndpointSettings.Default.Model);
+        SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
+        MarkdownEnabled = blob.MarkdownEnabled ?? true;
+        Global = MapFromDto(blob.Tools);
+        GlobalInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
+    }
+
     public string SerializeProject()
     {
         var blob = new ProjectBlob
@@ -237,6 +322,15 @@ public sealed class SessionSettings : ISessionSettings
         public string? BaseUrl { get; set; }
         public string? ApiKey { get; set; }
         public string? Model { get; set; }
+    }
+
+    private sealed class SettingsExportEnvelope
+    {
+        public string? Format { get; set; }
+        public int Version { get; set; }
+        public string? Tier { get; set; }
+        public DateTimeOffset? ExportedAt { get; set; }
+        public GlobalBlob? Global { get; set; }
     }
 
     private sealed class ToolEntryDto

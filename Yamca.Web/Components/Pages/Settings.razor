@@ -277,6 +277,63 @@ else
         </MudButton>
     </MudPaper>
 
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-2">Backup</MudText>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            Export your Global settings to a JSON file, or restore them from one. Project settings (stored per workspace in <code>@ShortKey(Keys.ProjectKey)</code>) are not included.
+        </MudText>
+        <div class="d-flex align-center" style="gap: 8px;">
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="OpenExportDialog">
+                Export Global settings&hellip;
+            </MudButton>
+            <MudFileUpload T="IBrowserFile" Accept=".json,application/json" FilesChanged="OnImportFileChanged">
+                <CustomContent Context="fileUpload">
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.FileUpload"
+                               OnClick="@(() => fileUpload.OpenFilePickerAsync())">
+                        Import Global settings&hellip;
+                    </MudButton>
+                </CustomContent>
+            </MudFileUpload>
+        </div>
+    </MudPaper>
+
+    <MudDialog @bind-Visible="_exportDialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
+        <TitleContent>Export Global settings</TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Includes endpoint, system prompt, Markdown toggle, tool permissions, and global instruction files.
+            </MudText>
+            <MudCheckBox T="bool" Value="_exportIncludeApiKey"
+                         ValueChanged="@((bool v) => _exportIncludeApiKey = v)"
+                         Color="Color.Primary"
+                         Label="Include API key (sensitive)" />
+            @if (_exportIncludeApiKey)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+                    The exported file will contain your API key in plaintext.
+                </MudAlert>
+            }
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _exportDialogOpen = false)">Cancel</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="DownloadExport">Download</MudButton>
+        </DialogActions>
+    </MudDialog>
+
+    <MudDialog @bind-Visible="_importDialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
+        <TitleContent>Replace Global settings?</TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.body2">
+                Replace your Global settings with the contents of <code>@_importFileName</code>? This overwrites your endpoint, system prompt, tool permissions, and instruction files. Project settings are unaffected.
+            </MudText>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="CancelImport">Cancel</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ConfirmImport">Replace</MudButton>
+        </DialogActions>
+    </MudDialog>
+
     <MudDialog @bind-Visible="_pickerOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
         <TitleContent>
             Choose instruction file
@@ -331,6 +388,8 @@ else
     [Inject] private EndpointHealthService HealthService { get; set; } = default!;
     [Inject] private IWorkspace Workspace { get; set; } = default!;
     [Inject] private WorkspaceBrowser Browser { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private bool _hydrated;
     private int _tierIndex; // 0 = Project, 1 = Global
@@ -585,6 +644,87 @@ else
 
         _pickerOpen = false;
         _pickerRow = null;
+    }
+
+    private bool _exportDialogOpen;
+    private bool _exportIncludeApiKey;
+
+    private bool _importDialogOpen;
+    private string? _importFileName;
+    private string? _importJson;
+
+    private const long MaxImportBytes = 256 * 1024;
+
+    private void OpenExportDialog()
+    {
+        _exportIncludeApiKey = false;
+        _exportDialogOpen = true;
+    }
+
+    private async Task DownloadExport()
+    {
+        var json = Session.ExportGlobal(_exportIncludeApiKey);
+        var filename = $"yamca-settings-{DateTime.Now:yyyyMMdd-HHmm}.json";
+        _exportDialogOpen = false;
+        try
+        {
+            await JS.InvokeAsync<bool>("yamcaStorage.downloadText", filename, json, "application/json");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Download failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OnImportFileChanged(IBrowserFile? file)
+    {
+        if (file is null) return;
+        if (file.Size > MaxImportBytes)
+        {
+            Snackbar.Add($"File is too large (max {MaxImportBytes / 1024} KB).", Severity.Error);
+            return;
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream(MaxImportBytes);
+            using var reader = new StreamReader(stream);
+            _importJson = await reader.ReadToEndAsync();
+            _importFileName = file.Name;
+            _importDialogOpen = true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not read file: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void CancelImport()
+    {
+        _importDialogOpen = false;
+        _importJson = null;
+        _importFileName = null;
+    }
+
+    private void ConfirmImport()
+    {
+        if (_importJson is null) { _importDialogOpen = false; return; }
+
+        var result = Session.ImportGlobal(_importJson);
+        _importDialogOpen = false;
+        _importJson = null;
+        _importFileName = null;
+
+        if (result.Success)
+        {
+            SyncRowsFromSession();
+            Snackbar.Add("Global settings imported.", Severity.Success);
+            _ = ValidateModelAsync();
+        }
+        else
+        {
+            Snackbar.Add($"Import failed: {result.Error}", Severity.Error);
+        }
     }
 
     public void Dispose()
