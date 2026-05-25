@@ -16,9 +16,22 @@ builder.Services.AddMudServices();
 
 // --- Agent services -----------------------------------------------------------
 
-// Workspace is bound once at process start to the directory `dotnet run` was
-// invoked from. Per PLAN.md this is the sandbox root for the entire session.
-builder.Services.AddSingleton<IWorkspace>(_ => new Workspace(Environment.CurrentDirectory));
+// Workspace is bound once at process start, either to a path supplied as the
+// first positional CLI argument or, if none was supplied, to the directory the
+// process was launched from. Per PLAN.md this is the sandbox root for the
+// entire session.
+var workspaceRoot = Environment.CurrentDirectory;
+var positional = args.FirstOrDefault(a => !a.StartsWith('-'));
+if (positional is not null)
+{
+    if (!Directory.Exists(positional))
+    {
+        Console.Error.WriteLine($"Yamca.Web: working directory '{positional}' does not exist or is not a directory.");
+        Environment.Exit(1);
+    }
+    workspaceRoot = positional;
+}
+builder.Services.AddSingleton<IWorkspace>(_ => new Workspace(workspaceRoot));
 
 builder.Services.AddSingleton<ITool, ReadFileTool>();
 builder.Services.AddSingleton<ITool, WriteFileTool>();

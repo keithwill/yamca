@@ -19,9 +19,25 @@ public abstract class ChatTurnItem;
 
 public sealed class AssistantTextItem : ChatTurnItem
 {
-    public StringBuilder Buffer { get; } = new();
+    // StringBuilder is not thread-safe. The agent loop appends tokens from a
+    // background continuation while the Blazor renderer reads Text from the
+    // dispatcher — without this gate, ToString() can observe a half-resized
+    // chunk list and throw ArgumentOutOfRangeException.
+    private readonly StringBuilder _buffer = new();
+    private readonly object _gate = new();
+
     public bool IsComplete { get; internal set; }
-    public string Text => Buffer.ToString();
+
+    public void Append(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return;
+        lock (_gate) _buffer.Append(value);
+    }
+
+    public string Text
+    {
+        get { lock (_gate) return _buffer.ToString(); }
+    }
 }
 
 public enum ToolCallState

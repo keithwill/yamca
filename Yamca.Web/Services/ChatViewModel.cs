@@ -176,7 +176,7 @@ public sealed class ChatViewModel : IDisposable
         {
             case AssistantTokenEvent token:
                 var text = CurrentOrNewText(turn);
-                text.Buffer.Append(token.Delta);
+                text.Append(token.Delta);
                 break;
 
             case AssistantMessageEvent msg:
@@ -185,7 +185,7 @@ public sealed class ChatViewModel : IDisposable
                 if (current is null && !string.IsNullOrEmpty(msg.Content))
                 {
                     var t = new AssistantTextItem();
-                    t.Buffer.Append(msg.Content);
+                    t.Append(msg.Content);
                     turn.Items.Add(t);
                     current = t;
                 }
