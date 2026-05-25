@@ -18,11 +18,19 @@ public class ChatSessionTests
     }
 
     [Test]
-    public void WorkspaceConstructor_SubstitutesPlaceholder()
+    public void WorkspaceConstructor_KeepsPromptStableAndAppendsWorkspaceContext()
     {
         using var ws = new TempWorkspace();
-        var session = new ChatSession(ws.Workspace, "Operating in {{workspace}} now.");
-        Assert.That(session.SystemPrompt, Is.EqualTo($"Operating in {ws.RootPath} now."));
+        var session = new ChatSession(ws.Workspace, "you are a test");
+
+        Assert.That(session.SystemPrompt, Is.EqualTo("you are a test"),
+            "User-authored system prompt must stay byte-identical so it can be prompt-cached across sessions and workspaces.");
+        Assert.That(session.Messages, Has.Count.EqualTo(2));
+        Assert.That(session.Messages[0], Is.InstanceOf<SystemChatMessage>());
+        Assert.That(session.Messages[1], Is.InstanceOf<SystemChatMessage>());
+
+        var workspaceMessage = (SystemChatMessage)session.Messages[1];
+        Assert.That(workspaceMessage.Content[0].Text, Does.Contain(ws.RootPath));
     }
 
     [Test]

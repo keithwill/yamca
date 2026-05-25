@@ -7,7 +7,7 @@
 
 @if (!_hydrated)
 {
-    <MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+    <MudContainer MaxWidth="MaxWidth.Large" Class="pa-2">
         <MudProgressCircular Indeterminate="true" />
         <MudText Class="ml-2 d-inline" Typo="Typo.body2">Loading settings…</MudText>
     </MudContainer>
@@ -15,7 +15,7 @@
 else
 {
     <div class="yamca-page">
-        <div class="yamca-input-dock pa-4">
+        <div class="yamca-input-dock">
                 <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
                               Lines="3" Variant="Variant.Text" Immediate="true"
                               OnKeyDown="OnKeyDown" Disabled="Chat.IsRunning" />
@@ -41,7 +41,7 @@ else
         </div>
 
         <div class="yamca-scroll" @ref="_scrollContainer">
-            <MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+            <MudContainer MaxWidth="MaxWidth.Large" Class="pa-2">
                 @foreach (var turn in Chat.Turns)
                 {
                     <ChatTurnView Turn="turn" />

@@ -57,6 +57,9 @@ h1:focus {
 .yamca-input-dock {
     flex: 0 0 auto;
     z-index: 10;
+    padding-top: 1rem;
+    padding-right: 1rem;
+    padding-left: 1rem;
 }
 
 .yamca-markdown > :first-child { margin-top: 0; }

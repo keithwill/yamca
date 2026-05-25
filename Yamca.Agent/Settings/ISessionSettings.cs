@@ -11,8 +11,8 @@ public interface ISessionSettings
 
     EndpointSettings Endpoint { get; }
 
-    /// <summary>System prompt for new chat sessions. May contain the literal token
-    /// <c>{{workspace}}</c>, which <see cref="Chat.ChatSession"/> substitutes with the
-    /// workspace root path at session construction.</summary>
+    /// <summary>System prompt for new chat sessions. Kept stable across sessions so
+    /// upstream prompt caching can reuse it; per-session context like the workspace
+    /// path is appended by <see cref="Chat.ChatSession"/> as a separate message.</summary>
     string SystemPrompt { get; }
 }

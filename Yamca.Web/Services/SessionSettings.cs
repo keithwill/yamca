@@ -13,7 +13,7 @@ namespace Yamca.Web.Services;
 public sealed class SessionSettings : ISessionSettings
 {
     private const string DefaultSystemPrompt =
-        "You are a coding assistant operating in {{workspace}}.";
+        "You are a coding assistant.";
 
     public ToolSettingsMap Project { get; private set; } = ToolSettingsMap.Empty;
     public ToolSettingsMap Global { get; private set; } = ToolSettingsMap.Empty;

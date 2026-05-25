@@ -3,9 +3,10 @@ using Yamca.Agent.Workspace;
 
 namespace Yamca.Agent.Chat;
 
-/// <summary>Ordered message log for one chat conversation. Holds the
-/// <see cref="OpenAI.Chat.ChatMessage"/>s in the exact order the LLM expects them,
-/// with the system prompt always at index 0.</summary>
+/// <summary>Ordered message log for one chat conversation. The user's system prompt
+/// sits at index 0 unchanged across sessions (so prompt-caching can reuse it), and
+/// any per-session context (e.g. workspace path) is appended as a second system
+/// message at index 1.</summary>
 public sealed class ChatSession
 {
     private readonly List<ChatMessage> _messages;
@@ -17,9 +18,11 @@ public sealed class ChatSession
         _messages = new List<ChatMessage> { new SystemChatMessage(systemPrompt) };
     }
 
-    public ChatSession(IWorkspace workspace, string systemPromptTemplate)
-        : this(RenderSystemPrompt(systemPromptTemplate, workspace))
+    public ChatSession(IWorkspace workspace, string systemPrompt)
+        : this(systemPrompt)
     {
+        ArgumentNullException.ThrowIfNull(workspace);
+        _messages.Add(new SystemChatMessage($"Current workspace: {workspace.RootPath}"));
     }
 
     public string SystemPrompt { get; }
@@ -58,12 +61,5 @@ public sealed class ChatSession
         ArgumentNullException.ThrowIfNull(toolCallId);
         ArgumentNullException.ThrowIfNull(content);
         _messages.Add(new ToolChatMessage(toolCallId, content));
-    }
-
-    private static string RenderSystemPrompt(string template, IWorkspace workspace)
-    {
-        ArgumentNullException.ThrowIfNull(template);
-        ArgumentNullException.ThrowIfNull(workspace);
-        return template.Replace("{{workspace}}", workspace.RootPath, StringComparison.Ordinal);
     }
 }
