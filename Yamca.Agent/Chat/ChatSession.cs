@@ -1,39 +1,55 @@
+using System.Text;
 using OpenAI.Chat;
 using Yamca.Agent.Workspace;
 
 namespace Yamca.Agent.Chat;
 
-/// <summary>Ordered message log for one chat conversation. The user's system prompt
-/// sits at index 0 unchanged across sessions (so prompt-caching can reuse it), and
-/// any per-session context (e.g. workspace path) is appended as a second system
-/// message at index 1.</summary>
+/// <summary>Ordered message log for one chat conversation. All system-role content
+/// (user-authored system prompt, workspace context, instruction-file bodies) is
+/// concatenated into a single <see cref="SystemChatMessage"/> at index 0, separated
+/// by blank lines. This is for maximal compatibility with OpenAI-compatible servers
+/// whose chat templates only honor the first <c>system</c> role.</summary>
 public sealed class ChatSession
 {
     private readonly List<ChatMessage> _messages;
 
     public ChatSession(string systemPrompt)
+        : this(systemPrompt, workspace: null, instructionMessages: null)
     {
-        ArgumentNullException.ThrowIfNull(systemPrompt);
-        SystemPrompt = systemPrompt;
-        _messages = new List<ChatMessage> { new SystemChatMessage(systemPrompt) };
     }
 
     public ChatSession(IWorkspace workspace, string systemPrompt)
-        : this(systemPrompt)
+        : this(systemPrompt, workspace, instructionMessages: null)
     {
         ArgumentNullException.ThrowIfNull(workspace);
-        _messages.Add(new SystemChatMessage($"Current workspace: {workspace.RootPath}"));
     }
 
     public ChatSession(IWorkspace workspace, string systemPrompt, IReadOnlyList<string> instructionMessages)
-        : this(workspace, systemPrompt)
+        : this(systemPrompt, workspace, instructionMessages)
     {
+        ArgumentNullException.ThrowIfNull(workspace);
         ArgumentNullException.ThrowIfNull(instructionMessages);
-        foreach (var instruction in instructionMessages)
+    }
+
+    private ChatSession(string systemPrompt, IWorkspace? workspace, IReadOnlyList<string>? instructionMessages)
+    {
+        ArgumentNullException.ThrowIfNull(systemPrompt);
+        SystemPrompt = systemPrompt;
+
+        var sb = new StringBuilder(systemPrompt);
+        if (workspace is not null)
+            sb.Append("\n\nCurrent workspace: ").Append(workspace.RootPath);
+
+        if (instructionMessages is not null)
         {
-            if (string.IsNullOrWhiteSpace(instruction)) continue;
-            _messages.Add(new SystemChatMessage(instruction));
+            foreach (var instruction in instructionMessages)
+            {
+                if (string.IsNullOrWhiteSpace(instruction)) continue;
+                sb.Append("\n\n").Append(instruction);
+            }
         }
+
+        _messages = new List<ChatMessage> { new SystemChatMessage(sb.ToString()) };
     }
 
     public string SystemPrompt { get; }
