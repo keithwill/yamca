@@ -19,6 +19,17 @@ public sealed record LlmReasoningClose : LlmStreamEvent
     public static readonly LlmReasoningClose Instance = new();
 }
 
+/// <summary>Streaming token-usage snapshot reported by the server. Emitted
+/// once per assistant turn when the server supports it (OpenAI
+/// <c>stream_options.include_usage</c>, llama-server's <c>timings</c>/<c>usage</c>
+/// trailer, vLLM's terminal usage chunk). Lets the UI display real prompt-token
+/// totals rather than our char/4 estimate. <paramref name="CachedTokens"/> is
+/// the llama-server prompt-cache hit count when available.</summary>
+public sealed record LlmUsageUpdate(
+    int PromptTokens,
+    int CompletionTokens,
+    int? CachedTokens = null) : LlmStreamEvent;
+
 /// <summary>Final event for one assistant turn. The adapter is responsible for
 /// aggregating fragmented tool-call deltas into completed requests before
 /// emitting this. <paramref name="Reasoning"/> is the full concatenated reasoning

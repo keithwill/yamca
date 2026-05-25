@@ -75,6 +75,67 @@ public class EndpointHealthServiceTests
     }
 
     [Test]
+    public async Task DetectCapabilities_PrefersLlamaCppProps_NCtx()
+    {
+        // /props is at the server root, not under /v1/.
+        var handler = new FakeHttpMessageHandler((req, _) =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (path == "/props")
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """{"default_generation_settings":{"n_ctx":8192,"id":0}}""",
+                        Encoding.UTF8, "application/json"),
+                });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        });
+        var svc = new EndpointHealthService(new StubFactory(handler));
+
+        var caps = await svc.DetectCapabilitiesAsync(NewEndpoint());
+
+        Assert.That(caps.MaxContextTokens, Is.EqualTo(8192));
+        Assert.That(caps.Source, Does.Contain("llama"));
+    }
+
+    [Test]
+    public async Task DetectCapabilities_FallsBackToVllmModels_MaxModelLen()
+    {
+        var handler = new FakeHttpMessageHandler((req, _) =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (path == "/props")
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            if (path == "/v1/models")
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """{"data":[{"id":"test-model","max_model_len":32768}]}""",
+                        Encoding.UTF8, "application/json"),
+                });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        });
+        var svc = new EndpointHealthService(new StubFactory(handler));
+
+        var caps = await svc.DetectCapabilitiesAsync(NewEndpoint());
+
+        Assert.That(caps.MaxContextTokens, Is.EqualTo(32768));
+        Assert.That(caps.Source, Does.Contain("vLLM").Or.Contain("max_model_len"));
+    }
+
+    [Test]
+    public async Task DetectCapabilities_BothMissing_ReturnsUnknown()
+    {
+        var handler = new FakeHttpMessageHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)));
+        var svc = new EndpointHealthService(new StubFactory(handler));
+
+        var caps = await svc.DetectCapabilitiesAsync(NewEndpoint());
+
+        Assert.That(caps.MaxContextTokens, Is.Null);
+    }
+
+    [Test]
     public async Task ApiKey_IsSentAsBearerHeader_WhenPresent()
     {
         var body = """{"object":"list","data":[]}""";

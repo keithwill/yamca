@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using Yamca.Agent.Chat;
 using Yamca.Agent.Permissions;
+using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
 using Yamca.Agent.Workspace;
 
@@ -19,11 +20,14 @@ public sealed class ChatViewModel : IDisposable
     private readonly SessionSettings _settings;
     private readonly InstructionFilesLoader _instructionLoader;
     private readonly IHttpClientFactory _httpFactory;
+    private readonly EndpointHealthService _endpointHealth;
 
     private AgentLoop? _loop;
     private CancellationTokenSource? _runCts;
     private Task? _approvalConsumer;
     private CancellationTokenSource? _consumerCts;
+    private int? _lastReportedPromptTokens;
+    private int? _lastReportedCompletionTokens;
 
     public ChatViewModel(
         IWorkspace workspace,
@@ -33,7 +37,8 @@ public sealed class ChatViewModel : IDisposable
         IPermissionStore permissionStore,
         SessionSettings settings,
         InstructionFilesLoader instructionLoader,
-        IHttpClientFactory httpFactory)
+        IHttpClientFactory httpFactory,
+        EndpointHealthService endpointHealth)
     {
         _workspace = workspace;
         _tools = tools;
@@ -43,6 +48,7 @@ public sealed class ChatViewModel : IDisposable
         _settings = settings;
         _instructionLoader = instructionLoader;
         _httpFactory = httpFactory;
+        _endpointHealth = endpointHealth;
     }
 
     public List<ChatTurn> Turns { get; } = new();
@@ -50,10 +56,33 @@ public sealed class ChatViewModel : IDisposable
     public bool IsRunning { get; private set; }
     public string? Error { get; private set; }
 
-    /// <summary>Char/4 estimate of input tokens currently in the conversation.
-    /// Zero before the first message. (Server-reported usage is unavailable until
-    /// the OpenAI .NET SDK exposes stream_options.include_usage publicly.)</summary>
-    public int CurrentContextTokens => _loop?.Session.EstimatedInputTokens ?? 0;
+    /// <summary>Best-available count of input tokens currently in the conversation.
+    /// Prefers the server-reported <c>prompt_tokens</c> from the last streaming
+    /// usage chunk (accurate, but lags new messages until the next response).
+    /// Falls back to the char/4 estimate while a turn is in flight or before any
+    /// usage has been reported. Whichever is larger wins, so the badge only
+    /// climbs.</summary>
+    public int CurrentContextTokens
+    {
+        get
+        {
+            var estimate = _loop?.Session.EstimatedInputTokens ?? 0;
+            var reported = _lastReportedPromptTokens ?? 0;
+            return estimate > reported ? estimate : reported;
+        }
+    }
+
+    /// <summary>Completion tokens reported by the server for the most recent
+    /// assistant turn. Null until the first <see cref="UsageUpdateEvent"/>.</summary>
+    public int? LastCompletionTokens => _lastReportedCompletionTokens;
+
+    /// <summary>Configured context window reported by the backend at connect time
+    /// (llama.cpp <c>/props</c> or vLLM <c>/v1/models</c>). Null when the backend
+    /// did not expose this — UI falls back to a single-number badge.</summary>
+    public int? MaxContextTokens { get; private set; }
+
+    /// <summary>Short label for the source of <see cref="MaxContextTokens"/>, for tooltips.</summary>
+    public string? MaxContextSource { get; private set; }
 
     /// <summary>Fired on any state mutation. The Blazor page hooks this and calls
     /// <c>InvokeAsync(StateHasChanged)</c> to re-render on the renderer dispatcher.</summary>
@@ -126,6 +155,8 @@ public sealed class ChatViewModel : IDisposable
         Turns.Clear();
         Approvals.Clear();
         _loop = null;     // forces a fresh ChatSession (system prompt re-rendered) on next send
+        _lastReportedPromptTokens = null;
+        _lastReportedCompletionTokens = null;
         Error = null;
         Raise();
     }
@@ -159,6 +190,24 @@ public sealed class ChatViewModel : IDisposable
             session, completion, _tools, _permissions, _approvals, _permissionStore, _workspace);
 
         StartApprovalConsumer();
+        _ = DetectCapabilitiesAsync(endpoint);
+    }
+
+    private async Task DetectCapabilitiesAsync(EndpointSettings endpoint)
+    {
+        // Best-effort probe at connect time. Any failure leaves the badge in
+        // single-number (estimate-only) mode — never block the user.
+        try
+        {
+            var caps = await _endpointHealth.DetectCapabilitiesAsync(endpoint).ConfigureAwait(false);
+            if (caps.MaxContextTokens is > 0)
+            {
+                MaxContextTokens = caps.MaxContextTokens;
+                MaxContextSource = caps.Source;
+                Raise();
+            }
+        }
+        catch { /* capability detection is non-essential */ }
     }
 
     private void StartApprovalConsumer()
@@ -250,6 +299,11 @@ public sealed class ChatViewModel : IDisposable
                         Result = denied.Reason,
                     });
                 }
+                break;
+
+            case UsageUpdateEvent usage:
+                _lastReportedPromptTokens = usage.PromptTokens;
+                _lastReportedCompletionTokens = usage.CompletionTokens;
                 break;
 
             case TurnCompleteEvent: /* nothing to do — finally{} handles it */ break;

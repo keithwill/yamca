@@ -227,6 +227,58 @@ public class OpenAIChatCompletionClientTests
     }
 
     [Test]
+    public async Task UsageChunk_EmitsLlmUsageUpdate()
+    {
+        // OpenAI/vLLM emit a terminal frame with empty choices + a usage block
+        // when stream_options.include_usage was set.
+        var sse = Sse(
+            """{"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}""",
+            """{"choices":[],"usage":{"prompt_tokens":123,"completion_tokens":4,"total_tokens":127,"prompt_tokens_details":{"cached_tokens":50}}}""");
+
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(SseResponse(sse)));
+        var client = new OpenAIChatCompletionClient(ClientFor(handler), "test-model");
+
+        var events = await Collect(client.StreamAsync(Msgs, Array.Empty<ChatTool>(), CancellationToken.None));
+
+        var usage = events.OfType<LlmUsageUpdate>().Single();
+        Assert.That(usage.PromptTokens, Is.EqualTo(123));
+        Assert.That(usage.CompletionTokens, Is.EqualTo(4));
+        Assert.That(usage.CachedTokens, Is.EqualTo(50));
+    }
+
+    [Test]
+    public async Task UsageChunk_LlamaCppTimings_ProvidesCacheN()
+    {
+        // llama-server: usage without prompt_tokens_details, but with sibling `timings.cache_n`.
+        var sse = Sse(
+            """{"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}""",
+            """{"choices":[],"usage":{"prompt_tokens":200,"completion_tokens":10},"timings":{"cache_n":42,"prompt_n":158}}""");
+
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(SseResponse(sse)));
+        var client = new OpenAIChatCompletionClient(ClientFor(handler), "test-model");
+
+        var events = await Collect(client.StreamAsync(Msgs, Array.Empty<ChatTool>(), CancellationToken.None));
+
+        var usage = events.OfType<LlmUsageUpdate>().Single();
+        Assert.That(usage.PromptTokens, Is.EqualTo(200));
+        Assert.That(usage.CachedTokens, Is.EqualTo(42));
+    }
+
+    [Test]
+    public async Task RequestBody_IncludesStreamOptionsIncludeUsage()
+    {
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(SseResponse(Sse(
+            """{"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}"""))));
+        var client = new OpenAIChatCompletionClient(ClientFor(handler), "test-model");
+
+        await Collect(client.StreamAsync(Msgs, Array.Empty<ChatTool>(), CancellationToken.None));
+
+        using var doc = JsonDocument.Parse(handler.RequestBodies[0]);
+        var so = doc.RootElement.GetProperty("stream_options");
+        Assert.That(so.GetProperty("include_usage").GetBoolean(), Is.True);
+    }
+
+    [Test]
     public async Task SseCommentLines_AreSkipped()
     {
         // Many local servers emit `: keepalive\n` lines while idle.

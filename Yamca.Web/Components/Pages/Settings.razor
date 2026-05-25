@@ -119,9 +119,14 @@ else
         <MudTextField Value="Session.SystemPrompt"
                       ValueChanged="@((string v) => UpdateSystemPrompt(v))"
                       T="string" Variant="Variant.Outlined" Lines="4" />
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-2">Chat</MudText>
+
         <MudSwitch T="bool" Value="Session.MarkdownEnabled"
                    ValueChanged="@((bool v) => Session.SetMarkdownEnabled(v))"
-                   Color="Color.Primary" Class="mt-3"
+                   Color="Color.Primary"
                    Label="Markdown rendering" />
         <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
             A capability hint is appended to the system prompt either way: when on, the model is told its replies are rendered as Markdown; when off, it's told to reply in plain text.

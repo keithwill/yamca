@@ -87,6 +87,15 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient
 
             using (doc)
             {
+                // Usage chunks (OpenAI stream_options.include_usage / vLLM /
+                // llama-server) arrive as their own SSE frame, either with an
+                // empty choices array or none at all. Surface them as their own
+                // event so the UI can render real token counts live.
+                if (TryReadUsage(doc.RootElement, out var usage))
+                {
+                    yield return usage;
+                }
+
                 if (!doc.RootElement.TryGetProperty("choices", out var choices) ||
                     choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
                 {
@@ -223,8 +232,48 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient
             }
         }
 
-        return new ChatRequestDto(_model, Stream: true, msgDtos, toolDtos);
+        return new ChatRequestDto(
+            _model,
+            Stream: true,
+            msgDtos,
+            toolDtos,
+            StreamOptions: new StreamOptionsDto(IncludeUsage: true));
     }
+
+    private static bool TryReadUsage(JsonElement root, out LlmUsageUpdate update)
+    {
+        if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+        {
+            var prompt = TryGetInt(usage, "prompt_tokens") ?? 0;
+            var completion = TryGetInt(usage, "completion_tokens") ?? 0;
+
+            int? cached = null;
+            if (usage.TryGetProperty("prompt_tokens_details", out var details) &&
+                details.ValueKind == JsonValueKind.Object)
+            {
+                cached = TryGetInt(details, "cached_tokens");
+            }
+
+            // llama-server attaches a sibling `timings` block with prompt-cache hits.
+            if (cached is null && root.TryGetProperty("timings", out var timings) &&
+                timings.ValueKind == JsonValueKind.Object)
+            {
+                cached = TryGetInt(timings, "cache_n");
+            }
+
+            if (prompt > 0 || completion > 0)
+            {
+                update = new LlmUsageUpdate(prompt, completion, cached);
+                return true;
+            }
+        }
+
+        update = default!;
+        return false;
+    }
+
+    private static int? TryGetInt(JsonElement el, string name) =>
+        el.TryGetProperty(name, out var v) && v.TryGetInt32(out var i) ? i : null;
 
     private static string RoleString(ChatRole role) => role switch
     {
@@ -249,7 +298,10 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient
         string Model,
         bool Stream,
         IReadOnlyList<MessageDto> Messages,
-        IReadOnlyList<ToolDto>? Tools);
+        IReadOnlyList<ToolDto>? Tools,
+        StreamOptionsDto? StreamOptions);
+
+    private sealed record StreamOptionsDto(bool IncludeUsage);
 
     private sealed record MessageDto(
         string Role,

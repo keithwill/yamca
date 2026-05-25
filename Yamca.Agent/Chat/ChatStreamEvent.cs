@@ -35,6 +35,16 @@ public sealed record ToolCallResultEvent(string CallId, string ToolName, bool Is
 /// The tool was NOT executed; the error is fed back to the model as a tool message.</summary>
 public sealed record ToolDeniedEvent(string CallId, string ToolName, string Reason) : ChatStreamEvent;
 
+/// <summary>Server-reported token usage for the in-flight assistant turn.
+/// Surfaced when the OpenAI-compatible server emits a usage chunk
+/// (<c>stream_options.include_usage</c> on OpenAI / vLLM, or llama-server's
+/// terminal <c>usage</c>+<c>timings</c> SSE frame). Lets the UI show actual
+/// prompt-token counts instead of our char/4 estimate.</summary>
+public sealed record UsageUpdateEvent(
+    int PromptTokens,
+    int CompletionTokens,
+    int? CachedTokens) : ChatStreamEvent;
+
 /// <summary>The whole user turn has finished — assistant produced a plain reply,
 /// or the iteration cap was hit, or the user cancelled.</summary>
 public sealed record TurnCompleteEvent(TurnCompletionReason Reason) : ChatStreamEvent;

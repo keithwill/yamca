@@ -80,6 +80,9 @@ public sealed class AgentLoop
                     case LlmReasoningClose:
                         yield return ReasoningCompleteEvent.Instance;
                         break;
+                    case LlmUsageUpdate usage:
+                        yield return new UsageUpdateEvent(usage.PromptTokens, usage.CompletionTokens, usage.CachedTokens);
+                        break;
                     case LlmAssistantTurnComplete done:
                         content = done.Content;
                         toolCalls = done.ToolCalls;

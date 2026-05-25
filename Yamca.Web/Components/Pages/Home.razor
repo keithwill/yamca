@@ -16,8 +16,8 @@ else
 {
     <div class="yamca-page">
         <div class="yamca-input-dock">
-            <div class="yamca-context-badge" title="Estimated context size (chars / 4)">
-                ~@Chat.CurrentContextTokens.ToString("N0") tokens
+            <div class="yamca-context-badge" title="@ContextBadgeTooltip()">
+                @ContextBadgeText()
             </div>
             <div class="yamca-prompt-wrap">
                 <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
@@ -106,6 +106,25 @@ else
     }
 
     private void OnCancel() => Chat.Cancel();
+
+    private string ContextBadgeText()
+    {
+        var used = Chat.CurrentContextTokens.ToString("N0");
+        return Chat.MaxContextTokens is int max
+            ? $"{used} / {max:N0} tokens"
+            : $"~{used} tokens";
+    }
+
+    private string ContextBadgeTooltip()
+    {
+        if (Chat.MaxContextTokens is int max)
+        {
+            var pct = max > 0 ? (Chat.CurrentContextTokens * 100.0 / max).ToString("0.0") : "0";
+            var src = Chat.MaxContextSource ?? "server";
+            return $"{pct}% of context used. Max from {src}.";
+        }
+        return "Estimated context size (chars / 4). Backend did not report a max.";
+    }
 
 private async Task SafeInvokeAsync(string identifier, params object?[] args)
     {
