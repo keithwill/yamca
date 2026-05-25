@@ -15,11 +15,18 @@ public sealed class SessionSettings : ISessionSettings
     private const string DefaultSystemPrompt =
         "You are a coding assistant.";
 
+    public static readonly IReadOnlyList<string> DefaultGlobalInstructionFiles =
+        new[] { "AGENTS.md", "CLAUDE.md", "GEMINI.md" };
+
     public ToolSettingsMap Project { get; private set; } = ToolSettingsMap.Empty;
     public ToolSettingsMap Global { get; private set; } = ToolSettingsMap.Empty;
     public EndpointSettings Endpoint { get; private set; } = EndpointSettings.Default;
     public string SystemPrompt { get; private set; } = DefaultSystemPrompt;
     public bool MarkdownEnabled { get; private set; } = true;
+
+    public IReadOnlyList<string> GlobalInstructionFiles { get; private set; } = DefaultGlobalInstructionFiles;
+    public IReadOnlyList<string> ProjectInstructionFiles { get; private set; } = Array.Empty<string>();
+    public bool ProjectInheritsGlobalInstructions { get; private set; } = true;
 
     /// <summary>Fired when the named tier has been mutated. The handler is expected
     /// to serialize that tier and write it to localStorage.</summary>
@@ -45,6 +52,24 @@ public sealed class SessionSettings : ISessionSettings
         if (MarkdownEnabled == enabled) return;
         MarkdownEnabled = enabled;
         Changed?.Invoke(SettingsTier.Global);
+    }
+
+    public void SetInstructionFiles(SettingsTier tier, IReadOnlyList<string> paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var normalized = paths.Select(p => p?.Trim() ?? string.Empty).ToArray();
+
+        if (tier == SettingsTier.Project) ProjectInstructionFiles = normalized;
+        else GlobalInstructionFiles = normalized;
+
+        Changed?.Invoke(tier);
+    }
+
+    public void SetProjectInheritsGlobalInstructions(bool inherits)
+    {
+        if (ProjectInheritsGlobalInstructions == inherits) return;
+        ProjectInheritsGlobalInstructions = inherits;
+        Changed?.Invoke(SettingsTier.Project);
     }
 
     /// <summary>Replace a single tool entry in the given tier, or pass <c>null</c> to remove.</summary>
@@ -92,6 +117,9 @@ public sealed class SessionSettings : ISessionSettings
         SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
         MarkdownEnabled = blob.MarkdownEnabled ?? true;
         Global = firstRun ? DefaultGlobalToolSettings() : MapFromDto(blob.Tools);
+        GlobalInstructionFiles = firstRun
+            ? DefaultGlobalInstructionFiles
+            : (blob.InstructionFiles?.ToArray() ?? Array.Empty<string>());
     }
 
     // Seeded only when no Global blob has ever been written to localStorage.
@@ -116,6 +144,8 @@ public sealed class SessionSettings : ISessionSettings
     {
         var blob = TryDeserialize<ProjectBlob>(json) ?? new ProjectBlob();
         Project = MapFromDto(blob.Tools);
+        ProjectInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
+        ProjectInheritsGlobalInstructions = blob.InheritsGlobalInstructions ?? true;
     }
 
     public string SerializeGlobal()
@@ -126,14 +156,26 @@ public sealed class SessionSettings : ISessionSettings
             SystemPrompt = SystemPrompt,
             MarkdownEnabled = MarkdownEnabled,
             Tools = MapToDto(Global),
+            InstructionFiles = NonEmpty(GlobalInstructionFiles),
         };
         return JsonSerializer.Serialize(blob, JsonOptions);
     }
 
     public string SerializeProject()
     {
-        var blob = new ProjectBlob { Tools = MapToDto(Project) };
+        var blob = new ProjectBlob
+        {
+            Tools = MapToDto(Project),
+            InstructionFiles = NonEmpty(ProjectInstructionFiles),
+            InheritsGlobalInstructions = ProjectInheritsGlobalInstructions ? null : false,
+        };
         return JsonSerializer.Serialize(blob, JsonOptions);
+    }
+
+    private static List<string>? NonEmpty(IReadOnlyList<string> source)
+    {
+        var trimmed = source.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+        return trimmed.Count == 0 ? null : trimmed;
     }
 
     private static T? TryDeserialize<T>(string? json) where T : class
@@ -180,11 +222,14 @@ public sealed class SessionSettings : ISessionSettings
         public string? SystemPrompt { get; set; }
         public bool? MarkdownEnabled { get; set; }
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
+        public List<string>? InstructionFiles { get; set; }
     }
 
     private sealed class ProjectBlob
     {
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
+        public List<string>? InstructionFiles { get; set; }
+        public bool? InheritsGlobalInstructions { get; set; }
     }
 
     private sealed class EndpointDto

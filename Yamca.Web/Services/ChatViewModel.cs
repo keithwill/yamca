@@ -19,6 +19,7 @@ public sealed class ChatViewModel : IDisposable
     private readonly IApprovalCoordinator _approvals;
     private readonly IPermissionStore _permissionStore;
     private readonly SessionSettings _settings;
+    private readonly InstructionFilesLoader _instructionLoader;
 
     private AgentLoop? _loop;
     private CancellationTokenSource? _runCts;
@@ -31,7 +32,8 @@ public sealed class ChatViewModel : IDisposable
         IPermissionResolver permissions,
         IApprovalCoordinator approvals,
         IPermissionStore permissionStore,
-        SessionSettings settings)
+        SessionSettings settings,
+        InstructionFilesLoader instructionLoader)
     {
         _workspace = workspace;
         _tools = tools;
@@ -39,6 +41,7 @@ public sealed class ChatViewModel : IDisposable
         _approvals = approvals;
         _permissionStore = permissionStore;
         _settings = settings;
+        _instructionLoader = instructionLoader;
     }
 
     public List<ChatTurn> Turns { get; } = new();
@@ -138,7 +141,8 @@ public sealed class ChatViewModel : IDisposable
             ? "Your responses are rendered as GitHub-flavored Markdown — use fenced code blocks for code, and standard Markdown for emphasis, lists, and tables."
             : "Your responses are rendered as plain text. Do NOT use Markdown formatting: no `backticks`, no **bold**/*italics*, no #headings, no fenced code blocks, no bullet/numbered lists. Write code and identifiers inline as plain text.";
         prompt = (string.IsNullOrWhiteSpace(prompt) ? "" : prompt + "\n\n") + hint;
-        var session = new ChatSession(_workspace, prompt);
+        var instructions = _instructionLoader.Load(_settings, _workspace);
+        var session = new ChatSession(_workspace, prompt, instructions);
 
         _loop = new AgentLoop(
             session, completion, _tools, _permissions, _approvals, _permissionStore, _workspace);

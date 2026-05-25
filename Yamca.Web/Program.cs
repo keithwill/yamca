@@ -39,6 +39,8 @@ builder.Services.AddScoped<EndpointHealthService>();
 builder.Services.AddScoped<LocalStorage>();
 builder.Services.AddScoped<WorkspaceKey>();
 builder.Services.AddScoped<SettingsHydrator>();
+builder.Services.AddScoped<InstructionFilesLoader>();
+builder.Services.AddScoped<WorkspaceBrowser>();
 builder.Services.AddScoped<ChatViewModel>();
 
 var app = builder.Build();

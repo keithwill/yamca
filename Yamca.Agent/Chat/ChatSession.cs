@@ -25,6 +25,17 @@ public sealed class ChatSession
         _messages.Add(new SystemChatMessage($"Current workspace: {workspace.RootPath}"));
     }
 
+    public ChatSession(IWorkspace workspace, string systemPrompt, IReadOnlyList<string> instructionMessages)
+        : this(workspace, systemPrompt)
+    {
+        ArgumentNullException.ThrowIfNull(instructionMessages);
+        foreach (var instruction in instructionMessages)
+        {
+            if (string.IsNullOrWhiteSpace(instruction)) continue;
+            _messages.Add(new SystemChatMessage(instruction));
+        }
+    }
+
     public string SystemPrompt { get; }
 
     public IReadOnlyList<ChatMessage> Messages => _messages;
