@@ -101,6 +101,12 @@ else
     </MudDialog>
 
     <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-2">Workspace</MudText>
+        <MudText Typo="Typo.body2">Root: <code>@Workspace.RootPath</code></MudText>
+        <MudText Typo="Typo.caption">localStorage key: <code>@Keys.ProjectKey</code></MudText>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
         <MudText Typo="Typo.h6" Class="mb-2">System prompt</MudText>
         <MudText Typo="Typo.caption" Class="mb-3">
             The current workspace path is sent automatically as separate context — no need to mention it here.
