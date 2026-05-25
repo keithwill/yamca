@@ -24,28 +24,7 @@
                 }
                 else if (item is ReasoningItem reasoning && Session.ReasoningDisplay != ReasoningDisplay.Hidden)
                 {
-                    var expanded = ShouldExpandReasoning(reasoning);
-                    <MudPaper Class="mb-2 yamca-reasoning" Elevation="0" Outlined="true">
-                        <MudExpansionPanels Elevation="0" Dense="true">
-                            <MudExpansionPanel Expanded="expanded" Dense="true">
-                                <TitleContent>
-                                    <div class="d-flex align-center" style="gap: 6px;">
-                                        <MudIcon Icon="@Icons.Material.Filled.Psychology" Size="Size.Small" />
-                                        <MudText Typo="Typo.body2">
-                                            @(reasoning.IsComplete ? "Thinking" : "Thinking…")
-                                        </MudText>
-                                        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
-                                            (@reasoning.Text.Length chars)
-                                        </MudText>
-                                    </div>
-                                </TitleContent>
-                                <ChildContent>
-                                    <MudText Typo="Typo.body2"
-                                             Style="white-space: pre-wrap; color: var(--mud-palette-text-secondary); font-style: italic;">@reasoning.Text</MudText>
-                                </ChildContent>
-                            </MudExpansionPanel>
-                        </MudExpansionPanels>
-                    </MudPaper>
+                    <ReasoningCard Item="reasoning" InitiallyExpanded="ShouldExpandReasoning(reasoning)" />
                 }
                 else if (item is ToolCallItem tool)
                 {

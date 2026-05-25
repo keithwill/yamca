@@ -1,0 +1,72 @@
+<div class="reasoning-card @(_expanded ? "expanded" : "")">
+    <div class="reasoning-header" @onclick="Toggle">
+        <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Size="Size.Small" />
+        <span class="reasoning-action">@(Item.IsComplete ? "Thinking" : "Thinking…")</span>
+        <span class="reasoning-summary">(@Item.Text.Length chars)</span>
+        <span class="reasoning-spacer"></span>
+        <MudIcon Icon="@(_expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                 Size="Size.Small" Class="reasoning-chevron" />
+    </div>
+    @if (_expanded)
+    {
+        <div class="reasoning-body">
+            <div class="reasoning-text">@Item.Text</div>
+        </div>
+    }
+</div>
+
+<style>
+    .reasoning-card {
+        border: 1px solid var(--mud-palette-lines-default);
+        border-radius: 4px;
+        margin: 2px 0;
+        font-size: 0.8rem;
+    }
+    .reasoning-header {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 2px 8px;
+        cursor: pointer;
+        min-height: 24px;
+        user-select: none;
+    }
+    .reasoning-header:hover { background: var(--mud-palette-action-default-hover); }
+    .reasoning-action { font-weight: 500; white-space: nowrap; }
+    .reasoning-summary {
+        color: var(--mud-palette-text-secondary);
+        font-size: 0.78rem;
+    }
+    .reasoning-spacer { flex: 1; }
+    .reasoning-chevron { opacity: 0.5; }
+    .reasoning-body { padding: 4px 8px 8px 8px; border-top: 1px solid var(--mud-palette-lines-default); }
+    .reasoning-text {
+        white-space: pre-wrap;
+        color: var(--mud-palette-text-secondary);
+        font-style: italic;
+        font-size: 0.8rem;
+    }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public ReasoningItem Item { get; set; } = default!;
+    [Parameter] public bool InitiallyExpanded { get; set; }
+
+    private bool _expanded;
+    private bool _initialized;
+
+    protected override void OnParametersSet()
+    {
+        if (!_initialized)
+        {
+            _expanded = InitiallyExpanded;
+            _initialized = true;
+        }
+        else if (!Item.IsComplete && InitiallyExpanded)
+        {
+            _expanded = true;
+        }
+    }
+
+    private void Toggle() => _expanded = !_expanded;
+}
