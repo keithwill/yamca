@@ -9,5 +9,5 @@ public sealed record EndpointSettings(string BaseUrl, string ApiKey, string Mode
     public static EndpointSettings Default { get; } = new(
         BaseUrl: "http://localhost:8080/v1",
         ApiKey: "",
-        Model: "local-model");
+        Model: "");
 }

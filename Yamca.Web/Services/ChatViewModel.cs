@@ -129,7 +129,8 @@ public sealed class ChatViewModel : IDisposable
         var credential = new ApiKeyCredential(
             string.IsNullOrWhiteSpace(endpoint.ApiKey) ? "sk-local" : endpoint.ApiKey);
         var clientOptions = new OpenAIClientOptions { Endpoint = new Uri(endpoint.BaseUrl) };
-        var chatClient = new ChatClient(endpoint.Model, credential, clientOptions);
+        var modelId = string.IsNullOrWhiteSpace(endpoint.Model) ? "local-model" : endpoint.Model;
+        var chatClient = new ChatClient(modelId, credential, clientOptions);
         var completion = new OpenAIChatCompletionClient(chatClient);
 
         var prompt = _settings.SystemPrompt;
