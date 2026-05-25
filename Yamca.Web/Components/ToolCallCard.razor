@@ -1,38 +1,124 @@
-<MudPaper Class="pa-2 my-1" Elevation="0" Outlined="true">
-    <MudExpansionPanels Elevation="0" Dense="true" MultiExpansion="false">
-        <MudExpansionPanel Dense="true">
-            <TitleContent>
-                <div class="d-flex align-center" style="width: 100%; gap: 0.5rem;">
-                    <MudIcon Icon="@StateIcon" Color="@StateColor" Size="Size.Small" />
-                    <MudText Typo="Typo.body2"><code>@Item.ToolName</code></MudText>
-                    <MudSpacer />
-                    <MudChip T="string" Size="Size.Small" Color="@StateColor" Variant="Variant.Outlined">
-                        @StateLabel
-                    </MudChip>
-                </div>
-            </TitleContent>
-            <ChildContent>
-                @if (!string.IsNullOrWhiteSpace(Item.ArgumentsJson))
-                {
-                    <MudText Typo="Typo.caption">Arguments</MudText>
-                    <pre style="overflow:auto; max-height: 200px; font-size: 0.8rem;">@PrettyArgs</pre>
-                }
-                @if (Item.Result is not null)
-                {
-                    <MudText Typo="Typo.caption" Class="mt-2">Result</MudText>
-                    <pre style="overflow:auto; max-height: 300px; font-size: 0.8rem;">@Item.Result</pre>
-                }
-                else if (Item.State == ToolCallState.Pending)
-                {
-                    <MudProgressLinear Indeterminate="true" Class="mt-2" />
-                }
-            </ChildContent>
-        </MudExpansionPanel>
-    </MudExpansionPanels>
-</MudPaper>
+@using System.Text.Json
+
+<div class="tool-call @(_expanded ? "expanded" : "")">
+    <div class="tool-call-header" @onclick="Toggle">
+        <MudIcon Icon="@StateIcon" Color="@StateColor" Size="Size.Small" />
+        <span class="tool-call-action">@ActionLabel</span>
+        @if (!string.IsNullOrEmpty(Summary))
+        {
+            <code class="tool-call-summary">@Summary</code>
+        }
+        <span class="tool-call-spacer"></span>
+        @if (Item.State == ToolCallState.Pending)
+        {
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Info" Style="width:14px;height:14px;" />
+        }
+        else if (Item.State != ToolCallState.Succeeded)
+        {
+            <span class="tool-call-state state-@Item.State.ToString().ToLowerInvariant()">@StateLabel</span>
+        }
+        <MudIcon Icon="@(_expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                 Size="Size.Small" Class="tool-call-chevron" />
+    </div>
+    @if (_expanded)
+    {
+        <div class="tool-call-body">
+            @if (!string.IsNullOrWhiteSpace(Item.ArgumentsJson))
+            {
+                <MudText Typo="Typo.caption">Arguments</MudText>
+                <pre class="tool-call-pre">@PrettyArgs</pre>
+            }
+            @if (Item.Result is not null)
+            {
+                <MudText Typo="Typo.caption" Class="mt-2">Result</MudText>
+                <pre class="tool-call-pre tool-call-pre-result">@Item.Result</pre>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .tool-call {
+        border: 1px solid var(--mud-palette-lines-default);
+        border-radius: 4px;
+        margin: 2px 0;
+        font-size: 0.8rem;
+    }
+    .tool-call-header {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 2px 8px;
+        cursor: pointer;
+        min-height: 24px;
+        user-select: none;
+    }
+    .tool-call-header:hover { background: var(--mud-palette-action-default-hover); }
+    .tool-call-action { font-weight: 500; white-space: nowrap; }
+    .tool-call-summary {
+        color: var(--mud-palette-text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+        font-size: 0.78rem;
+    }
+    .tool-call-spacer { flex: 1; }
+    .tool-call-chevron { opacity: 0.5; }
+    .tool-call-state {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        padding: 0 6px;
+        border-radius: 2px;
+    }
+    .state-failed  { color: var(--mud-palette-error); }
+    .state-denied  { color: var(--mud-palette-warning); }
+    .tool-call-body { padding: 4px 8px 8px 8px; border-top: 1px solid var(--mud-palette-lines-default); }
+    .tool-call-pre { overflow: auto; max-height: 200px; font-size: 0.75rem; margin: 2px 0; }
+    .tool-call-pre-result { max-height: 300px; }
+</style>
 
 @code {
     [Parameter, EditorRequired] public ToolCallItem Item { get; set; } = default!;
+
+    private bool _expanded;
+
+    private void Toggle() => _expanded = !_expanded;
+
+    private string ActionLabel => Item.ToolName switch
+    {
+        "read_file"       => "Read",
+        "write_file"      => "Write",
+        "delete_file"     => "Delete",
+        "list_directory"  => "List",
+        "execute_command" => "Run",
+        _ => Item.ToolName,
+    };
+
+    private string Summary
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(Item.ArgumentsJson)) return "";
+            try
+            {
+                using var doc = JsonDocument.Parse(Item.ArgumentsJson);
+                var root = doc.RootElement;
+                var argName = Item.ToolName switch
+                {
+                    "execute_command" => "command",
+                    _ => "path",
+                };
+                if (root.TryGetProperty(argName, out var prop) && prop.ValueKind == JsonValueKind.String)
+                {
+                    var s = prop.GetString() ?? "";
+                    return s.Replace('\n', ' ').Replace('\r', ' ');
+                }
+            }
+            catch { }
+            return "";
+        }
+    }
 
     private string PrettyArgs
     {
@@ -41,10 +127,10 @@
             if (string.IsNullOrWhiteSpace(Item.ArgumentsJson)) return "";
             try
             {
-                using var doc = System.Text.Json.JsonDocument.Parse(Item.ArgumentsJson);
-                return System.Text.Json.JsonSerializer.Serialize(
+                using var doc = JsonDocument.Parse(Item.ArgumentsJson);
+                return JsonSerializer.Serialize(
                     doc.RootElement,
-                    new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                    new JsonSerializerOptions { WriteIndented = true });
             }
             catch { return Item.ArgumentsJson; }
         }
