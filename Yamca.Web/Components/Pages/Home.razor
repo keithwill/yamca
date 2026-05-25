@@ -16,6 +16,9 @@ else
 {
     <div class="yamca-page">
         <div class="yamca-input-dock">
+            <div class="yamca-context-badge" title="Estimated context size (chars / 4)">
+                ~@Chat.CurrentContextTokens.ToString("N0") tokens
+            </div>
             <div class="yamca-prompt-wrap">
                 <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
                               Lines="3" Variant="Variant.Text" Immediate="true"

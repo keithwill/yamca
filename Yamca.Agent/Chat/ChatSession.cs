@@ -12,6 +12,7 @@ namespace Yamca.Agent.Chat;
 public sealed class ChatSession
 {
     private readonly List<ChatMessage> _messages;
+    private int _estimatedChars;
 
     public ChatSession(string systemPrompt)
         : this(systemPrompt, workspace: null, instructionMessages: null)
@@ -49,17 +50,27 @@ public sealed class ChatSession
             }
         }
 
-        _messages = new List<ChatMessage> { new SystemChatMessage(sb.ToString()) };
+        var systemContent = sb.ToString();
+        _messages = new List<ChatMessage> { new SystemChatMessage(systemContent) };
+        _estimatedChars = systemContent.Length;
     }
 
     public string SystemPrompt { get; }
 
     public IReadOnlyList<ChatMessage> Messages => _messages;
 
+    /// <summary>Rough char/4 estimate of the input tokens the next LLM call will see.
+    /// Updated synchronously as messages are appended. The OpenAI .NET SDK 2.10 does
+    /// not yet expose <c>stream_options.include_usage</c> publicly (tracked in
+    /// openai-dotnet#616), so we estimate rather than depend on internals — swap to
+    /// server-reported usage when that property goes public.</summary>
+    public int EstimatedInputTokens => (_estimatedChars + 3) / 4;
+
     public void AppendUser(string content)
     {
         ArgumentNullException.ThrowIfNull(content);
         _messages.Add(new UserChatMessage(content));
+        _estimatedChars += content.Length;
     }
 
     public void AppendAssistant(string content, IReadOnlyList<LlmToolCallRequest> toolCalls)
@@ -81,6 +92,9 @@ public sealed class ChatSession
                 msg.Content.Add(ChatMessageContentPart.CreateTextPart(content));
         }
         _messages.Add(msg);
+        _estimatedChars += content.Length;
+        foreach (var tc in toolCalls)
+            _estimatedChars += tc.ToolName.Length + tc.ArgumentsJson.Length;
     }
 
     public void AppendToolResult(string toolCallId, string content)
@@ -88,5 +102,6 @@ public sealed class ChatSession
         ArgumentNullException.ThrowIfNull(toolCallId);
         ArgumentNullException.ThrowIfNull(content);
         _messages.Add(new ToolChatMessage(toolCallId, content));
+        _estimatedChars += content.Length;
     }
 }

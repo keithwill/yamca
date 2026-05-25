@@ -49,6 +49,11 @@ public sealed class ChatViewModel : IDisposable
     public bool IsRunning { get; private set; }
     public string? Error { get; private set; }
 
+    /// <summary>Char/4 estimate of input tokens currently in the conversation.
+    /// Zero before the first message. (Server-reported usage is unavailable until
+    /// the OpenAI .NET SDK exposes stream_options.include_usage publicly.)</summary>
+    public int CurrentContextTokens => _loop?.Session.EstimatedInputTokens ?? 0;
+
     /// <summary>Fired on any state mutation. The Blazor page hooks this and calls
     /// <c>InvokeAsync(StateHasChanged)</c> to re-render on the renderer dispatcher.</summary>
     public event Action? Changed;

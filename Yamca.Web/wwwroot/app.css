@@ -66,6 +66,14 @@ h1:focus {
     position: relative;
 }
 
+.yamca-context-badge {
+    font-size: 0.75rem;
+    opacity: 0.65;
+    text-align: right;
+    padding: 0 0.25rem 0.25rem 0;
+    font-variant-numeric: tabular-nums;
+}
+
 .yamca-cancel-fab {
     position: absolute;
     right: 0.5rem;
