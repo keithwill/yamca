@@ -76,6 +76,8 @@ builder.Services.AddSingleton<ITool, ReadFileTool>();
 builder.Services.AddSingleton<ITool, WriteFileTool>();
 builder.Services.AddSingleton<ITool, DeleteFileTool>();
 builder.Services.AddSingleton<ITool, ListDirectoryTool>();
+builder.Services.AddSingleton<ITool, FindFilesTool>();
+builder.Services.AddSingleton<ITool, GrepTool>();
 builder.Services.AddSingleton<ITool, ExecuteCommandTool>();
 builder.Services.AddSingleton<IToolRegistry>(sp => new ToolRegistry(sp.GetServices<ITool>()));
 
