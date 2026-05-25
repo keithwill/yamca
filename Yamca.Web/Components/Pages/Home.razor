@@ -16,28 +16,17 @@ else
 {
     <div class="yamca-page">
         <div class="yamca-input-dock">
+            <div class="yamca-prompt-wrap">
                 <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
                               Lines="3" Variant="Variant.Text" Immediate="true"
                               OnKeyDown="OnKeyDown" Disabled="Chat.IsRunning" />
-                <div class="d-flex mt-2">
-                    <MudSpacer />
-                    @if (Chat.IsRunning)
-                    {
-                        <MudButton Color="Color.Warning" Variant="Variant.Outlined" OnClick="OnCancel"
-                                   StartIcon="@Icons.Material.Filled.Stop">Cancel</MudButton>
-                    }
-                    else
-                    {
-                        <MudButtonGroup OverrideStyles="false" Variant="Variant.Filled">
-                            <MudButton Color="Color.Tertiary" Variant="Variant.Filled" OnClick="OnClear"
-                                       StartIcon="@Icons.Material.Filled.Refresh"
-                                       Disabled="Chat.IsRunning">New</MudButton>
-                            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="OnSend"
-                                       StartIcon="@Icons.Material.Filled.Send"
-                                       Disabled="@(string.IsNullOrWhiteSpace(_prompt))">Send</MudButton>
-                        </MudButtonGroup>
-                    }
-                </div>
+                @if (Chat.IsRunning)
+                {
+                    <MudIconButton Class="yamca-cancel-fab" Color="Color.Error" Variant="Variant.Outlined"
+                                   Icon="@Icons.Material.Filled.Stop" OnClick="OnCancel"
+                                   aria-label="Cancel" />
+                }
+            </div>
         </div>
 
         <div class="yamca-scroll" @ref="_scrollContainer">
@@ -70,7 +59,6 @@ else
     [Inject] private SessionSettings Session { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
-    [Inject] private IDialogService Dialogs { get; set; } = default!;
 
     private bool _hydrated;
     private string _prompt = "";
@@ -116,29 +104,7 @@ else
 
     private void OnCancel() => Chat.Cancel();
 
-    private async Task OnClear()
-    {
-        if (Chat.Turns.Count == 0 && Chat.Approvals.Count == 0)
-        {
-            Chat.Clear();
-            _ = SafeInvokeAsync("yamcaChat.reset");
-            return;
-        }
-
-        var confirmed = await Dialogs.ShowMessageBoxAsync(
-            title: "Start a new chat?",
-            message: "This will clear the current conversation. Continue?",
-            yesText: "New chat",
-            cancelText: "Cancel");
-
-        if (confirmed == true)
-        {
-            Chat.Clear();
-            _ = SafeInvokeAsync("yamcaChat.reset");
-        }
-    }
-
-    private async Task SafeInvokeAsync(string identifier, params object?[] args)
+private async Task SafeInvokeAsync(string identifier, params object?[] args)
     {
         try
         {

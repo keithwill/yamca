@@ -62,6 +62,18 @@ h1:focus {
     padding-left: 1rem;
 }
 
+.yamca-prompt-wrap {
+    position: relative;
+}
+
+.yamca-cancel-fab {
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 2;
+}
+
 .yamca-user-row {
     justify-content: flex-end;
 }
