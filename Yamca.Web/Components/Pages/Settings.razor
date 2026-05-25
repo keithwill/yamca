@@ -32,6 +32,12 @@ else
                           T="string" Label="Model" Variant="Variant.Outlined"
                           DebounceInterval="500"
                           Class="flex-grow-1" />
+            <MudTooltip Text="Browse available models">
+                <MudIconButton Icon="@Icons.Material.Filled.Search"
+                               OnClick="OpenModelPicker"
+                               aria-label="Browse available models" />
+            </MudTooltip>
+
             @if (_modelValidating)
             {
                 <MudTooltip Text="Checking model against endpoint…">
@@ -50,11 +56,6 @@ else
                     <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Warning" />
                 </MudTooltip>
             }
-            <MudTooltip Text="Browse available models">
-                <MudIconButton Icon="@Icons.Material.Filled.Search"
-                               OnClick="OpenModelPicker"
-                               aria-label="Browse available models" />
-            </MudTooltip>
         </div>
         <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
             Optional for single-model hosts like llama.cpp (the server ignores this field and serves whatever it was launched with). Required for multi-model hosts (OpenAI, Ollama, OpenRouter, LM Studio). Click the search icon to list models the endpoint reports.
