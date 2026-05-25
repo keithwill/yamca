@@ -1,5 +1,34 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+
+    <!-- dotnet tool packaging -->
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>yamca</ToolCommandName>
+    <PackageId>Yamca</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Keith Williams</Authors>
+    <Description>Yamca — a local-first Blazor agent / chat UI that runs as a .NET global tool. Launch with `yamca` from any directory to chat against a workspace.</Description>
+    <PackageTags>blazor;ai;agent;chat;cli;dotnet-tool</PackageTags>
+    <PackageProjectUrl>https://github.com/keithwill/yamca</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/keithwill/yamca</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <!-- Ensure Blazor static assets land in the tool output -->
+    <GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
+    <StaticWebAssetsCopyContentToOutputDirectory>true</StaticWebAssetsCopyContentToOutputDirectory>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Yamca.Agent\Yamca.Agent.csproj" />
   </ItemGroup>
@@ -9,15 +38,28 @@
     <PackageReference Include="Markdig" Version="0.42.0" />
   </ItemGroup>
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
-    <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- The Blazor publish output contains a fully-resolved wwwroot (MudBlazor's
+       _content, the scoped-CSS bundle, blazor.server.js, gzip/brotli variants,
+       etc.) plus the static-web-assets endpoints manifest that MapStaticAssets()
+       consumes at runtime. Pack all of those into tools/<tfm>/any so the tool
+       has everything it needs at runtime. -->
+  <Target Name="IncludePublishedAssetsInTool"
+          BeforeTargets="GenerateNuspec"
+          DependsOnTargets="Publish">
+    <ItemGroup>
+      <_YamcaToolWwwroot Include="$(PublishDir)wwwroot\**\*.*" />
+      <TfmSpecificPackageFile
+        Include="@(_YamcaToolWwwroot)"
+        PackagePath="tools/$(TargetFramework)/any/wwwroot/%(RecursiveDir)%(Filename)%(Extension)" />
+      <_YamcaToolEndpoints Include="$(PublishDir)*.staticwebassets.endpoints.json" />
+      <TfmSpecificPackageFile
+        Include="@(_YamcaToolEndpoints)"
+        PackagePath="tools/$(TargetFramework)/any/%(Filename)%(Extension)" />
+    </ItemGroup>
+  </Target>
 
 </Project>
