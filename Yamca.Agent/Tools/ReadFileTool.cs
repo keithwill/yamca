@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Yamca.Agent.Permissions;
 
@@ -5,15 +6,21 @@ namespace Yamca.Agent.Tools;
 
 public sealed class ReadFileTool : ITool
 {
+    private const int DefaultMaxLines = 2000;
+    private const int HardMaxLines = 2000;
+    private const int MaxLineLength = 2000;
+
     public string Name => "read_file";
 
-    public string Description => "Read the full contents of a UTF-8 text file at the given path.";
+    public string Description => "Read a UTF-8 text file. Output is formatted with 1-indexed line numbers (like 'cat -n'). By default returns up to the first 2000 lines; use 'offset' and 'limit' to page through larger files. Long individual lines are truncated. Binary files are refused.";
 
     public string ParametersSchema => """
     {
       "type": "object",
       "properties": {
-        "path": { "type": "string", "description": "File path, relative to the workspace root or absolute." }
+        "path":   { "type": "string",  "description": "File path, relative to the workspace root or absolute." },
+        "offset": { "type": "integer", "description": "1-indexed line number to start reading from. Default 1.", "minimum": 1 },
+        "limit":  { "type": "integer", "description": "Maximum number of lines to return. Default 2000, hard cap 2000.", "minimum": 1, "maximum": 2000 }
       },
       "required": ["path"],
       "additionalProperties": false
@@ -29,16 +36,69 @@ public sealed class ReadFileTool : ITool
         if (!ToolArguments.TryGetString(arguments, "path", out var requested, out var argError))
             return ToolResult.Error(argError);
 
+        var offset = 1;
+        if (arguments.TryGetProperty("offset", out var offProp) && offProp.ValueKind == JsonValueKind.Number)
+            offset = Math.Max(1, offProp.GetInt32());
+
+        var limit = DefaultMaxLines;
+        if (arguments.TryGetProperty("limit", out var limProp) && limProp.ValueKind == JsonValueKind.Number)
+            limit = Math.Clamp(limProp.GetInt32(), 1, HardMaxLines);
+
         if (!ToolArguments.TryResolvePath(context, requested, out var resolved, out var pathError))
             return ToolResult.Error(pathError);
 
         if (!File.Exists(resolved))
             return ToolResult.Error($"File not found: {resolved}");
 
+        if (await FileProbe.IsLikelyBinaryAsync(resolved, cancellationToken))
+            return ToolResult.Error($"Cannot read binary file: {resolved}");
+
         try
         {
-            var content = await File.ReadAllTextAsync(resolved, cancellationToken);
-            return ToolResult.Ok(content);
+            await using var fs = new FileStream(resolved, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
+                bufferSize: 4096, useAsync: true);
+            using var reader = new StreamReader(fs, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+
+            var sb = new StringBuilder();
+            var currentLine = 0;
+            var emitted = 0;
+            var lastEmittedLine = 0;
+
+            string? line;
+            while ((line = await reader.ReadLineAsync(cancellationToken)) is not null)
+            {
+                currentLine++;
+
+                if (currentLine < offset) continue;
+                if (emitted >= limit) break;
+
+                if (line.Length > MaxLineLength)
+                    line = line.AsSpan(0, MaxLineLength).ToString() + "…";
+
+                sb.Append($"{currentLine,6}\t").Append(line).Append('\n');
+                emitted++;
+                lastEmittedLine = currentLine;
+            }
+
+            // Drain remaining lines for an accurate total (no buffering).
+            var totalLines = currentLine;
+            if (line is not null)
+            {
+                while ((line = await reader.ReadLineAsync(cancellationToken)) is not null)
+                    totalLines++;
+                // The line we broke on was already counted via currentLine++ above.
+            }
+
+            if (totalLines == 0)
+                return ToolResult.Ok("(empty file)");
+
+            if (emitted == 0)
+                return ToolResult.Ok($"(file has {totalLines} lines; offset {offset} is past end)");
+
+            if (lastEmittedLine < totalLines)
+                sb.Append($"…[showing lines {offset}-{lastEmittedLine} of {totalLines}; use offset={lastEmittedLine + 1} to continue]\n");
+
+            return ToolResult.Ok(sb.ToString());
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

@@ -10,7 +10,6 @@ public sealed class GrepTool : ITool
     private const int DefaultMaxMatches = 100;
     private const int HardMaxMatches = 1000;
     private const int MaxLineLength = 1000;
-    private const int BinaryProbeBytes = 8192;
 
     public string Name => "grep";
 
@@ -94,7 +93,7 @@ public sealed class GrepTool : ITool
             {
                 if (matchCount >= maxMatches) { truncated = true; break; }
 
-                if (await IsLikelyBinaryAsync(file, cancellationToken)) continue;
+                if (await FileProbe.IsLikelyBinaryAsync(file, cancellationToken)) continue;
 
                 var rel = FileSearch.ToForwardSlashRelative(root, file);
 
@@ -156,21 +155,4 @@ public sealed class GrepTool : ITool
         return ToolResult.Ok(output.ToString());
     }
 
-    private static async Task<bool> IsLikelyBinaryAsync(string path, CancellationToken ct)
-    {
-        try
-        {
-            await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
-                bufferSize: BinaryProbeBytes, useAsync: true);
-            var buffer = new byte[BinaryProbeBytes];
-            var read = await fs.ReadAsync(buffer.AsMemory(0, BinaryProbeBytes), ct);
-            for (var i = 0; i < read; i++)
-                if (buffer[i] == 0) return true;
-            return false;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return true;
-        }
-    }
 }

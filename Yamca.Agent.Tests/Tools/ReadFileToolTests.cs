@@ -30,7 +30,7 @@ public class ReadFileToolTests
             Json.Parse("""{ "path": "hello.txt" }"""), ctx, CancellationToken.None);
 
         Assert.That(result.IsError, Is.False);
-        Assert.That(result.Content, Is.EqualTo("hello world"));
+        Assert.That(result.Content, Is.EqualTo("     1\thello world\n"));
     }
 
     [Test]
@@ -84,7 +84,7 @@ public class ReadFileToolTests
                 ctx, CancellationToken.None);
 
             Assert.That(result.IsError, Is.False, result.Content);
-            Assert.That(result.Content, Is.EqualTo("outside content"));
+            Assert.That(result.Content, Is.EqualTo("     1\toutside content\n"));
         }
         finally
         {
