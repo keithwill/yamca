@@ -1,7 +1,9 @@
 @page "/"
 @rendermode InteractiveServer
 @implements IDisposable
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.JSInterop
+@using System.Text
 
 <PageTitle>Yamca - @System.IO.Path.GetFileName(Workspace.RootPath.TrimEnd('\\', '/'))</PageTitle>
 
@@ -16,18 +18,61 @@ else
 {
     <div class="yamca-page">
         <div class="yamca-input-dock">
-            <div class="yamca-context-badge" title="@ContextBadgeTooltip()">
-                @ContextBadgeText()
-            </div>
-            <div class="yamca-prompt-wrap">
+            <div class="yamca-composer">
                 <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
                               Lines="3" Variant="Variant.Text" Immediate="true"
+                              Class="yamca-composer-input"
                               OnKeyDown="OnKeyDown" Disabled="Chat.IsRunning" />
-                @if (Chat.IsRunning)
+                <div class="yamca-composer-toolbar">
+                    <div class="yamca-composer-left">
+                        <MudFileUpload T="IReadOnlyList<IBrowserFile>"
+                                       FilesChanged="OnFilesChanged" MaximumFileCount="20"
+                                       Accept="@AttachAccept">
+                            <CustomContent Context="fileUpload">
+                                <MudIconButton Icon="@Icons.Material.Filled.AttachFile"
+                                               Color="Color.Default" Variant="Variant.Text"
+                                               Size="Size.Small"
+                                               Disabled="Chat.IsRunning"
+                                               OnClick="@(() => fileUpload.OpenFilePickerAsync())"
+                                               aria-label="Attach file" />
+                            </CustomContent>
+                            <SelectedTemplate></SelectedTemplate>
+                        </MudFileUpload>
+                        @foreach (var att in _attachments)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                     Icon="@Icons.Material.Filled.InsertDriveFile"
+                                     OnClose="@(() => RemoveAttachment(att))"
+                                     title="@($"{att.FileName} — {att.Text.Length:N0} chars")">
+                                @att.FileName
+                            </MudChip>
+                        }
+                    </div>
+                    <div class="yamca-composer-right">
+                        <div class="yamca-context-badge" title="@ContextBadgeTooltip()">
+                            @ContextBadgeText()
+                        </div>
+                        @if (Chat.IsRunning)
+                        {
+                            <MudIconButton Variant="Variant.Filled" Color="Color.Error"
+                                           Size="Size.Small"
+                                           Icon="@Icons.Material.Filled.Stop"
+                                           OnClick="OnCancel" aria-label="Stop" />
+                        }
+                        else
+                        {
+                            <MudIconButton Variant="Variant.Filled" Color="Color.Default"
+                                           Size="Size.Small"
+                                           Icon="@Icons.Material.Filled.PlayArrow"
+                                           OnClick="OnSend"
+                                           Disabled="@(string.IsNullOrWhiteSpace(_prompt) && _attachments.Count == 0)"
+                                           aria-label="Send" />
+                        }
+                    </div>
+                </div>
+                @if (_attachError is not null)
                 {
-                    <MudIconButton Class="yamca-cancel-fab" Color="Color.Error" Variant="Variant.Outlined"
-                                   Icon="@Icons.Material.Filled.Stop" OnClick="OnCancel"
-                                   aria-label="Cancel" />
+                    <MudText Typo="Typo.caption" Color="Color.Error" Class="px-1">@_attachError</MudText>
                 }
             </div>
         </div>
@@ -67,6 +112,16 @@ else
     private string _prompt = "";
     private ElementReference _scrollAnchor;
     private ElementReference _scrollContainer;
+    private readonly List<Attachment> _attachments = new();
+    private string? _attachError;
+
+    private const long MaxAttachmentBytes = 2 * 1024 * 1024; // 2 MB per file
+    private const string AttachAccept =
+        ".txt,.md,.markdown,.json,.xml,.yml,.yaml,.csv,.tsv,.log," +
+        ".cs,.csproj,.razor,.cshtml,.html,.htm,.css,.scss,.js,.ts,.tsx,.jsx," +
+        ".py,.go,.rs,.java,.kt,.rb,.php,.sh,.ps1,.psm1,.sql,.toml,.ini,.cfg,.conf";
+
+    private sealed record Attachment(string FileName, string Text);
 
     protected override void OnInitialized()
     {
@@ -91,10 +146,62 @@ else
 
     private async Task OnSend()
     {
-        if (string.IsNullOrWhiteSpace(_prompt) || Chat.IsRunning) return;
-        var p = _prompt;
+        if (Chat.IsRunning) return;
+        if (string.IsNullOrWhiteSpace(_prompt) && _attachments.Count == 0) return;
+
+        var p = ComposePrompt(_prompt, _attachments);
         _prompt = "";
+        _attachments.Clear();
+        _attachError = null;
         await Chat.SendAsync(p);
+    }
+
+    private static string ComposePrompt(string userText, IReadOnlyList<Attachment> attachments)
+    {
+        if (attachments.Count == 0) return userText;
+        var sb = new StringBuilder();
+        foreach (var a in attachments)
+        {
+            sb.Append("Attached file: ").AppendLine(a.FileName);
+            sb.AppendLine("```");
+            sb.AppendLine(a.Text);
+            sb.AppendLine("```");
+            sb.AppendLine();
+        }
+        sb.Append(userText);
+        return sb.ToString();
+    }
+
+    private async Task OnFilesChanged(IReadOnlyList<IBrowserFile>? files)
+    {
+        if (files is null) return;
+        _attachError = null;
+        foreach (var file in files)
+        {
+            if (file.Size > MaxAttachmentBytes)
+            {
+                _attachError = $"\"{file.Name}\" is larger than {MaxAttachmentBytes / 1024} KB and was skipped.";
+                continue;
+            }
+            try
+            {
+                using var stream = file.OpenReadStream(MaxAttachmentBytes);
+                using var reader = new StreamReader(stream);
+                var text = await reader.ReadToEndAsync();
+                _attachments.Add(new Attachment(file.Name, text));
+            }
+            catch (Exception ex)
+            {
+                _attachError = $"Could not read \"{file.Name}\": {ex.Message}";
+            }
+        }
+        StateHasChanged();
+    }
+
+    private void RemoveAttachment(Attachment a)
+    {
+        _attachments.Remove(a);
+        StateHasChanged();
     }
 
     private async Task OnKeyDown(KeyboardEventArgs e)
