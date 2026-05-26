@@ -1,6 +1,8 @@
 using NUnit.Framework;
 using Yamca.Agent.Tests.Support;
 using Yamca.Agent.Tools;
+using Yamca.Agent.Tools.ScriptExecution;
+using Yamca.Agent.Tools.ShellExecution;
 
 namespace Yamca.Agent.Tests.Tools;
 
@@ -14,7 +16,7 @@ public class ExecuteCommandToolTests
     public void SetUp()
     {
         _ws = new TempWorkspace();
-        _tool = new ExecuteCommandTool();
+        _tool = new ExecuteCommandTool(new ShellResolver(new InterpreterResolver()));
     }
 
     [TearDown]
@@ -55,7 +57,8 @@ public class ExecuteCommandToolTests
     public async Task RunsInWorkspaceRoot()
     {
         var ctx = new ToolContext(_ws.Workspace, restrictToWorkspace: false);
-        var cmd = OperatingSystem.IsWindows() ? "cd" : "pwd";
+        // `pwd` works in PowerShell (alias for Get-Location) and POSIX shells.
+        var cmd = "pwd";
         var args = Json.Parse($$"""{ "command": {{System.Text.Json.JsonSerializer.Serialize(cmd)}} }""");
 
         var result = await _tool.ExecuteAsync(args, ctx, CancellationToken.None);

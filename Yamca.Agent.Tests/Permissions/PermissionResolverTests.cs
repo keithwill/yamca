@@ -3,6 +3,8 @@ using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tests.Support;
 using Yamca.Agent.Tools;
+using Yamca.Agent.Tools.ScriptExecution;
+using Yamca.Agent.Tools.ShellExecution;
 
 namespace Yamca.Agent.Tests.Permissions;
 
@@ -15,7 +17,7 @@ public class PermissionResolverTests
         {
             new ReadFileTool(),       // default Allow
             new WriteFileTool(),      // default Ask
-            new ExecuteCommandTool(), // default Ask, not sandboxable
+            new ExecuteCommandTool(new ShellResolver(new InterpreterResolver())), // default Ask, not sandboxable
         });
         var settings = new InMemorySessionSettings();
         return (new PermissionResolver(registry, settings), settings);

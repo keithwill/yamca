@@ -8,6 +8,7 @@ using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
 using Yamca.Agent.Tools.ScriptExecution;
+using Yamca.Agent.Tools.ShellExecution;
 using Yamca.Agent.Workspace;
 using Yamca.Web.Components;
 using Yamca.Web.Services;
@@ -86,6 +87,7 @@ builder.Services.AddSingleton<ITool, ExecuteCommandTool>();
 // from a PATH-resolution cache, so they live as singletons. ScriptRegistryLookup
 // reads scoped session settings.
 builder.Services.AddSingleton<InterpreterResolver>();
+builder.Services.AddSingleton<ShellResolver>();
 builder.Services.AddSingleton<ScriptRunner>();
 builder.Services.AddScoped<ScriptRegistryLookup>();
 builder.Services.AddScoped<ITool, ExecuteRegisteredScriptTool>();
