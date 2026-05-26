@@ -32,6 +32,27 @@ internal static class ToolArguments
         return true;
     }
 
+    public static bool TryGetBool(JsonElement args, string name, bool defaultValue, out bool value, out string error)
+    {
+        value = defaultValue;
+        error = string.Empty;
+
+        if (args.ValueKind != JsonValueKind.Object)
+        {
+            error = "Arguments must be a JSON object.";
+            return false;
+        }
+
+        if (!args.TryGetProperty(name, out var prop))
+            return true;
+
+        if (prop.ValueKind == JsonValueKind.True) { value = true; return true; }
+        if (prop.ValueKind == JsonValueKind.False) { value = false; return true; }
+
+        error = $"Argument '{name}' must be a boolean.";
+        return false;
+    }
+
     /// <summary>
     /// Resolve a path argument honoring the workspace-restriction flag. When restricted,
     /// the path goes through <see cref="IWorkspace.Resolve"/> (sandboxed). When not, it is

@@ -74,6 +74,7 @@ builder.Services.AddSingleton<IWorkspace>(_ => new Workspace(workspaceRoot));
 
 builder.Services.AddSingleton<ITool, ReadFileTool>();
 builder.Services.AddSingleton<ITool, WriteFileTool>();
+builder.Services.AddSingleton<ITool, EditFileTool>();
 builder.Services.AddSingleton<ITool, DeleteFileTool>();
 builder.Services.AddSingleton<ITool, ListDirectoryTool>();
 builder.Services.AddSingleton<ITool, FindFilesTool>();
