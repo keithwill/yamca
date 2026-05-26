@@ -17,8 +17,8 @@ public sealed class ListDirectoryTool : ITool
     {
       "type": "object",
       "properties": {
-        "path":        { "type": "string",  "description": "Directory path, relative to the workspace root or absolute. Use '.' for the workspace root." },
-        "max_results": { "type": "integer", "description": "Maximum number of entries to return. Default 200, hard cap 1000.", "minimum": 1, "maximum": 1000 }
+        "path":        { "type": "string",  "description": "Directory path (workspace-relative or absolute). Use '.' for workspace root." },
+        "max_results": { "type": "integer", "description": "Max entries. Default 200, cap 1000.", "minimum": 1, "maximum": 1000 }
       },
       "required": ["path"],
       "additionalProperties": false

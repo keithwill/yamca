@@ -24,17 +24,17 @@ public sealed class ExecuteDiscoveredScriptTool : ITool
 
     public string Name => "execute_discovered_script";
 
-    public string Description => "Propose running a script that the user has NOT pre-registered. " +
-        "Each invocation prompts the user for approval and offers to promote the script to the registry. " +
-        "Use for one-off or newly discovered scripts; once registered, future runs go through execute_registered_script.";
+    public string Description => "Propose running an unregistered script. " +
+        "Prompts the user for approval and offers to add it to the registry. " +
+        "Once registered, use execute_registered_script instead.";
 
     public string ParametersSchema => """
     {
       "type": "object",
       "properties": {
-        "script_path":     { "type": "string", "description": "Workspace-relative path to a script file (.ps1, .sh, .py, .js, .mjs, .ts)." },
+        "script_path":     { "type": "string", "description": "Workspace-relative path to a script (.ps1, .sh, .py, .js, .mjs, .ts)." },
         "arguments":       { "type": "array", "items": { "type": "string" }, "description": "Arguments passed as argv." },
-        "timeout_seconds": { "type": "integer", "description": "Maximum runtime before the script is killed. Default 60.", "minimum": 1, "maximum": 600 }
+        "timeout_seconds": { "type": "integer", "description": "Timeout in seconds. Default 60.", "minimum": 1, "maximum": 600 }
       },
       "required": ["script_path"],
       "additionalProperties": false
@@ -44,6 +44,8 @@ public sealed class ExecuteDiscoveredScriptTool : ITool
     public bool SupportsWorkspaceRestriction => true;
 
     public PermissionLevel DefaultPermission => PermissionLevel.Ask;
+
+    public bool ExposedToLlm => false;
 
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {

@@ -10,4 +10,7 @@ public interface IToolRegistry
 
     /// <summary>ChatTool definitions to send with a chat completion request.</summary>
     IReadOnlyList<ChatTool> GetChatTools();
+
+    /// <summary>Tools to display in the settings permissions table.</summary>
+    IReadOnlyList<ITool> GetSettingsTools();
 }

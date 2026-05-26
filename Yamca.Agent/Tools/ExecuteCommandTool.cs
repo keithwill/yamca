@@ -21,14 +21,14 @@ public sealed class ExecuteCommandTool : ITool
 
     public string Name => "execute_command";
 
-    public string Description => "Execute a shell command in the workspace root and return its stdout, stderr, and exit code. The exact shell varies per machine; see the session-start note for which shell is active.";
+    public string Description => "Run a shell command; returns stdout, stderr, and exit code. Shell type is noted at session start.";
 
     public string ParametersSchema => """
     {
       "type": "object",
       "properties": {
         "command":          { "type": "string", "description": "The shell command line to execute." },
-        "timeout_seconds":  { "type": "integer", "description": "Maximum runtime before the command is killed. Default 60.", "minimum": 1, "maximum": 600 }
+        "timeout_seconds":  { "type": "integer", "description": "Timeout in seconds. Default 60.", "minimum": 1, "maximum": 600 }
       },
       "required": ["command"],
       "additionalProperties": false

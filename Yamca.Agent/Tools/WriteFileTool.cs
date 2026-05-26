@@ -13,7 +13,7 @@ public sealed class WriteFileTool : ITool
     {
       "type": "object",
       "properties": {
-        "path":    { "type": "string", "description": "File path, relative to the workspace root or absolute." },
+        "path":    { "type": "string", "description": "Path (workspace-relative or absolute)." },
         "content": { "type": "string", "description": "The full file content to write." }
       },
       "required": ["path", "content"],

@@ -11,16 +11,16 @@ public sealed class FindFilesTool : ITool
 
     public string Name => "find_files";
 
-    public string Description => "Recursively find files under a directory whose paths match a glob pattern (e.g. '**/*.cs', 'src/**/*Test*.ts'). Returns workspace-relative paths with forward slashes. Skips .git, node_modules, bin, obj, .vs, dist, out, .idea by default, and (when respect_gitignore is true) anything matched by the root .gitignore.";
+    public string Description => "Recursively find files under a directory whose paths match a glob pattern. Returns workspace-relative paths. Common build/VCS directories are skipped; gitignore is honored by default.";
 
     public string ParametersSchema => """
     {
       "type": "object",
       "properties": {
-        "pattern":           { "type": "string",  "description": "Glob pattern to match file paths against, relative to the search root. Examples: '**/*.cs', 'src/**/*.ts', '**/README*'." },
-        "path":              { "type": "string",  "description": "Directory to search under. Relative to the workspace root or absolute. Defaults to '.'." },
-        "respect_gitignore": { "type": "boolean", "description": "When true (the default), skip files matched by the root .gitignore." },
-        "max_results":       { "type": "integer", "description": "Maximum number of matches to return. Default 200, hard cap 2000.", "minimum": 1, "maximum": 2000 }
+        "pattern":           { "type": "string",  "description": "Glob pattern relative to the search root (e.g. '**/*.cs')." },
+        "path":              { "type": "string",  "description": "Directory to search (workspace-relative or absolute). Defaults to '.'." },
+        "respect_gitignore": { "type": "boolean", "description": "Honor .gitignore. Default true." },
+        "max_results":       { "type": "integer", "description": "Max matches. Default 200, cap 2000.", "minimum": 1, "maximum": 2000 }
       },
       "required": ["pattern"],
       "additionalProperties": false

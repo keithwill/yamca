@@ -13,18 +13,18 @@ public sealed class GrepTool : ITool
 
     public string Name => "grep";
 
-    public string Description => "Search file contents for a .NET regex pattern, line by line, across files under a directory. Output is one line per match in the form 'relative/path:lineNumber:matchingLine'. Files filtered by 'glob' (default '**/*'); binary files and files in .git/node_modules/bin/obj/.vs/dist/out/.idea are skipped; the root .gitignore is honored unless disabled.";
+    public string Description => "Search file contents for a .NET regex pattern across files under a directory. Results: path:line:content per match. Binary files and common build/VCS directories are skipped; gitignore honored by default.";
 
     public string ParametersSchema => """
     {
       "type": "object",
       "properties": {
-        "pattern":           { "type": "string",  "description": ".NET regular expression to search for on each line. Anchors (^/$) match per line." },
-        "path":              { "type": "string",  "description": "Directory to search under. Relative to workspace root or absolute. Defaults to '.'." },
-        "glob":              { "type": "string",  "description": "Glob filtering which files to scan. Defaults to '**/*'. Example: '**/*.cs'." },
-        "case_insensitive":  { "type": "boolean", "description": "Match case-insensitively. Default false." },
-        "respect_gitignore": { "type": "boolean", "description": "When true (the default), skip files matched by the root .gitignore." },
-        "max_matches":       { "type": "integer", "description": "Maximum number of matching lines to return. Default 100, hard cap 1000.", "minimum": 1, "maximum": 1000 }
+        "pattern":           { "type": "string",  "description": ".NET regex to search per line. Anchors (^/$) match per line." },
+        "path":              { "type": "string",  "description": "Directory to search (workspace-relative or absolute). Defaults to '.'." },
+        "glob":              { "type": "string",  "description": "Glob to filter files. Default '**/*' (e.g. '**/*.cs')." },
+        "case_insensitive":  { "type": "boolean", "description": "Case-insensitive match. Default false." },
+        "respect_gitignore": { "type": "boolean", "description": "Honor .gitignore. Default true." },
+        "max_matches":       { "type": "integer", "description": "Max matches. Default 100, cap 1000.", "minimum": 1, "maximum": 1000 }
       },
       "required": ["pattern"],
       "additionalProperties": false

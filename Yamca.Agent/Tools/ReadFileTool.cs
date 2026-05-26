@@ -18,9 +18,9 @@ public sealed class ReadFileTool : ITool
     {
       "type": "object",
       "properties": {
-        "path":   { "type": "string",  "description": "File path, relative to the workspace root or absolute." },
-        "offset": { "type": "integer", "description": "1-indexed line number to start reading from. Default 1.", "minimum": 1 },
-        "limit":  { "type": "integer", "description": "Maximum number of lines to return. Default 2000, hard cap 2000.", "minimum": 1, "maximum": 2000 }
+        "path":   { "type": "string",  "description": "Path (workspace-relative or absolute)." },
+        "offset": { "type": "integer", "description": "Line to start from (1-indexed). Default 1.", "minimum": 1 },
+        "limit":  { "type": "integer", "description": "Max lines to return. Default and hard cap 2000.", "minimum": 1, "maximum": 2000 }
       },
       "required": ["path"],
       "additionalProperties": false

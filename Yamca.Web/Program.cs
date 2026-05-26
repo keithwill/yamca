@@ -92,6 +92,7 @@ builder.Services.AddSingleton<ScriptRunner>();
 builder.Services.AddScoped<ScriptRegistryLookup>();
 builder.Services.AddScoped<ITool, ExecuteRegisteredScriptTool>();
 builder.Services.AddScoped<ITool, ExecuteDiscoveredScriptTool>();
+builder.Services.AddScoped<ITool, ExecuteScriptTool>();
 
 // IToolRegistry is scoped so its enumeration of ITool services picks up both
 // singleton tools and the per-circuit scoped script tools.

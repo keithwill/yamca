@@ -27,5 +27,8 @@ public sealed class ToolRegistry : IToolRegistry
         name is not null && _byName.TryGetValue(name, out var tool) ? tool : null;
 
     public IReadOnlyList<ChatTool> GetChatTools() =>
-        _ordered.Select(t => new ChatTool(t.Name, t.Description, t.ParametersSchema)).ToList();
+        _ordered.Where(t => t.ExposedToLlm).Select(t => new ChatTool(t.Name, t.Description, t.ParametersSchema)).ToList();
+
+    public IReadOnlyList<ITool> GetSettingsTools() =>
+        _ordered.Where(t => t.ExposedInSettings).ToList();
 }

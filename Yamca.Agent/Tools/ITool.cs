@@ -21,6 +21,12 @@ public interface ITool
     /// <summary>Default permission when neither project nor global settings override it.</summary>
     PermissionLevel DefaultPermission { get; }
 
+    /// <summary>True (default) = include in the tool list sent to the LLM.</summary>
+    bool ExposedToLlm => true;
+
+    /// <summary>True (default) = show in the settings permissions table.</summary>
+    bool ExposedInSettings => true;
+
     Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken);
 
     /// <summary>

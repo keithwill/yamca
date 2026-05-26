@@ -13,10 +13,10 @@ public sealed class EditFileTool : ITool
     {
       "type": "object",
       "properties": {
-        "path":        { "type": "string", "description": "File path, relative to the workspace root or absolute." },
-        "old_string":  { "type": "string", "description": "Exact text to find. Include enough surrounding context to be unique in the file." },
-        "new_string":  { "type": "string", "description": "Replacement text. May be empty to delete the matched text." },
-        "replace_all": { "type": "boolean", "description": "If true, replace every occurrence. Default false (requires unique match).", "default": false }
+        "path":        { "type": "string", "description": "Path (workspace-relative or absolute)." },
+        "old_string":  { "type": "string", "description": "Exact text to find; include enough context to be unique." },
+        "new_string":  { "type": "string", "description": "Replacement text (empty to delete)." },
+        "replace_all": { "type": "boolean", "description": "Replace all occurrences. Default false.", "default": false }
       },
       "required": ["path", "old_string", "new_string"],
       "additionalProperties": false

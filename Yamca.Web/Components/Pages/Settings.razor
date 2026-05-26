@@ -165,7 +165,7 @@ else
             else { <text>Stored in <code>@Keys.GlobalKey</code>.</text> }
         </MudText>
 
-        <MudTable Items="Tools.Tools" Hover="true" Dense="true" Class="mud-table-bordered">
+        <MudTable Items="Tools.GetSettingsTools()" Hover="true" Dense="true" Class="mud-table-bordered">
             <HeaderContent>
                 <MudTh>Tool</MudTh>
                 <MudTh>Permission</MudTh>
@@ -175,7 +175,7 @@ else
             <RowTemplate>
                 <MudTd>
                     <MudTooltip Text="@context.Description" Placement="Placement.Right">
-                        <MudText Typo="Typo.body2"><b>@context.Name</b></MudText>
+                        <MudText Typo="Typo.body2"><b>@ToolDisplayName(context.Name)</b></MudText>
                     </MudTooltip>
                 </MudTd>
                 <MudTd>
@@ -305,7 +305,7 @@ else
             </MudTabs>
         </div>
         <MudText Typo="Typo.caption" Class="mb-3">
-            Scripts the LLM may run via <code>execute_registered_script</code> without prompting. Each path is workspace-relative. Files inside a registered directory count as registered. Descriptions are optional but are shown to the LLM at session start so it can pick the right entry.
+            Scripts the LLM may run via <code>execute_script</code> without prompting. Each path is workspace-relative. Files inside a registered directory count as registered. Descriptions are optional but are shown to the LLM at session start so it can pick the right entry.
             @if (_scriptTierIndex == 0)
             {
                 <text> Stored in </text>
@@ -513,6 +513,13 @@ else
     [Inject] private WorkspaceBrowser Browser { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private static string ToolDisplayName(string name) => name switch
+    {
+        "execute_registered_script" => "execute_script (registered)",
+        "execute_discovered_script" => "execute_script (discovered)",
+        _ => name,
+    };
 
     private bool _hydrated;
     private int _tierIndex; // 0 = Project, 1 = Global
