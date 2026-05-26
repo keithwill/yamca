@@ -296,6 +296,110 @@ else
     </MudPaper>
 
     <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.h6">Registered scripts</MudText>
+            <MudSpacer />
+            <MudTabs @bind-ActivePanelIndex="_scriptTierIndex" Rounded="true" Color="Color.Primary">
+                <MudTabPanel Text="Project" />
+                <MudTabPanel Text="Global" />
+            </MudTabs>
+        </div>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            Scripts the LLM may run via <code>execute_registered_script</code> without prompting. Each path is workspace-relative. Files inside a registered directory count as registered. Descriptions are optional but are shown to the LLM at session start so it can pick the right entry.
+            @if (_scriptTierIndex == 0)
+            {
+                <text> Stored in </text>
+                <MudTooltip Text="@Keys.ProjectKey" Placement="Placement.Top"><code>@ShortKey(Keys.ProjectKey)</code></MudTooltip><text>.</text>
+            }
+            else { <text> Stored in <code>@Keys.GlobalKey</code>.</text> }
+        </MudText>
+
+        <MudText Typo="Typo.subtitle2" Class="mt-2 mb-1">Files</MudText>
+        @{ var fileRows = CurrentScriptFileRows; }
+        @if (fileRows.Count == 0)
+        {
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)" Class="mb-1">No registered script files.</MudText>
+        }
+        else
+        {
+            <div class="mb-2">
+                @foreach (var row in fileRows)
+                {
+                    <div @key="row.Id" class="d-flex align-center mb-1" style="gap: 4px;">
+                        <MudTextField T="string" Value="@row.Path"
+                                      ValueChanged="@((string v) => OnScriptPathChanged(row, v, isDirectory: false))"
+                                      DebounceInterval="400"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Class="flex-grow-1"
+                                      Placeholder="build.ps1" />
+                        <MudTextField T="string" Value="@(row.Description ?? string.Empty)"
+                                      ValueChanged="@((string v) => OnScriptDescriptionChanged(row, v, isDirectory: false))"
+                                      DebounceInterval="400"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Class="flex-grow-1"
+                                      Placeholder="Description (optional)" />
+                        @if (!string.IsNullOrWhiteSpace(row.Path) && !ScriptFileExists(row.Path))
+                        {
+                            <MudTooltip Text="File not found under the workspace.">
+                                <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Warning" />
+                            </MudTooltip>
+                        }
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       OnClick="@(() => RemoveScriptRow(row, isDirectory: false))"
+                                       aria-label="Remove" />
+                    </div>
+                }
+            </div>
+        }
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => AddScriptRow(isDirectory: false))">
+            Add file
+        </MudButton>
+
+        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Directories</MudText>
+        @{ var dirRows = CurrentScriptDirectoryRows; }
+        @if (dirRows.Count == 0)
+        {
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)" Class="mb-1">No registered script directories.</MudText>
+        }
+        else
+        {
+            <div class="mb-2">
+                @foreach (var row in dirRows)
+                {
+                    <div @key="row.Id" class="d-flex align-center mb-1" style="gap: 4px;">
+                        <MudTextField T="string" Value="@row.Path"
+                                      ValueChanged="@((string v) => OnScriptPathChanged(row, v, isDirectory: true))"
+                                      DebounceInterval="400"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Class="flex-grow-1"
+                                      Placeholder=".scripts" />
+                        <MudTextField T="string" Value="@(row.Description ?? string.Empty)"
+                                      ValueChanged="@((string v) => OnScriptDescriptionChanged(row, v, isDirectory: true))"
+                                      DebounceInterval="400"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Class="flex-grow-1"
+                                      Placeholder="Description (optional)" />
+                        @if (!string.IsNullOrWhiteSpace(row.Path) && !ScriptDirectoryExists(row.Path))
+                        {
+                            <MudTooltip Text="Directory not found under the workspace.">
+                                <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Warning" />
+                            </MudTooltip>
+                        }
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       OnClick="@(() => RemoveScriptRow(row, isDirectory: true))"
+                                       aria-label="Remove" />
+                    </div>
+                }
+            </div>
+        }
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.CreateNewFolder"
+                   OnClick="@(() => AddScriptRow(isDirectory: true))">
+            Add directory
+        </MudButton>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
         <MudText Typo="Typo.h6" Class="mb-2">Backup</MudText>
         <MudText Typo="Typo.caption" Class="mb-3">
             Export your Global settings to a JSON file, or restore them from one. Project settings (stored per workspace in <code>@ShortKey(Keys.ProjectKey)</code>) are not included.
@@ -428,6 +532,24 @@ else
     private readonly List<InstructionRow> _projectRows = new();
     private readonly List<InstructionRow> _globalRows = new();
     private List<InstructionRow> CurrentRows => _instrTierIndex == 0 ? _projectRows : _globalRows;
+
+    private int _scriptTierIndex; // 0 = Project, 1 = Global
+
+    private sealed class ScriptRow
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public string Path { get; set; } = string.Empty;
+        public string? Description { get; set; }
+    }
+
+    private readonly List<ScriptRow> _projectScriptFiles = new();
+    private readonly List<ScriptRow> _projectScriptDirs = new();
+    private readonly List<ScriptRow> _globalScriptFiles = new();
+    private readonly List<ScriptRow> _globalScriptDirs = new();
+
+    private List<ScriptRow> CurrentScriptFileRows => _scriptTierIndex == 0 ? _projectScriptFiles : _globalScriptFiles;
+    private List<ScriptRow> CurrentScriptDirectoryRows => _scriptTierIndex == 0 ? _projectScriptDirs : _globalScriptDirs;
+    private SettingsTier CurrentScriptTier => _scriptTierIndex == 0 ? SettingsTier.Project : SettingsTier.Global;
 
     private bool _modelPickerOpen;
     private bool _modelsLoading;
@@ -585,7 +707,79 @@ else
         _globalRows.Clear();
         foreach (var p in Session.GlobalInstructionFiles)
             _globalRows.Add(new InstructionRow { Path = p });
+
+        SyncScriptRows(Session.ProjectScripts, _projectScriptFiles, _projectScriptDirs);
+        SyncScriptRows(Session.GlobalScripts, _globalScriptFiles, _globalScriptDirs);
     }
+
+    private static void SyncScriptRows(ScriptRegistry registry, List<ScriptRow> files, List<ScriptRow> dirs)
+    {
+        files.Clear();
+        foreach (var e in registry.Registered)
+            files.Add(new ScriptRow { Path = e.Path, Description = e.Description });
+        dirs.Clear();
+        foreach (var d in registry.Directories)
+            dirs.Add(new ScriptRow { Path = d.Path, Description = d.Description });
+    }
+
+    private void PersistScripts()
+    {
+        var files = CurrentScriptFileRows
+            .Where(r => !string.IsNullOrWhiteSpace(r.Path))
+            .Select(r => new RegisteredScript(NormalizeScriptPath(r.Path), NullIfBlank(r.Description)))
+            .ToList();
+        var dirs = CurrentScriptDirectoryRows
+            .Where(r => !string.IsNullOrWhiteSpace(r.Path))
+            .Select(r => new RegisteredScriptDirectory(NormalizeScriptPath(r.Path), NullIfBlank(r.Description)))
+            .ToList();
+        Session.SetScripts(CurrentScriptTier, new ScriptRegistry(files, dirs));
+    }
+
+    private void AddScriptRow(bool isDirectory)
+    {
+        (isDirectory ? CurrentScriptDirectoryRows : CurrentScriptFileRows).Add(new ScriptRow());
+        // Empty rows are filtered out on persist, so don't write yet — wait for the user to type a path.
+    }
+
+    private void RemoveScriptRow(ScriptRow row, bool isDirectory)
+    {
+        (isDirectory ? CurrentScriptDirectoryRows : CurrentScriptFileRows).Remove(row);
+        PersistScripts();
+    }
+
+    private void OnScriptPathChanged(ScriptRow row, string value, bool isDirectory)
+    {
+        var normalized = NormalizeScriptPath(value ?? string.Empty);
+        if (Path.IsPathRooted(normalized)) normalized = string.Empty;
+        if (row.Path == normalized) return;
+        row.Path = normalized;
+        PersistScripts();
+    }
+
+    private void OnScriptDescriptionChanged(ScriptRow row, string value, bool isDirectory)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        if (string.Equals(row.Description, trimmed, StringComparison.Ordinal)) return;
+        row.Description = trimmed;
+        PersistScripts();
+    }
+
+    private bool ScriptFileExists(string relative)
+    {
+        if (string.IsNullOrWhiteSpace(relative)) return true;
+        try { return File.Exists(Workspace.Resolve(relative)); }
+        catch { return false; }
+    }
+
+    private bool ScriptDirectoryExists(string relative)
+    {
+        if (string.IsNullOrWhiteSpace(relative)) return true;
+        try { return Directory.Exists(Workspace.Resolve(relative)); }
+        catch { return false; }
+    }
+
+    private static string NormalizeScriptPath(string raw) => raw.Trim().Replace('\\', '/');
+    private static string? NullIfBlank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
     private void PersistCurrentTier()
     {
