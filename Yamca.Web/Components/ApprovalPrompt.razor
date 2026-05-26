@@ -1,3 +1,6 @@
+@using Yamca.Agent.Tools.ScriptExecution
+@using Yamca.Agent.Workspace
+
 <MudPaper Class="pa-3 mb-2" Elevation="0" Outlined="true" Style="border-color: var(--mud-palette-warning);">
     <div class="d-flex align-center mb-2">
         <MudIcon Icon="@Icons.Material.Filled.Lock" Color="Color.Warning" Class="mr-2" />
@@ -6,29 +9,81 @@
         </MudText>
     </div>
 
-    <MudText Typo="Typo.caption" Class="mb-1">Arguments</MudText>
-    <pre class="mud-paper-outlined pa-2" style="overflow:auto; max-height: 240px; font-size: 0.8rem;">@Approval.ArgumentsPretty</pre>
+    @if (Approval.IsDiscoveredScript && Approval.ScriptPath is { } scriptPath)
+    {
+        <MudText Typo="Typo.caption" Class="mb-1">Script</MudText>
+        <pre class="mud-paper-outlined pa-2 mb-2" style="overflow:auto; font-size: 0.8rem;">@scriptPath</pre>
 
-    <MudRadioGroup T="ApprovalPersistence" Value="_persistence" ValueChanged="@((ApprovalPersistence p) => _persistence = p)" Class="mt-2">
-        <MudRadio T="ApprovalPersistence" Value="ApprovalPersistence.None" Dense="true">Just once</MudRadio>
-        <MudRadio T="ApprovalPersistence" Value="ApprovalPersistence.Project" Dense="true">Save for this project</MudRadio>
-        <MudRadio T="ApprovalPersistence" Value="ApprovalPersistence.Global" Dense="true">Save everywhere</MudRadio>
-    </MudRadioGroup>
+        <MudText Typo="Typo.caption" Class="mb-1">Will dispatch as</MudText>
+        <pre class="mud-paper-outlined pa-2 mb-2" style="overflow:auto; font-size: 0.8rem;">@DispatchPreview(scriptPath)</pre>
 
-    <div class="d-flex mt-2" style="gap: 0.5rem;">
-        <MudButton Color="Color.Success" Variant="Variant.Filled" OnClick="OnAllow"
-                   StartIcon="@Icons.Material.Filled.Check">Allow</MudButton>
-        <MudButton Color="Color.Error" Variant="Variant.Outlined" OnClick="OnDeny"
-                   StartIcon="@Icons.Material.Filled.Block">Deny</MudButton>
-    </div>
+        @if (Approval.ScriptArguments is { Count: > 0 } argv)
+        {
+            <MudText Typo="Typo.caption" Class="mb-1">Arguments</MudText>
+            <pre class="mud-paper-outlined pa-2 mb-2" style="overflow:auto; font-size: 0.8rem;">@string.Join("\n", argv)</pre>
+        }
+
+        <MudTextField T="string" @bind-Value="_registerDescription"
+                      Label="Description (optional, shown to the LLM when registered)"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+
+        <div class="d-flex mt-2 flex-wrap" style="gap: 0.5rem;">
+            <MudButton Color="Color.Success" Variant="Variant.Filled" OnClick="OnAllowOnce"
+                       StartIcon="@Icons.Material.Filled.Check">Allow once</MudButton>
+            <MudButton Color="Color.Success" Variant="Variant.Outlined" OnClick="OnAllowAndRegister"
+                       StartIcon="@Icons.Material.Filled.BookmarkAdd">Allow and register</MudButton>
+            <MudButton Color="Color.Error" Variant="Variant.Outlined" OnClick="OnDeny"
+                       StartIcon="@Icons.Material.Filled.Block">Deny</MudButton>
+        </div>
+    }
+    else
+    {
+        <MudText Typo="Typo.caption" Class="mb-1">Arguments</MudText>
+        <pre class="mud-paper-outlined pa-2" style="overflow:auto; max-height: 240px; font-size: 0.8rem;">@Approval.ArgumentsPretty</pre>
+
+        <MudRadioGroup T="ApprovalPersistence" Value="_persistence" ValueChanged="@((ApprovalPersistence p) => _persistence = p)" Class="mt-2">
+            <MudRadio T="ApprovalPersistence" Value="ApprovalPersistence.None" Dense="true">Just once</MudRadio>
+            <MudRadio T="ApprovalPersistence" Value="ApprovalPersistence.Project" Dense="true">Save for this project</MudRadio>
+            <MudRadio T="ApprovalPersistence" Value="ApprovalPersistence.Global" Dense="true">Save everywhere</MudRadio>
+        </MudRadioGroup>
+
+        <div class="d-flex mt-2" style="gap: 0.5rem;">
+            <MudButton Color="Color.Success" Variant="Variant.Filled" OnClick="OnAllow"
+                       StartIcon="@Icons.Material.Filled.Check">Allow</MudButton>
+            <MudButton Color="Color.Error" Variant="Variant.Outlined" OnClick="OnDeny"
+                       StartIcon="@Icons.Material.Filled.Block">Deny</MudButton>
+        </div>
+    }
 </MudPaper>
 
 @code {
     [Parameter, EditorRequired] public PendingApproval Approval { get; set; } = default!;
     [Parameter, EditorRequired] public EventCallback<(bool Approved, ApprovalPersistence Persistence)> OnResolve { get; set; }
+    [Parameter] public EventCallback<string?> OnRegisterAndAllow { get; set; }
+
+    [Inject] private IWorkspace Workspace { get; set; } = default!;
+    [Inject] private ScriptRunner Runner { get; set; } = default!;
 
     private ApprovalPersistence _persistence = ApprovalPersistence.None;
+    private string _registerDescription = string.Empty;
 
     private Task OnAllow() => OnResolve.InvokeAsync((true, _persistence));
-    private Task OnDeny() => OnResolve.InvokeAsync((false, _persistence));
+    private Task OnDeny() => OnResolve.InvokeAsync((false, ApprovalPersistence.None));
+
+    private Task OnAllowOnce() => OnResolve.InvokeAsync((true, ApprovalPersistence.None));
+    private Task OnAllowAndRegister() =>
+        OnRegisterAndAllow.InvokeAsync(string.IsNullOrWhiteSpace(_registerDescription) ? null : _registerDescription.Trim());
+
+    private string DispatchPreview(string scriptPath)
+    {
+        try
+        {
+            var resolved = Workspace.Resolve(scriptPath);
+            return Runner.DescribeDispatch(resolved);
+        }
+        catch (Exception ex)
+        {
+            return $"(cannot preview dispatch: {ex.Message})";
+        }
+    }
 }

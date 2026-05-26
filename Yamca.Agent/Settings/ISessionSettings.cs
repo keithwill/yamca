@@ -15,4 +15,11 @@ public interface ISessionSettings
     /// upstream prompt caching can reuse it; per-session context like the workspace
     /// path is appended by <see cref="Chat.ChatSession"/> as a separate message.</summary>
     string SystemPrompt { get; }
+
+    /// <summary>Project-tier script registry. Empty when no scripts are registered
+    /// for the current workspace.</summary>
+    ScriptRegistry ProjectScripts { get; }
+
+    /// <summary>Global-tier script registry — applies to every workspace.</summary>
+    ScriptRegistry GlobalScripts { get; }
 }

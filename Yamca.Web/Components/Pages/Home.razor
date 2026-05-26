@@ -87,7 +87,8 @@ else
                 @foreach (var approval in Chat.Approvals.ToList())
                 {
                     <ApprovalPrompt Approval="approval"
-                                    OnResolve="@(d => Chat.ResolveApproval(approval, d.Approved, d.Persistence))" />
+                                    OnResolve="@(d => Chat.ResolveApproval(approval, d.Approved, d.Persistence))"
+                                    OnRegisterAndAllow="@(desc => Chat.RegisterAndAllow(approval, desc))" />
                 }
 
                 @if (Chat.Error is not null && (Chat.Turns.Count == 0 || Chat.Turns[^1].Error is null))

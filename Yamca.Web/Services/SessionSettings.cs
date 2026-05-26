@@ -29,6 +29,9 @@ public sealed class SessionSettings : ISessionSettings
     public IReadOnlyList<string> ProjectInstructionFiles { get; private set; } = Array.Empty<string>();
     public bool ProjectInheritsGlobalInstructions { get; private set; } = true;
 
+    public ScriptRegistry GlobalScripts { get; private set; } = ScriptRegistry.Empty;
+    public ScriptRegistry ProjectScripts { get; private set; } = ScriptRegistry.Empty;
+
     /// <summary>Fired when the named tier has been mutated. The handler is expected
     /// to serialize that tier and write it to localStorage.</summary>
     public event Action<SettingsTier>? Changed;
@@ -80,6 +83,28 @@ public sealed class SessionSettings : ISessionSettings
         Changed?.Invoke(SettingsTier.Project);
     }
 
+    public void SetScripts(SettingsTier tier, ScriptRegistry registry)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        if (tier == SettingsTier.Project) ProjectScripts = registry;
+        else GlobalScripts = registry;
+        Changed?.Invoke(tier);
+    }
+
+    /// <summary>Append a single script entry to the named tier. Existing entries with
+    /// the same path are replaced. Used by the approval prompt's "Allow and register"
+    /// action.</summary>
+    public void AddRegisteredScript(SettingsTier tier, RegisteredScript entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        var current = tier == SettingsTier.Project ? ProjectScripts : GlobalScripts;
+        var registered = current.Registered
+            .Where(e => !string.Equals(e.Path, entry.Path, StringComparison.Ordinal))
+            .Append(entry)
+            .ToList();
+        SetScripts(tier, new ScriptRegistry(registered, current.Directories));
+    }
+
     /// <summary>Replace a single tool entry in the given tier, or pass <c>null</c> to remove.</summary>
     public void SetToolEntry(SettingsTier tier, string toolName, ToolPermissionSettings? entry)
     {
@@ -129,6 +154,7 @@ public sealed class SessionSettings : ISessionSettings
         GlobalInstructionFiles = firstRun
             ? DefaultGlobalInstructionFiles
             : (blob.InstructionFiles?.ToArray() ?? Array.Empty<string>());
+        GlobalScripts = ScriptsFromDto(blob.Scripts);
     }
 
     // Seeded only when no Global blob has ever been written to localStorage.
@@ -141,11 +167,13 @@ public sealed class SessionSettings : ISessionSettings
 
         return new ToolSettingsMap(new Dictionary<string, ToolPermissionSettings>(StringComparer.Ordinal)
         {
-            ["read_file"]       = Workspace(PermissionLevel.Allow),
-            ["write_file"]      = Workspace(PermissionLevel.Allow),
-            ["delete_file"]     = Workspace(PermissionLevel.Allow),
-            ["list_directory"]  = Workspace(PermissionLevel.Allow),
-            ["execute_command"] = new ToolPermissionSettings { Permission = PermissionLevel.Ask },
+            ["read_file"]                = Workspace(PermissionLevel.Allow),
+            ["write_file"]               = Workspace(PermissionLevel.Allow),
+            ["delete_file"]              = Workspace(PermissionLevel.Allow),
+            ["list_directory"]           = Workspace(PermissionLevel.Allow),
+            ["execute_command"]          = new ToolPermissionSettings { Permission = PermissionLevel.Ask },
+            ["execute_registered_script"] = Workspace(PermissionLevel.Allow),
+            ["execute_discovered_script"] = Workspace(PermissionLevel.Ask),
         });
     }
 
@@ -155,6 +183,7 @@ public sealed class SessionSettings : ISessionSettings
         Project = MapFromDto(blob.Tools);
         ProjectInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
         ProjectInheritsGlobalInstructions = blob.InheritsGlobalInstructions ?? true;
+        ProjectScripts = ScriptsFromDto(blob.Scripts);
     }
 
     public string SerializeGlobal()
@@ -167,6 +196,7 @@ public sealed class SessionSettings : ISessionSettings
             ReasoningDisplay = ReasoningDisplay,
             Tools = MapToDto(Global),
             InstructionFiles = NonEmpty(GlobalInstructionFiles),
+            Scripts = ScriptsToDto(GlobalScripts),
         };
         return JsonSerializer.Serialize(blob, JsonOptions);
     }
@@ -205,6 +235,7 @@ public sealed class SessionSettings : ISessionSettings
                 ReasoningDisplay = ReasoningDisplay,
                 Tools = MapToDto(Global),
                 InstructionFiles = NonEmpty(GlobalInstructionFiles),
+                Scripts = ScriptsToDto(GlobalScripts),
             },
         };
         return JsonSerializer.Serialize(envelope, ExportJsonOptions);
@@ -256,6 +287,7 @@ public sealed class SessionSettings : ISessionSettings
         ReasoningDisplay = blob.ReasoningDisplay ?? ReasoningDisplay.Collapsed;
         Global = MapFromDto(blob.Tools);
         GlobalInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
+        GlobalScripts = ScriptsFromDto(blob.Scripts);
     }
 
     public string SerializeProject()
@@ -265,6 +297,7 @@ public sealed class SessionSettings : ISessionSettings
             Tools = MapToDto(Project),
             InstructionFiles = NonEmpty(ProjectInstructionFiles),
             InheritsGlobalInstructions = ProjectInheritsGlobalInstructions ? null : false,
+            Scripts = ScriptsToDto(ProjectScripts),
         };
         return JsonSerializer.Serialize(blob, JsonOptions);
     }
@@ -321,6 +354,7 @@ public sealed class SessionSettings : ISessionSettings
         public ReasoningDisplay? ReasoningDisplay { get; set; }
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
         public List<string>? InstructionFiles { get; set; }
+        public ScriptsDto? Scripts { get; set; }
     }
 
     private sealed class ProjectBlob
@@ -328,6 +362,7 @@ public sealed class SessionSettings : ISessionSettings
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
         public List<string>? InstructionFiles { get; set; }
         public bool? InheritsGlobalInstructions { get; set; }
+        public ScriptsDto? Scripts { get; set; }
     }
 
     private sealed class EndpointDto
@@ -351,4 +386,50 @@ public sealed class SessionSettings : ISessionSettings
         public Yamca.Agent.Permissions.PermissionLevel? Permission { get; set; }
         public bool? RestrictToWorkspace { get; set; }
     }
+
+    private sealed class ScriptsDto
+    {
+        public List<ScriptEntryDto>? Registered { get; set; }
+        public List<ScriptEntryDto>? Directories { get; set; }
+    }
+
+    private sealed class ScriptEntryDto
+    {
+        public string? Path { get; set; }
+        public string? Description { get; set; }
+    }
+
+    private static ScriptRegistry ScriptsFromDto(ScriptsDto? dto)
+    {
+        if (dto is null) return ScriptRegistry.Empty;
+
+        var files = (dto.Registered ?? new List<ScriptEntryDto>())
+            .Where(e => !string.IsNullOrWhiteSpace(e.Path))
+            .Select(e => new RegisteredScript(NormalizePath(e.Path!), Trim(e.Description)))
+            .ToList();
+        var dirs = (dto.Directories ?? new List<ScriptEntryDto>())
+            .Where(e => !string.IsNullOrWhiteSpace(e.Path))
+            .Select(e => new RegisteredScriptDirectory(NormalizePath(e.Path!), Trim(e.Description)))
+            .ToList();
+
+        if (files.Count == 0 && dirs.Count == 0) return ScriptRegistry.Empty;
+        return new ScriptRegistry(files, dirs);
+    }
+
+    private static ScriptsDto? ScriptsToDto(ScriptRegistry registry)
+    {
+        if (registry.IsEmpty) return null;
+        return new ScriptsDto
+        {
+            Registered = registry.Registered.Count == 0
+                ? null
+                : registry.Registered.Select(e => new ScriptEntryDto { Path = e.Path, Description = e.Description }).ToList(),
+            Directories = registry.Directories.Count == 0
+                ? null
+                : registry.Directories.Select(d => new ScriptEntryDto { Path = d.Path, Description = d.Description }).ToList(),
+        };
+    }
+
+    private static string NormalizePath(string raw) => raw.Trim().Replace('\\', '/');
+    private static string? Trim(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }

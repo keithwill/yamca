@@ -22,4 +22,13 @@ public interface ITool
     PermissionLevel DefaultPermission { get; }
 
     Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Optional contribution to the session-start system message. Returning a non-null
+    /// string appends it (separated by a blank line) to the single system message the
+    /// chat builder constructs. Use this when a tool needs to expose runtime state to
+    /// the LLM that cannot fit in its static <see cref="Description"/> — e.g., a list
+    /// of registered scripts. Default: no contribution.
+    /// </summary>
+    string? SessionStartMessage(ToolContext context) => null;
 }

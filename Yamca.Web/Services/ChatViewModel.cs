@@ -149,6 +149,25 @@ public sealed class ChatViewModel : IDisposable
         Raise();
     }
 
+    /// <summary>"Allow and register" flow for execute_discovered_script: add the script
+    /// to the project-tier registry, then resolve the approval as Allow (no permission
+    /// persistence — registration is the persistence mechanism for script tools).</summary>
+    public void RegisterAndAllow(PendingApproval approval, string? description)
+    {
+        var path = approval.ScriptPath;
+        if (path is null)
+        {
+            // Should not happen — the UI only shows the button when ScriptPath is non-null.
+            ResolveApproval(approval, approved: true, ApprovalPersistence.None);
+            return;
+        }
+
+        var normalized = path.Trim().Replace('\\', '/');
+        _settings.AddRegisteredScript(SettingsTier.Project, new RegisteredScript(normalized, string.IsNullOrWhiteSpace(description) ? null : description.Trim()));
+
+        ResolveApproval(approval, approved: true, ApprovalPersistence.None);
+    }
+
     public void Clear()
     {
         if (IsRunning) Cancel();
@@ -183,7 +202,14 @@ public sealed class ChatViewModel : IDisposable
             ? "Your responses are rendered as GitHub-flavored Markdown — use fenced code blocks for code, and standard Markdown for emphasis, lists, and tables."
             : "Your responses are rendered as plain text. Do NOT use Markdown formatting: no `backticks`, no **bold**/*italics*, no #headings, no fenced code blocks, no bullet/numbered lists. Write code and identifiers inline as plain text.";
         prompt = (string.IsNullOrWhiteSpace(prompt) ? "" : prompt + "\n\n") + hint;
-        var instructions = _instructionLoader.Load(_settings, _workspace);
+        var instructions = _instructionLoader.Load(_settings, _workspace).ToList();
+        foreach (var tool in _tools.Tools)
+        {
+            var ctx = new ToolContext(_workspace, _permissions.RestrictToWorkspace(tool.Name));
+            var contribution = tool.SessionStartMessage(ctx);
+            if (!string.IsNullOrWhiteSpace(contribution))
+                instructions.Add(contribution);
+        }
         var session = new ChatSession(_workspace, prompt, instructions);
 
         _loop = new AgentLoop(

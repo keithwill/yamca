@@ -7,6 +7,7 @@ using Yamca.Agent.Chat;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
+using Yamca.Agent.Tools.ScriptExecution;
 using Yamca.Agent.Workspace;
 using Yamca.Web.Components;
 using Yamca.Web.Services;
@@ -80,7 +81,19 @@ builder.Services.AddSingleton<ITool, ListDirectoryTool>();
 builder.Services.AddSingleton<ITool, FindFilesTool>();
 builder.Services.AddSingleton<ITool, GrepTool>();
 builder.Services.AddSingleton<ITool, ExecuteCommandTool>();
-builder.Services.AddSingleton<IToolRegistry>(sp => new ToolRegistry(sp.GetServices<ITool>()));
+
+// Script-tool collaborators. InterpreterResolver / ScriptRunner are stateless apart
+// from a PATH-resolution cache, so they live as singletons. ScriptRegistryLookup
+// reads scoped session settings.
+builder.Services.AddSingleton<InterpreterResolver>();
+builder.Services.AddSingleton<ScriptRunner>();
+builder.Services.AddScoped<ScriptRegistryLookup>();
+builder.Services.AddScoped<ITool, ExecuteRegisteredScriptTool>();
+builder.Services.AddScoped<ITool, ExecuteDiscoveredScriptTool>();
+
+// IToolRegistry is scoped so its enumeration of ITool services picks up both
+// singleton tools and the per-circuit scoped script tools.
+builder.Services.AddScoped<IToolRegistry>(sp => new ToolRegistry(sp.GetServices<ITool>()));
 
 // Per-circuit (scoped) state — each browser tab gets its own settings, approval
 // queue, and permission resolver.
