@@ -54,6 +54,7 @@
 
     private bool _expanded;
     private bool _initialized;
+    private bool _userToggled;
 
     protected override void OnParametersSet()
     {
@@ -62,11 +63,15 @@
             _expanded = InitiallyExpanded;
             _initialized = true;
         }
-        else if (!Item.IsComplete && InitiallyExpanded)
+        else if (!_userToggled)
         {
-            _expanded = true;
+            _expanded = InitiallyExpanded;
         }
     }
 
-    private void Toggle() => _expanded = !_expanded;
+    private void Toggle()
+    {
+        _expanded = !_expanded;
+        _userToggled = true;
+    }
 }
