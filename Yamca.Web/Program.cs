@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using MudBlazor.Services;
 using Yamca.Agent.Chat;
+using Yamca.Agent.Git;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
@@ -73,6 +74,7 @@ builder.Services.AddHttpClient();
 // process was launched from. Per PLAN.md this is the sandbox root for the
 // entire session.
 builder.Services.AddSingleton<IWorkspace>(_ => new Workspace(workspaceRoot));
+builder.Services.AddSingleton<GitService>();
 
 builder.Services.AddSingleton<ITool, ReadFileTool>();
 builder.Services.AddSingleton<ITool, WriteFileTool>();

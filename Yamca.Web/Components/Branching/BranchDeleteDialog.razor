@@ -1,0 +1,76 @@
+@inject GitService Git
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body1">
+            Delete branch <code>@Info.Branch</code> and its worktree?
+        </MudText>
+
+        @if (_ahead > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                This branch has @_ahead unmerged commit@(_ahead == 1 ? "" : "s"). They will be lost.
+            </MudAlert>
+        }
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3"
+                      Style="white-space:pre-wrap;">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled"
+                   OnClick="OnDelete" Disabled="@_busy">
+            @(_busy ? "Deleting…" : "Delete")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter, EditorRequired] public WorktreeInfo Info { get; set; } = default!;
+
+    private int _ahead;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(Info.BaseBranch))
+        {
+            _ahead = await Git.CountCommitsAheadAsync(Info.BasePath, Info.BaseBranch, Info.Branch, CancellationToken.None);
+        }
+    }
+
+    private void Cancel() => Dialog.Cancel();
+
+    private async Task OnDelete()
+    {
+        _error = null;
+        _busy = true;
+        StateHasChanged();
+        try
+        {
+            var ct = CancellationToken.None;
+            var rm = await Git.RemoveWorktreeAsync(Info.BasePath, Info.WorktreePath, force: true, ct);
+            if (!rm.Ok)
+            {
+                _error = rm.Stderr.Trim();
+                return;
+            }
+            var del = await Git.DeleteBranchAsync(Info.BasePath, Info.Branch, force: true, ct);
+            if (!del.Ok)
+            {
+                _error = del.Stderr.Trim();
+                return;
+            }
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

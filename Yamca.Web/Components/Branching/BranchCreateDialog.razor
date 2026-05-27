@@ -1,0 +1,121 @@
+@using Yamca.Agent.Workspace
+@inject GitService Git
+
+<MudDialog>
+    <DialogContent>
+        @if (_baseBranch is not null && _useExisting == false)
+        {
+            <MudText Typo="Typo.caption" Class="mb-2">
+                Base: <code>@_baseBranch</code>
+            </MudText>
+        }
+
+        <MudTextField @bind-Value="_branchName" T="string"
+                      Label="New branch name"
+                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Disabled="@_useExisting"
+                      HelperText="Letters, digits, '-' '_' '/'. Validated with git check-ref-format." />
+
+        <MudText Typo="Typo.caption" Class="mt-3 mb-1">…or attach to an existing branch</MudText>
+        <MudSelect T="string" Value="_existingSelection"
+                   ValueChanged="OnExistingChanged"
+                   Variant="Variant.Outlined" Margin="Margin.Dense"
+                   Clearable="true" Dense="true">
+            @foreach (var b in _existingBranches)
+            {
+                <MudSelectItem T="string" Value="@b">@b</MudSelectItem>
+            }
+        </MudSelect>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="OnCreate" Disabled="@_busy">
+            @(_busy ? "Creating…" : "Create")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter, EditorRequired] public IWorkspace BaseWorkspace { get; set; } = default!;
+
+    private string _branchName = "";
+    private string? _existingSelection;
+    private bool _useExisting;
+    private string? _baseBranch;
+    private IReadOnlyList<string> _existingBranches = Array.Empty<string>();
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ct = CancellationToken.None;
+        _baseBranch = await Git.GetCurrentBranchAsync(BaseWorkspace.RootPath, ct);
+        var all = await Git.ListBranchesAsync(BaseWorkspace.RootPath, ct);
+        _existingBranches = all.Where(b => !string.Equals(b, _baseBranch, StringComparison.Ordinal)).ToList();
+    }
+
+    private void OnExistingChanged(string? value)
+    {
+        _existingSelection = value;
+        _useExisting = !string.IsNullOrEmpty(value);
+        if (_useExisting) _branchName = value!;
+    }
+
+    private void Cancel() => Dialog.Cancel();
+
+    private async Task OnCreate()
+    {
+        _error = null;
+        var ct = CancellationToken.None;
+
+        var branch = _useExisting ? _existingSelection : _branchName?.Trim();
+        if (string.IsNullOrWhiteSpace(branch))
+        {
+            _error = "Branch name is required.";
+            return;
+        }
+
+        if (!_useExisting && !await Git.CheckRefFormatAsync(branch, ct))
+        {
+            _error = $"\"{branch}\" is not a valid git branch name.";
+            return;
+        }
+
+        var worktreeDir = Path.Combine(BaseWorkspace.RootPath, ".yamca", "worktrees", Sanitize(branch));
+        try { Directory.CreateDirectory(Path.GetDirectoryName(worktreeDir)!); }
+        catch (Exception ex) { _error = ex.Message; return; }
+
+        _busy = true;
+        StateHasChanged();
+        try
+        {
+            var r = await Git.CreateWorktreeAsync(BaseWorkspace.RootPath, worktreeDir, branch, isNewBranch: !_useExisting, ct);
+            if (!r.Ok)
+            {
+                _error = string.IsNullOrWhiteSpace(r.Stderr) ? $"git exited with code {r.ExitCode}." : r.Stderr.Trim();
+                return;
+            }
+
+            var info = new WorktreeInfo(
+                Branch: branch,
+                BaseBranch: _baseBranch ?? "",
+                WorktreePath: worktreeDir,
+                BasePath: BaseWorkspace.RootPath);
+            Dialog.Close(DialogResult.Ok(info));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string Sanitize(string branch) =>
+        branch.Replace('/', '-').Replace('\\', '-');
+}

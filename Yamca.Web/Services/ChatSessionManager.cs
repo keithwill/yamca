@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Yamca.Agent.Git;
+using Yamca.Agent.Workspace;
 
 namespace Yamca.Web.Services;
 
@@ -28,6 +30,22 @@ public sealed class ChatSessionManager : IDisposable
         if (!CanCreate) throw new InvalidOperationException($"Maximum of {MaxSessions} chat sessions reached.");
         var id = _nextId++;
         var vm = ActivatorUtilities.CreateInstance<ChatViewModel>(_services, id);
+        vm.Changed += Raise;
+        _sessions.Add(vm);
+        Raise();
+        return vm;
+    }
+
+    /// <summary>Create a session bound to a git worktree. The supplied
+    /// <paramref name="workspace"/> replaces the DI-resolved root workspace so
+    /// every tool call inside the session resolves paths against the worktree.</summary>
+    public ChatViewModel CreateForWorktree(IWorkspace workspace, WorktreeInfo info)
+    {
+        if (!CanCreate) throw new InvalidOperationException($"Maximum of {MaxSessions} chat sessions reached.");
+        var id = _nextId++;
+        var vm = ActivatorUtilities.CreateInstance<ChatViewModel>(_services, id, workspace);
+        vm.BindWorktree(info);
+        vm.IsGitRepository = true;
         vm.Changed += Raise;
         _sessions.Add(vm);
         Raise();

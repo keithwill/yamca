@@ -2,6 +2,9 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.JSInterop
 @using System.Text
+@using Yamca.Agent.Workspace
+@using Yamca.Web.Components.Branching
+@using WorkspaceImpl = Yamca.Agent.Workspace.Workspace
 
 <div class="yamca-page">
     @if (ShowHeader)
@@ -36,6 +39,35 @@
                         </CustomContent>
                         <SelectedTemplate></SelectedTemplate>
                     </MudFileUpload>
+                    <MudTooltip Text="@BranchTooltip">
+                        <span>
+                            <MudIconButton Icon="@Icons.Material.Filled.CallSplit"
+                                           Color="Color.Default" Variant="Variant.Text"
+                                           Size="Size.Small"
+                                           Disabled="@(Chat.IsRunning || Chat.IsGitRepository != true)"
+                                           OnClick="OnBranchClicked"
+                                           aria-label="Branch Code" />
+                        </span>
+                    </MudTooltip>
+                    @if (Chat.WorktreeInfo is not null)
+                    {
+                        <MudTooltip Text="Merge branch">
+                            <MudIconButton Icon="@Icons.Material.Filled.Merge"
+                                           Color="Color.Default" Variant="Variant.Text"
+                                           Size="Size.Small"
+                                           Disabled="@IsBranchOpBusy()"
+                                           OnClick="OnMergeClicked"
+                                           aria-label="Merge branch" />
+                        </MudTooltip>
+                        <MudTooltip Text="Delete branch & worktree">
+                            <MudIconButton Icon="@Icons.Material.Filled.DeleteForever"
+                                           Color="Color.Default" Variant="Variant.Text"
+                                           Size="Size.Small"
+                                           Disabled="@IsBranchOpBusy()"
+                                           OnClick="OnDeleteBranchClicked"
+                                           aria-label="Delete branch and worktree" />
+                        </MudTooltip>
+                    }
                     @foreach (var att in _attachments)
                     {
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
@@ -105,6 +137,9 @@
 @code {
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private ChatSessionManager Manager { get; set; } = default!;
+    [Inject] private GitService Git { get; set; } = default!;
+    [Inject] private IDialogService Dialogs { get; set; } = default!;
+    [Inject] private NavigationManager Nav { get; set; } = default!;
 
     [Parameter, EditorRequired] public ChatViewModel Chat { get; set; } = default!;
     [Parameter] public bool ShowHeader { get; set; }
@@ -129,10 +164,34 @@
     {
         get
         {
-            if (Chat.Turns.Count > 0) return Chat.Title;
-            var slot = Manager.Sessions.ToList().FindIndex(s => s.Id == Chat.Id);
-            return slot >= 0 ? $"Chat {slot + 1}" : "Chat";
+            string baseTitle;
+            if (Chat.Turns.Count > 0) baseTitle = Chat.Title;
+            else
+            {
+                var slot = Manager.Sessions.ToList().FindIndex(s => s.Id == Chat.Id);
+                baseTitle = slot >= 0 ? $"Chat {slot + 1}" : "Chat";
+            }
+            return Chat.WorktreeInfo is { } wt ? $"{baseTitle} · {wt.Branch}" : baseTitle;
         }
+    }
+
+    private string BranchTooltip => Chat.IsGitRepository switch
+    {
+        true => "Branch Code",
+        false => "Not a git repository",
+        _ => "Branch Code",
+    };
+
+    private bool IsBranchOpBusy()
+    {
+        if (Chat.IsRunning) return true;
+        if (Chat.WorktreeInfo is { } wt)
+        {
+            var baseSession = Manager.Sessions.FirstOrDefault(
+                s => string.Equals(s.Workspace.RootPath, wt.BasePath, StringComparison.OrdinalIgnoreCase));
+            if (baseSession is not null && baseSession.IsRunning) return true;
+        }
+        return false;
     }
 
     protected override void OnParametersSet()
@@ -153,6 +212,67 @@
     {
         await SafeInvokeAsync("yamcaChat.init", _scrollContainer);
         await SafeInvokeAsync("yamcaChat.scrollIfSticky", _scrollAnchor);
+
+        if (Chat.IsGitRepository is null)
+        {
+            try
+            {
+                var isRepo = await Git.IsGitRepoAsync(Chat.Workspace.RootPath, CancellationToken.None);
+                Chat.IsGitRepository = isRepo;
+                StateHasChanged();
+            }
+            catch { Chat.IsGitRepository = false; }
+        }
+    }
+
+    private async Task OnBranchClicked()
+    {
+        var parameters = new DialogParameters { ["BaseWorkspace"] = Chat.Workspace };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await Dialogs.ShowAsync<BranchCreateDialog>("Branch Code", parameters, options);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not WorktreeInfo info) return;
+
+        try
+        {
+            var workspace = new WorkspaceImpl(info.WorktreePath);
+            var vm = Manager.CreateForWorktree(workspace, info);
+            Nav.NavigateTo($"chat/{vm.Id}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"yamca: could not open worktree session: {ex.Message}");
+        }
+    }
+
+    private async Task OnMergeClicked()
+    {
+        if (Chat.WorktreeInfo is not { } info) return;
+        var parameters = new DialogParameters { ["Info"] = info };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await Dialogs.ShowAsync<BranchMergeDialog>("Merge branch", parameters, options);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        if (result.Data is BranchMergeDialog.MergeOutcome outcome && outcome.CleanupRequested)
+        {
+            // Worktree is gone — close this session.
+            Manager.Close(Chat.Id);
+            Nav.NavigateTo("/");
+        }
+    }
+
+    private async Task OnDeleteBranchClicked()
+    {
+        if (Chat.WorktreeInfo is not { } info) return;
+        var parameters = new DialogParameters { ["Info"] = info };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await Dialogs.ShowAsync<BranchDeleteDialog>("Delete branch", parameters, options);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        Manager.Close(Chat.Id);
+        Nav.NavigateTo("/");
     }
 
     private void OnChanged() => InvokeAsync(StateHasChanged);

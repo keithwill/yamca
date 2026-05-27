@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using Yamca.Agent.Chat;
+using Yamca.Agent.Git;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
@@ -57,6 +58,18 @@ public sealed class ChatViewModel : IDisposable
     }
 
     public int Id { get; }
+
+    /// <summary>Set when this session is bound to a git worktree. Drives the
+    /// Merge / Delete branch toolbar buttons and the tile-header branch label.</summary>
+    public WorktreeInfo? WorktreeInfo { get; private set; }
+
+    /// <summary>Cached result of probing the workspace for a <c>.git</c> dir.
+    /// The branch toolbar button uses this to gate enablement.</summary>
+    public bool? IsGitRepository { get; set; }
+
+    public IWorkspace Workspace => _workspace;
+
+    internal void BindWorktree(WorktreeInfo info) => WorktreeInfo = info;
 
     public string Title
     {

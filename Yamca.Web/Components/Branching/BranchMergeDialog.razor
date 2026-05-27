@@ -1,0 +1,92 @@
+@inject GitService Git
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-2">
+            From <code>@Info.Branch</code> → <code>@(_currentBase ?? Info.BaseBranch)</code>
+        </MudText>
+
+        <MudRadioGroup T="MergeStrategy" Value="_strategy"
+                       ValueChanged="@((MergeStrategy s) => _strategy = s)" Class="mt-2">
+            <MudRadio T="MergeStrategy" Value="MergeStrategy.Merge" Dense="true">Merge commit</MudRadio>
+            <MudRadio T="MergeStrategy" Value="MergeStrategy.Rebase" Dense="true">Rebase</MudRadio>
+            <MudRadio T="MergeStrategy" Value="MergeStrategy.Squash" Dense="true">Squash</MudRadio>
+        </MudRadioGroup>
+
+        <MudSwitch T="bool" @bind-Value="_cleanup" Color="Color.Primary"
+                   Label="Delete branch & worktree after merge" Class="mt-2" />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3"
+                      Style="white-space:pre-wrap;">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="OnMerge" Disabled="@_busy">
+            @(_busy ? "Merging…" : "Merge")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter, EditorRequired] public WorktreeInfo Info { get; set; } = default!;
+
+    private MergeStrategy _strategy = MergeStrategy.Merge;
+    private bool _cleanup = true;
+    private string? _currentBase;
+    private string? _error;
+    private bool _busy;
+
+    public sealed record MergeOutcome(bool CleanupRequested);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currentBase = await Git.GetCurrentBranchAsync(Info.BasePath, CancellationToken.None);
+    }
+
+    private void Cancel() => Dialog.Cancel();
+
+    private async Task OnMerge()
+    {
+        _error = null;
+        _busy = true;
+        StateHasChanged();
+        try
+        {
+            var ct = CancellationToken.None;
+            var r = await Git.MergeAsync(Info.BasePath, Info.Branch, _strategy, ct);
+            if (!r.Ok)
+            {
+                _error = string.IsNullOrWhiteSpace(r.Stderr) ? r.Stdout.Trim() : r.Stderr.Trim();
+                if (string.IsNullOrEmpty(_error)) _error = $"git exited with code {r.ExitCode}.";
+                return;
+            }
+
+            if (_cleanup)
+            {
+                var rm = await Git.RemoveWorktreeAsync(Info.BasePath, Info.WorktreePath, force: false, ct);
+                if (!rm.Ok)
+                {
+                    _error = $"Merge succeeded but worktree removal failed:\n{rm.Stderr.Trim()}";
+                    return;
+                }
+                var del = await Git.DeleteBranchAsync(Info.BasePath, Info.Branch, force: false, ct);
+                if (!del.Ok)
+                {
+                    _error = $"Merge succeeded but branch deletion failed:\n{del.Stderr.Trim()}";
+                    return;
+                }
+            }
+
+            Dialog.Close(DialogResult.Ok(new MergeOutcome(_cleanup)));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
