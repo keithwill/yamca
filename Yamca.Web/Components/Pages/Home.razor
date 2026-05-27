@@ -49,9 +49,12 @@ else
                         }
                     </div>
                     <div class="yamca-composer-right">
-                        <div class="yamca-context-badge" title="@ContextBadgeTooltip()">
-                            @ContextBadgeText()
-                        </div>
+                        @if (Chat.CurrentContextTokens > 0)
+                        {
+                            <div class="yamca-context-badge" title="@ContextBadgeTooltip()">
+                                @ContextBadgeText()
+                            </div>
+                        }
                         @if (Chat.IsRunning)
                         {
                             <MudIconButton Variant="Variant.Filled" Color="Color.Error"
