@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using Yamca.Agent.Chat;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Tools;
 using Yamca.Agent.Tools.ScriptExecution;
@@ -46,19 +47,48 @@ public class ToolRegistryTests
     }
 
     [Test]
-    public void GetChatTools_ReturnsOneEntryPerTool_WithSchemaJson()
+    public void GetChatTools_ExcludesDeferredTools_WhenNotLoaded()
     {
         var registry = NewRegistry();
 
-        var chatTools = registry.GetChatTools();
+        var chatTools = registry.GetChatTools(new LoadedToolSet());
 
-        Assert.That(chatTools.Count, Is.EqualTo(5));
-        for (var i = 0; i < chatTools.Count; i++)
+        // delete_file and execute_command are deferred — should not appear in the initial list.
+        Assert.That(chatTools.Select(t => t.Name), Is.EquivalentTo(new[]
         {
-            var payload = chatTools[i].ParametersJsonSchema;
-            Assert.That(payload, Does.Contain("\"type\""));
-            Assert.That(payload, Does.Contain("\"properties\""));
+            "read_file", "write_file", "list_directory"
+        }));
+        foreach (var t in chatTools)
+        {
+            Assert.That(t.ParametersJsonSchema, Does.Contain("\"type\""));
+            Assert.That(t.ParametersJsonSchema, Does.Contain("\"properties\""));
         }
+    }
+
+    [Test]
+    public void GetChatTools_IncludesDeferredTools_OnceLoaded()
+    {
+        var registry = NewRegistry();
+        var loaded = new LoadedToolSet();
+        loaded.MarkLoaded("delete_file");
+
+        var chatTools = registry.GetChatTools(loaded);
+
+        Assert.That(chatTools.Select(t => t.Name), Is.EquivalentTo(new[]
+        {
+            "read_file", "write_file", "list_directory", "delete_file"
+        }));
+    }
+
+    [Test]
+    public void GetDeferredTools_ReturnsOnlyDeferredOnes()
+    {
+        var registry = NewRegistry();
+
+        Assert.That(registry.GetDeferredTools().Select(t => t.Name), Is.EquivalentTo(new[]
+        {
+            "delete_file", "execute_command"
+        }));
     }
 
     [Test]

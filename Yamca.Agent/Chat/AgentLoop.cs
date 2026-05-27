@@ -18,6 +18,7 @@ public sealed class AgentLoop
     private readonly IApprovalCoordinator _approvals;
     private readonly IPermissionStore _permissionStore;
     private readonly IWorkspace _workspace;
+    private readonly LoadedToolSet _loadedTools;
     private readonly AgentLoopOptions _options;
 
     public AgentLoop(
@@ -28,6 +29,7 @@ public sealed class AgentLoop
         IApprovalCoordinator approvals,
         IPermissionStore permissionStore,
         IWorkspace workspace,
+        LoadedToolSet loadedTools,
         AgentLoopOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -37,6 +39,7 @@ public sealed class AgentLoop
         ArgumentNullException.ThrowIfNull(approvals);
         ArgumentNullException.ThrowIfNull(permissionStore);
         ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(loadedTools);
 
         _session = session;
         _client = client;
@@ -45,6 +48,7 @@ public sealed class AgentLoop
         _approvals = approvals;
         _permissionStore = permissionStore;
         _workspace = workspace;
+        _loadedTools = loadedTools;
         _options = options ?? AgentLoopOptions.Default;
     }
 
@@ -57,11 +61,13 @@ public sealed class AgentLoop
         ArgumentNullException.ThrowIfNull(userMessage);
         _session.AppendUser(userMessage);
 
-        var chatTools = _tools.GetChatTools();
-
         for (var iteration = 0; iteration < _options.MaxIterations; iteration++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            // Rebuild each iteration so schemas loaded by load_tool mid-turn become
+            // visible to the LLM on the very next round-trip.
+            var chatTools = _tools.GetChatTools(_loadedTools);
 
             string content = "";
             IReadOnlyList<LlmToolCallRequest> toolCalls = Array.Empty<LlmToolCallRequest>();
@@ -119,6 +125,14 @@ public sealed class AgentLoop
         if (tool is null)
         {
             var msg = $"Unknown tool '{call.ToolName}'.";
+            _session.AppendToolResult(call.CallId, msg);
+            yield return new ToolDeniedEvent(call.CallId, call.ToolName, msg);
+            yield break;
+        }
+
+        if (tool.Deferred && !_loadedTools.Contains(tool.Name))
+        {
+            var msg = $"Tool '{call.ToolName}' is deferred and has not been loaded. Call load_tool with tool_names=[\"{call.ToolName}\"] first.";
             _session.AppendToolResult(call.CallId, msg);
             yield return new ToolDeniedEvent(call.CallId, call.ToolName, msg);
             yield break;

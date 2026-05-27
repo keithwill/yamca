@@ -24,6 +24,8 @@ public sealed class DeleteFileTool : ITool
 
     public PermissionLevel DefaultPermission => PermissionLevel.Ask;
 
+    public bool Deferred => true;
+
     public Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
         if (!ToolArguments.TryGetString(arguments, "path", out var requested, out var argError))

@@ -82,6 +82,7 @@ builder.Services.AddSingleton<ITool, ListDirectoryTool>();
 builder.Services.AddSingleton<ITool, FindFilesTool>();
 builder.Services.AddSingleton<ITool, GrepTool>();
 builder.Services.AddSingleton<ITool, ExecuteCommandTool>();
+builder.Services.AddScoped<ITool, LoadToolTool>();
 
 // Script-tool collaborators. InterpreterResolver / ScriptRunner are stateless apart
 // from a PATH-resolution cache, so they live as singletons. ScriptRegistryLookup
@@ -97,6 +98,10 @@ builder.Services.AddScoped<ITool, ExecuteScriptTool>();
 // IToolRegistry is scoped so its enumeration of ITool services picks up both
 // singleton tools and the per-circuit scoped script tools.
 builder.Services.AddScoped<IToolRegistry>(sp => new ToolRegistry(sp.GetServices<ITool>()));
+
+// Per-session set of deferred tools the LLM has loaded via load_tool. Scoped so
+// each browser circuit / chat session starts with an empty set.
+builder.Services.AddScoped<LoadedToolSet>();
 
 // Per-circuit (scoped) state — each browser tab gets its own settings, approval
 // queue, and permission resolver.

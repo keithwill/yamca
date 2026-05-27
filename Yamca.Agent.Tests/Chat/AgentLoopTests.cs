@@ -16,6 +16,7 @@ public class AgentLoopTests
     private StubTool _tool = null!;
     private ToolRegistry _registry = null!;
     private PermissionResolver _resolver = null!;
+    private LoadedToolSet _loaded = null!;
     private AgentLoop _loop = null!;
 
     [SetUp]
@@ -29,10 +30,11 @@ public class AgentLoopTests
         _tool = new StubTool("read_file", PermissionLevel.Allow);
         _registry = new ToolRegistry(new ITool[] { _tool });
         _resolver = new PermissionResolver(_registry, _settings);
+        _loaded = new LoadedToolSet();
 
         var session = new ChatSession("sys");
         _loop = new AgentLoop(
-            session, _llm, _registry, _resolver, _approvals, _store, _ws.Workspace,
+            session, _llm, _registry, _resolver, _approvals, _store, _ws.Workspace, _loaded,
             new AgentLoopOptions { MaxIterations = 5 });
     }
 
@@ -82,7 +84,7 @@ public class AgentLoopTests
         _registry = new ToolRegistry(new ITool[] { _tool });
         _resolver = new PermissionResolver(_registry, _settings);
         _loop = new AgentLoop(
-            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace);
+            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace, _loaded);
 
         _llm.EnqueueToolCall("c1", "write_file", """{"path":"a"}""");
         _llm.EnqueueText("ok");
@@ -106,7 +108,7 @@ public class AgentLoopTests
         _registry = new ToolRegistry(new ITool[] { _tool });
         _resolver = new PermissionResolver(_registry, _settings);
         _loop = new AgentLoop(
-            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace);
+            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace, _loaded);
 
         _llm.EnqueueToolCall("c1", "write_file", "{}");
         _llm.EnqueueText("understood");
@@ -129,7 +131,7 @@ public class AgentLoopTests
         _registry = new ToolRegistry(new ITool[] { _tool });
         _resolver = new PermissionResolver(_registry, _settings);
         _loop = new AgentLoop(
-            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace);
+            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace, _loaded);
 
         _llm.EnqueueToolCall("c1", "write_file", "{}");
         _llm.EnqueueToolCall("c2", "write_file", "{}");
@@ -161,7 +163,7 @@ public class AgentLoopTests
             });
         _resolver = new PermissionResolver(_registry, _settings);
         _loop = new AgentLoop(
-            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace);
+            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace, _loaded);
 
         _llm.EnqueueToolCall("c1", "write_file", "{}");
         _llm.EnqueueText("ack");
@@ -179,7 +181,7 @@ public class AgentLoopTests
         _registry = new ToolRegistry(new ITool[] { _tool });
         _resolver = new PermissionResolver(_registry, _settings);
         _loop = new AgentLoop(
-            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace,
+            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace, _loaded,
             new AgentLoopOptions { MaxIterations = 3 });
 
         for (var i = 0; i < 5; i++)

@@ -21,6 +21,7 @@ public sealed class ChatViewModel : IDisposable
     private readonly InstructionFilesLoader _instructionLoader;
     private readonly IHttpClientFactory _httpFactory;
     private readonly EndpointHealthService _endpointHealth;
+    private readonly LoadedToolSet _loadedTools;
 
     private AgentLoop? _loop;
     private CancellationTokenSource? _runCts;
@@ -38,7 +39,8 @@ public sealed class ChatViewModel : IDisposable
         SessionSettings settings,
         InstructionFilesLoader instructionLoader,
         IHttpClientFactory httpFactory,
-        EndpointHealthService endpointHealth)
+        EndpointHealthService endpointHealth,
+        LoadedToolSet loadedTools)
     {
         _workspace = workspace;
         _tools = tools;
@@ -49,6 +51,7 @@ public sealed class ChatViewModel : IDisposable
         _instructionLoader = instructionLoader;
         _httpFactory = httpFactory;
         _endpointHealth = endpointHealth;
+        _loadedTools = loadedTools;
     }
 
     public List<ChatTurn> Turns { get; } = new();
@@ -213,7 +216,7 @@ public sealed class ChatViewModel : IDisposable
         var session = new ChatSession(_workspace, prompt, instructions);
 
         _loop = new AgentLoop(
-            session, completion, _tools, _permissions, _approvals, _permissionStore, _workspace);
+            session, completion, _tools, _permissions, _approvals, _permissionStore, _workspace, _loadedTools);
 
         StartApprovalConsumer();
         _ = DetectCapabilitiesAsync(endpoint);

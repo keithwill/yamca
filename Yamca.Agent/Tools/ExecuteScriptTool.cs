@@ -62,6 +62,8 @@ public sealed class ExecuteScriptTool : ITool
 
     public bool ExposedInSettings => false;
 
+    public bool Deferred => true;
+
     public string? SessionStartMessage(ToolContext context)
     {
         if (_registry.IsEmpty)

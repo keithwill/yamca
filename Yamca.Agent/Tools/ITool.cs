@@ -24,6 +24,11 @@ public interface ITool
     /// <summary>True (default) = include in the tool list sent to the LLM.</summary>
     bool ExposedToLlm => true;
 
+    /// <summary>True = excluded from the initial tool list; the LLM must call
+    /// <c>load_tool</c> to obtain this tool's schema before invoking it. Once loaded,
+    /// the schema stays in the tool list for the rest of the session. Default: false.</summary>
+    bool Deferred => false;
+
     /// <summary>True (default) = show in the settings permissions table.</summary>
     bool ExposedInSettings => true;
 

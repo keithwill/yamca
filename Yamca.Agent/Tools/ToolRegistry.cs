@@ -26,8 +26,17 @@ public sealed class ToolRegistry : IToolRegistry
     public ITool? Get(string name) =>
         name is not null && _byName.TryGetValue(name, out var tool) ? tool : null;
 
-    public IReadOnlyList<ChatTool> GetChatTools() =>
-        _ordered.Where(t => t.ExposedToLlm).Select(t => new ChatTool(t.Name, t.Description, t.ParametersSchema)).ToList();
+    public IReadOnlyList<ChatTool> GetChatTools(LoadedToolSet loaded)
+    {
+        ArgumentNullException.ThrowIfNull(loaded);
+        return _ordered
+            .Where(t => t.ExposedToLlm && (!t.Deferred || loaded.Contains(t.Name)))
+            .Select(t => new ChatTool(t.Name, t.Description, t.ParametersSchema))
+            .ToList();
+    }
+
+    public IReadOnlyList<ITool> GetDeferredTools() =>
+        _ordered.Where(t => t.ExposedToLlm && t.Deferred).ToList();
 
     public IReadOnlyList<ITool> GetSettingsTools() =>
         _ordered.Where(t => t.ExposedInSettings).ToList();
