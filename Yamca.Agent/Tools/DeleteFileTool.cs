@@ -7,7 +7,7 @@ public sealed class DeleteFileTool : ITool
 {
     public string Name => "delete_file";
 
-    public string Description => "Delete a single file. Does not delete directories.";
+    public string Description => "Delete a single file (not directories).";
 
     public string ParametersSchema => """
     {

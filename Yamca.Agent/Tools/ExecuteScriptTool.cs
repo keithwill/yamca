@@ -39,8 +39,7 @@ public sealed class ExecuteScriptTool : ITool
 
     public string Description =>
         "Run a script by workspace-relative path. Interpreter is resolved automatically " +
-        "(PowerShell, sh, Python, Node, tsx/ts-node). Pre-registered scripts run without " +
-        "prompting; others request approval and may be added to the registry.";
+        "(PowerShell, sh, Python, Node, tsx/ts-node).";
 
     public string ParametersSchema => """
     {
@@ -66,26 +65,29 @@ public sealed class ExecuteScriptTool : ITool
     public string? SessionStartMessage(ToolContext context)
     {
         if (_registry.IsEmpty)
-            return "No scripts registered. Unregistered scripts run via execute_script will prompt for approval.";
+            return "";
 
         var sb = new StringBuilder();
-        sb.AppendLine("Registered scripts (run via execute_script without prompting):");
-        foreach (var (entry, _) in _registry.AllRegistered())
-            sb.Append("  ").Append(entry.Path)
-              .Append(string.IsNullOrWhiteSpace(entry.Description) ? "" : "  — " + entry.Description)
-              .AppendLine();
+
+        if (_registry.AllRegistered().Count() > 0)
+        {
+            sb.AppendLine("Registered Scripts:");
+            foreach (var (entry, _) in _registry.AllRegistered())
+                sb.Append("  ").Append(entry.Path)
+                .Append(string.IsNullOrWhiteSpace(entry.Description) ? "" : "  — " + entry.Description)
+                .AppendLine();
+        }
 
         var dirs = _registry.AllDirectories().ToList();
         if (dirs.Count > 0)
         {
-            sb.AppendLine("Registered script directories:");
+            sb.AppendLine("Registered Script Directories:");
             foreach (var (dir, _) in dirs)
                 sb.Append("  ").Append(dir.Path)
                   .Append(string.IsNullOrWhiteSpace(dir.Description) ? "" : "  — " + dir.Description)
                   .AppendLine();
         }
 
-        sb.Append("Other scripts require approval before running.");
         return sb.ToString();
     }
 
