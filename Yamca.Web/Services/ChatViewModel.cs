@@ -76,7 +76,8 @@ public sealed class ChatViewModel : IDisposable
         get
         {
             var first = Turns.FirstOrDefault()?.UserMessage;
-            if (string.IsNullOrWhiteSpace(first)) return "New Chat";
+            if (string.IsNullOrWhiteSpace(first))
+                return WorktreeInfo?.Branch ?? "New Chat";
             var trimmed = first.Trim().ReplaceLineEndings(" ");
             return trimmed.Length <= 32 ? trimmed : trimmed[..32] + "…";
         }

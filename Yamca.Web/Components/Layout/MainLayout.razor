@@ -14,7 +14,7 @@
             @for (var i = 0; i < Sessions.Sessions.Count; i++)
             {
                 var s = Sessions.Sessions[i];
-                var label = s.Turns.Count == 0 ? $"Chat {i + 1}" : s.Title;
+                var label = s.Turns.Count == 0 && s.WorktreeInfo is null ? $"Chat {i + 1}" : s.Title;
                 <div class="yamca-session-row" @onmouseup="@(e => OnRowMouseUp(e, s.Id))">
                     <MudNavLink Href="@($"chat/{s.Id}")" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Chat">
                         @label

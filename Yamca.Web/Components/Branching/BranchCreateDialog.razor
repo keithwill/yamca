@@ -96,11 +96,25 @@
         StateHasChanged();
         try
         {
-            var r = await Git.CreateWorktreeAsync(BaseWorkspace.RootPath, worktreeDir, branch, isNewBranch: !_useExisting, ct);
-            if (!r.Ok)
+            // When attaching to an existing branch, reuse an already-checked-out
+            // worktree if one exists. This handles the normal case of a worktree
+            // that outlives the yamca session.
+            if (_useExisting)
             {
-                _error = string.IsNullOrWhiteSpace(r.Stderr) ? $"git exited with code {r.ExitCode}." : r.Stderr.Trim();
-                return;
+                var existing = await Git.ListWorktreesAsync(BaseWorkspace.RootPath, ct);
+                var match = existing.FirstOrDefault(w => string.Equals(w.Branch, branch, StringComparison.Ordinal));
+                if (match.Path is not null)
+                    worktreeDir = match.Path;
+            }
+
+            if (!Directory.Exists(worktreeDir) || !await IsWorktreeForBranchAsync(worktreeDir, branch, ct))
+            {
+                var r = await Git.CreateWorktreeAsync(BaseWorkspace.RootPath, worktreeDir, branch, isNewBranch: !_useExisting, ct);
+                if (!r.Ok)
+                {
+                    _error = string.IsNullOrWhiteSpace(r.Stderr) ? $"git exited with code {r.ExitCode}." : r.Stderr.Trim();
+                    return;
+                }
             }
 
             var info = new WorktreeInfo(
@@ -118,4 +132,12 @@
 
     private static string Sanitize(string branch) =>
         branch.Replace('/', '-').Replace('\\', '-');
+
+    private async Task<bool> IsWorktreeForBranchAsync(string path, string branch, CancellationToken ct)
+    {
+        var existing = await Git.ListWorktreesAsync(BaseWorkspace.RootPath, ct);
+        return existing.Any(w =>
+            string.Equals(w.Path, path, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(w.Branch, branch, StringComparison.Ordinal));
+    }
 }

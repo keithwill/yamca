@@ -49,6 +49,40 @@ public sealed class GitService
             .ToList();
     }
 
+    /// <summary>Returns existing worktrees of the repo as (path, branch) pairs.
+    /// Branch is null for detached HEAD or the bare/main entry without a checked-out branch.</summary>
+    public async Task<IReadOnlyList<(string Path, string? Branch)>> ListWorktreesAsync(string repoPath, CancellationToken ct)
+    {
+        var r = await RunAsync(repoPath, ["worktree", "list", "--porcelain"], ct).ConfigureAwait(false);
+        if (!r.Ok) return Array.Empty<(string, string?)>();
+
+        var results = new List<(string, string?)>();
+        string? path = null;
+        string? branch = null;
+
+        foreach (var raw in r.Stdout.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            if (line.Length == 0)
+            {
+                if (path is not null) results.Add((path, branch));
+                path = null;
+                branch = null;
+                continue;
+            }
+            if (line.StartsWith("worktree ", StringComparison.Ordinal))
+                path = line["worktree ".Length..].Trim();
+            else if (line.StartsWith("branch ", StringComparison.Ordinal))
+            {
+                var refName = line["branch ".Length..].Trim();
+                const string prefix = "refs/heads/";
+                branch = refName.StartsWith(prefix, StringComparison.Ordinal) ? refName[prefix.Length..] : refName;
+            }
+        }
+        if (path is not null) results.Add((path, branch));
+        return results;
+    }
+
     public Task<GitResult> CreateWorktreeAsync(string repoPath, string worktreePath, string branch, bool isNewBranch, CancellationToken ct)
     {
         var args = isNewBranch

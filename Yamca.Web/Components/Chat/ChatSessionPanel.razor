@@ -164,14 +164,11 @@
     {
         get
         {
-            string baseTitle;
-            if (Chat.Turns.Count > 0) baseTitle = Chat.Title;
-            else
-            {
-                var slot = Manager.Sessions.ToList().FindIndex(s => s.Id == Chat.Id);
-                baseTitle = slot >= 0 ? $"Chat {slot + 1}" : "Chat";
-            }
-            return Chat.WorktreeInfo is { } wt ? $"{baseTitle} · {wt.Branch}" : baseTitle;
+            if (Chat.WorktreeInfo is { } wt)
+                return Chat.Turns.Count > 0 ? $"{Chat.Title} · {wt.Branch}" : wt.Branch;
+            if (Chat.Turns.Count > 0) return Chat.Title;
+            var slot = Manager.Sessions.ToList().FindIndex(s => s.Id == Chat.Id);
+            return slot >= 0 ? $"Chat {slot + 1}" : "Chat";
         }
     }
 
