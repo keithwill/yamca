@@ -15,7 +15,7 @@
 </head>
 
 <body>
-    <Routes @rendermode="InteractiveServer" />
+    <Routes @rendermode="@(new InteractiveServerRenderMode(prerender: false))" />
     <ReconnectModal />
     <script src="@Assets["js/storage.js"]"></script>
     <script src="@Assets["js/chat-scroll.js"]"></script>

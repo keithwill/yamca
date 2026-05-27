@@ -117,7 +117,7 @@ builder.Services.AddScoped<WorkspaceKey>();
 builder.Services.AddScoped<SettingsHydrator>();
 builder.Services.AddScoped<InstructionFilesLoader>();
 builder.Services.AddScoped<WorkspaceBrowser>();
-builder.Services.AddScoped<ChatViewModel>();
+builder.Services.AddScoped<ChatSessionManager>();
 
 var app = builder.Build();
 

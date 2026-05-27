@@ -105,6 +105,24 @@ h1:focus {
     flex: 0 0 auto;
 }
 
+.yamca-session-row {
+    position: relative;
+}
+.yamca-session-row .yamca-session-close {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+.yamca-session-row:hover .yamca-session-close {
+    opacity: 0.7;
+}
+.yamca-session-row .yamca-session-close:hover {
+    opacity: 1;
+}
+
 .yamca-context-badge {
     font-size: 0.75rem;
     opacity: 0.65;

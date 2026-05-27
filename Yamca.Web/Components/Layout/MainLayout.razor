@@ -1,4 +1,7 @@
 @inherits LayoutComponentBase
+@implements IDisposable
+@inject ChatSessionManager Sessions
+@inject NavigationManager Nav
 
 <MudThemeProvider IsDarkMode="true" />
 <MudPopoverProvider />
@@ -8,7 +11,26 @@
 <MudLayout>
     <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Variant="DrawerVariant.Mini" OpenMiniOnHover="true" Style="top: 0; height: 100vh">
         <MudNavMenu>
-            <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Chat">Chat</MudNavLink>
+            @for (var i = 0; i < Sessions.Sessions.Count; i++)
+            {
+                var s = Sessions.Sessions[i];
+                var label = s.Turns.Count == 0 ? $"Chat {i + 1}" : s.Title;
+                <div class="yamca-session-row" @onmouseup="@(e => OnRowMouseUp(e, s.Id))">
+                    <MudNavLink Href="@($"chat/{s.Id}")" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Chat">
+                        @label
+                    </MudNavLink>
+                    <MudIconButton Class="yamca-session-close"
+                                   Icon="@Icons.Material.Filled.Close"
+                                   Size="Size.Small"
+                                   OnClick="@(() => CloseSession(s.Id))"
+                                   aria-label="Close chat" />
+                </div>
+            }
+            <MudNavLink Icon="@Icons.Material.Filled.Add"
+                        OnClick="NewChat"
+                        Disabled="@(!Sessions.CanCreate)">
+                New Chat
+            </MudNavLink>
             <MudNavLink Href="settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
         </MudNavMenu>
     </MudDrawer>
@@ -26,4 +48,49 @@
 
 @code {
     private bool _drawerOpen = false;
+
+    protected override void OnInitialized()
+    {
+        Sessions.Changed += OnSessionsChanged;
+    }
+
+    private void OnSessionsChanged() => InvokeAsync(StateHasChanged);
+
+    private void NewChat()
+    {
+        if (!Sessions.CanCreate) return;
+        var vm = Sessions.Create();
+        Nav.NavigateTo($"chat/{vm.Id}");
+    }
+
+    private void CloseSession(int id)
+    {
+        var next = Sessions.PickNextActive(id);
+        var wasActive = CurrentChatId() == id;
+        Sessions.Close(id);
+        if (!wasActive) return;
+        if (next is int nextId)
+            Nav.NavigateTo($"chat/{nextId}");
+        else
+            Nav.NavigateTo("/");
+    }
+
+    private void OnRowMouseUp(MouseEventArgs e, int id)
+    {
+        if (e.Button == 1) CloseSession(id);
+    }
+
+    private int? CurrentChatId()
+    {
+        var uri = Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/');
+        if (uri.StartsWith("chat/", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(uri.AsSpan(5), out var id))
+            return id;
+        return null;
+    }
+
+    public void Dispose()
+    {
+        Sessions.Changed -= OnSessionsChanged;
+    }
 }

@@ -1,4 +1,5 @@
 @page "/"
+@page "/chat/{Id:int}"
 @rendermode InteractiveServer
 @implements IDisposable
 @using Microsoft.AspNetCore.Components.Forms
@@ -7,11 +8,11 @@
 
 <PageTitle>Yamca - @System.IO.Path.GetFileName(Workspace.RootPath.TrimEnd('\\', '/'))</PageTitle>
 
-@if (!_hydrated)
+@if (!_hydrated || Chat is null)
 {
     <MudContainer MaxWidth="MaxWidth.Large" Class="pa-2">
         <MudProgressCircular Indeterminate="true" />
-        <MudText Class="ml-2 d-inline" Typo="Typo.body2">Loading settings…</MudText>
+        <MudText Class="ml-2 d-inline" Typo="Typo.body2">Loading…</MudText>
     </MudContainer>
 }
 else
@@ -107,10 +108,16 @@ else
 
 @code {
     [Inject] private IWorkspace Workspace { get; set; } = default!;
-    [Inject] private ChatViewModel Chat { get; set; } = default!;
+    [Inject] private ChatSessionManager Manager { get; set; } = default!;
     [Inject] private SessionSettings Session { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    [Parameter] public int? Id { get; set; }
+
+    private ChatViewModel? Chat => Id is int id ? Manager.Get(id) : null;
+    private int? _subscribedId;
 
     private bool _hydrated;
     private string _prompt = "";
@@ -127,9 +134,38 @@ else
 
     private sealed record Attachment(string FileName, string Text);
 
-    protected override void OnInitialized()
+    protected override void OnParametersSet()
     {
-        Chat.Changed += OnChanged;
+        if (Id is null)
+        {
+            var target = Manager.Sessions.FirstOrDefault() ?? (Manager.CanCreate ? Manager.Create() : null);
+            if (target is not null)
+            {
+                Nav.NavigateTo($"chat/{target.Id}", replace: true);
+            }
+            return;
+        }
+
+        if (Manager.Get(Id.Value) is null)
+        {
+            var fallback = Manager.Sessions.FirstOrDefault();
+            if (fallback is not null)
+                Nav.NavigateTo($"chat/{fallback.Id}", replace: true);
+            else
+                Nav.NavigateTo("/", replace: true);
+            return;
+        }
+
+        if (_subscribedId != Id)
+        {
+            if (_subscribedId is int prev && Manager.Get(prev) is { } prevVm)
+                prevVm.Changed -= OnChanged;
+            Chat!.Changed += OnChanged;
+            _subscribedId = Id;
+            _prompt = "";
+            _attachments.Clear();
+            _attachError = null;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -142,6 +178,7 @@ else
             return;
         }
 
+        if (!_hydrated || Chat is null) return;
         await SafeInvokeAsync("yamcaChat.init", _scrollContainer);
         await SafeInvokeAsync("yamcaChat.scrollIfSticky", _scrollAnchor);
     }
@@ -150,7 +187,7 @@ else
 
     private async Task OnSend()
     {
-        if (Chat.IsRunning) return;
+        if (Chat is null || Chat.IsRunning) return;
         if (string.IsNullOrWhiteSpace(_prompt) && _attachments.Count == 0) return;
 
         var p = ComposePrompt(_prompt, _attachments);
@@ -216,11 +253,11 @@ else
         }
     }
 
-    private void OnCancel() => Chat.Cancel();
+    private void OnCancel() => Chat?.Cancel();
 
     private string ContextBadgeText()
     {
-        var used = Chat.CurrentContextTokens.ToString("N0");
+        var used = Chat!.CurrentContextTokens.ToString("N0");
         return Chat.MaxContextTokens is int max
             ? $"{used} / {max:N0} tokens"
             : $"~{used} tokens";
@@ -228,7 +265,7 @@ else
 
     private string ContextBadgeTooltip()
     {
-        if (Chat.MaxContextTokens is int max)
+        if (Chat!.MaxContextTokens is int max)
         {
             var pct = max > 0 ? (Chat.CurrentContextTokens * 100.0 / max).ToString("0.0") : "0";
             var src = Chat.MaxContextSource ?? "server";
@@ -249,6 +286,7 @@ private async Task SafeInvokeAsync(string identifier, params object?[] args)
 
     public void Dispose()
     {
-        Chat.Changed -= OnChanged;
+        if (_subscribedId is int prev && Manager.Get(prev) is { } prevVm)
+            prevVm.Changed -= OnChanged;
     }
 }

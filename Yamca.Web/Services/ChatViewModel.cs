@@ -31,6 +31,7 @@ public sealed class ChatViewModel : IDisposable
     private int? _lastReportedCompletionTokens;
 
     public ChatViewModel(
+        int id,
         IWorkspace workspace,
         IToolRegistry tools,
         IPermissionResolver permissions,
@@ -42,6 +43,7 @@ public sealed class ChatViewModel : IDisposable
         EndpointHealthService endpointHealth,
         LoadedToolSet loadedTools)
     {
+        Id = id;
         _workspace = workspace;
         _tools = tools;
         _permissions = permissions;
@@ -52,6 +54,19 @@ public sealed class ChatViewModel : IDisposable
         _httpFactory = httpFactory;
         _endpointHealth = endpointHealth;
         _loadedTools = loadedTools;
+    }
+
+    public int Id { get; }
+
+    public string Title
+    {
+        get
+        {
+            var first = Turns.FirstOrDefault()?.UserMessage;
+            if (string.IsNullOrWhiteSpace(first)) return "New Chat";
+            var trimmed = first.Trim().ReplaceLineEndings(" ");
+            return trimmed.Length <= 32 ? trimmed : trimmed[..32] + "…";
+        }
     }
 
     public List<ChatTurn> Turns { get; } = new();
