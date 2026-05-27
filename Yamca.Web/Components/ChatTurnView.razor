@@ -11,7 +11,7 @@
             {
                 @if (item is AssistantTextItem text)
                 {
-                    <MudPaper Class="pa-2 mb-2 yamca-markdown" Elevation="0" Outlined="true">
+                    <MudPaper Class="pa-2 mb-2 yamca-markdown" Elevation="0">
                         @if (Session.MarkdownEnabled)
                         {
                             @((MarkupString)MarkdownRenderer.ToHtml(text.Text))
