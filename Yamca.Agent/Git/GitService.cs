@@ -106,7 +106,14 @@ public sealed class GitService
     {
         var squash = await RunAsync(repoPath, ["merge", "--squash", branch], ct).ConfigureAwait(false);
         if (!squash.Ok) return squash;
-        return await RunAsync(repoPath, ["commit", "-m", $"Squash merge of {branch}"], ct).ConfigureAwait(false);
+
+        var gitDir = await RunAsync(repoPath, ["rev-parse", "--git-dir"], ct).ConfigureAwait(false);
+        if (!gitDir.Ok) return gitDir;
+        var squashMsgPath = Path.Combine(repoPath, gitDir.Stdout.Trim(), "SQUASH_MSG");
+
+        return File.Exists(squashMsgPath)
+            ? await RunAsync(repoPath, ["commit", "-F", squashMsgPath], ct).ConfigureAwait(false)
+            : await RunAsync(repoPath, ["commit", "-m", $"Squash merge of {branch}"], ct).ConfigureAwait(false);
     }
 
     public Task<GitResult> RemoveWorktreeAsync(string repoPath, string worktreePath, bool force, CancellationToken ct)

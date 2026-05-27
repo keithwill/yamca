@@ -8,9 +8,18 @@
 
         <MudRadioGroup T="MergeStrategy" Value="_strategy"
                        ValueChanged="@((MergeStrategy s) => _strategy = s)" Class="mt-2">
-            <MudRadio T="MergeStrategy" Value="MergeStrategy.Merge" Dense="true">Merge commit</MudRadio>
-            <MudRadio T="MergeStrategy" Value="MergeStrategy.Rebase" Dense="true">Rebase</MudRadio>
-            <MudRadio T="MergeStrategy" Value="MergeStrategy.Squash" Dense="true">Squash</MudRadio>
+            <MudTooltip Text="Keep every commit from the chat branch and add a merge commit on top. Preserves full history."
+                        Placement="Placement.Right" Arrow="true">
+                <MudRadio T="MergeStrategy" Value="MergeStrategy.Merge" Dense="true">Merge commit</MudRadio>
+            </MudTooltip>
+            <MudTooltip Text="Replay the base branch's commits on top of the chat branch for a linear history. Keeps individual commits."
+                        Placement="Placement.Right" Arrow="true">
+                <MudRadio T="MergeStrategy" Value="MergeStrategy.Rebase" Dense="true">Rebase</MudRadio>
+            </MudTooltip>
+            <MudTooltip Text="Collapse all chat-branch commits into a single commit on the base branch. Best for noisy WIP history."
+                        Placement="Placement.Right" Arrow="true">
+                <MudRadio T="MergeStrategy" Value="MergeStrategy.Squash" Dense="true">Squash</MudRadio>
+            </MudTooltip>
         </MudRadioGroup>
 
         <MudSwitch T="bool" @bind-Value="_cleanup" Color="Color.Primary"
@@ -35,7 +44,7 @@
     [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
     [Parameter, EditorRequired] public WorktreeInfo Info { get; set; } = default!;
 
-    private MergeStrategy _strategy = MergeStrategy.Merge;
+    private MergeStrategy _strategy = MergeStrategy.Squash;
     private bool _cleanup = true;
     private string? _currentBase;
     private string? _error;
@@ -74,7 +83,8 @@
                     _error = $"Merge succeeded but worktree removal failed:\n{rm.Stderr.Trim()}";
                     return;
                 }
-                var del = await Git.DeleteBranchAsync(Info.BasePath, Info.Branch, force: false, ct);
+                var forceDelete = _strategy == MergeStrategy.Squash;
+                var del = await Git.DeleteBranchAsync(Info.BasePath, Info.Branch, force: forceDelete, ct);
                 if (!del.Ok)
                 {
                     _error = $"Merge succeeded but branch deletion failed:\n{del.Stderr.Trim()}";
