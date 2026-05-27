@@ -1,10 +1,7 @@
 @page "/"
 @page "/chat/{Id:int}"
 @rendermode InteractiveServer
-@implements IDisposable
-@using Microsoft.AspNetCore.Components.Forms
-@using Microsoft.JSInterop
-@using System.Text
+@using Yamca.Web.Components.Chat
 
 <PageTitle>Yamca - @System.IO.Path.GetFileName(Workspace.RootPath.TrimEnd('\\', '/'))</PageTitle>
 
@@ -17,122 +14,19 @@
 }
 else
 {
-    <div class="yamca-page">
-        <div class="yamca-input-dock">
-            <div class="yamca-composer">
-                <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
-                              Lines="3" Variant="Variant.Text" Immediate="true"
-                              Class="yamca-composer-input"
-                              OnKeyDown="OnKeyDown" Disabled="Chat.IsRunning" />
-                <div class="yamca-composer-toolbar">
-                    <div class="yamca-composer-left">
-                        <MudFileUpload T="IReadOnlyList<IBrowserFile>"
-                                       FilesChanged="OnFilesChanged" MaximumFileCount="20"
-                                       Accept="@AttachAccept">
-                            <CustomContent Context="fileUpload">
-                                <MudIconButton Icon="@Icons.Material.Filled.AttachFile"
-                                               Color="Color.Default" Variant="Variant.Text"
-                                               Size="Size.Small"
-                                               Disabled="Chat.IsRunning"
-                                               OnClick="@(() => fileUpload.OpenFilePickerAsync())"
-                                               aria-label="Attach file" />
-                            </CustomContent>
-                            <SelectedTemplate></SelectedTemplate>
-                        </MudFileUpload>
-                        @foreach (var att in _attachments)
-                        {
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                                     Icon="@Icons.Material.Filled.InsertDriveFile"
-                                     OnClose="@(() => RemoveAttachment(att))"
-                                     title="@($"{att.FileName} — {att.Text.Length:N0} chars")">
-                                @att.FileName
-                            </MudChip>
-                        }
-                    </div>
-                    <div class="yamca-composer-right">
-                        @if (Chat.CurrentContextTokens > 0)
-                        {
-                            <div class="yamca-context-badge" title="@ContextBadgeTooltip()">
-                                @ContextBadgeText()
-                            </div>
-                        }
-                        @if (Chat.IsRunning)
-                        {
-                            <MudIconButton Variant="Variant.Filled" Color="Color.Error"
-                                           Size="Size.Small"
-                                           Icon="@Icons.Material.Filled.Stop"
-                                           OnClick="OnCancel" aria-label="Stop" />
-                        }
-                        else
-                        {
-                            <MudIconButton Variant="Variant.Filled" Color="Color.Default"
-                                           Size="Size.Small"
-                                           Icon="@Icons.Material.Filled.PlayArrow"
-                                           OnClick="OnSend"
-                                           Disabled="@(string.IsNullOrWhiteSpace(_prompt) && _attachments.Count == 0)"
-                                           aria-label="Send" />
-                        }
-                    </div>
-                </div>
-                @if (_attachError is not null)
-                {
-                    <MudText Typo="Typo.caption" Color="Color.Error" Class="px-1">@_attachError</MudText>
-                }
-            </div>
-        </div>
-
-        <div class="yamca-scroll" @ref="_scrollContainer">
-            <MudContainer MaxWidth="MaxWidth.Large" Class="pa-2">
-                @foreach (var turn in Chat.Turns)
-                {
-                    <ChatTurnView Turn="turn" />
-                }
-
-                @foreach (var approval in Chat.Approvals.ToList())
-                {
-                    <ApprovalPrompt Approval="approval"
-                                    OnResolve="@(d => Chat.ResolveApproval(approval, d.Approved, d.Persistence))"
-                                    OnRegisterAndAllow="@(desc => Chat.RegisterAndAllow(approval, desc))" />
-                }
-
-                @if (Chat.Error is not null && (Chat.Turns.Count == 0 || Chat.Turns[^1].Error is null))
-                {
-                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@Chat.Error</MudAlert>
-                }
-
-                <div @ref="_scrollAnchor"></div>
-            </MudContainer>
-        </div>
-    </div>
+    <ChatSessionPanel Chat="Chat" @key="Chat.Id" />
 }
 
 @code {
     [Inject] private IWorkspace Workspace { get; set; } = default!;
     [Inject] private ChatSessionManager Manager { get; set; } = default!;
-    [Inject] private SessionSettings Session { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
-    [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private NavigationManager Nav { get; set; } = default!;
 
     [Parameter] public int? Id { get; set; }
 
     private ChatViewModel? Chat => Id is int id ? Manager.Get(id) : null;
-    private int? _subscribedId;
-
     private bool _hydrated;
-    private string _prompt = "";
-    private ElementReference _scrollAnchor;
-    private ElementReference _scrollContainer;
-    private readonly List<Attachment> _attachments = new();
-    private string? _attachError;
-
-    private const long MaxAttachmentBytes = 2 * 1024 * 1024; // 2 MB per file
-    private const string AttachAccept =
-        ".txt,.md,.markdown,.json,.xml,.yml,.yaml,.csv,.tsv,.log," +
-        ".cs,.csproj,.razor,.cshtml,.html,.htm,.css,.scss,.js,.ts,.tsx,.jsx," +
-        ".py,.go,.rs,.java,.kt,.rb,.php,.sh,.ps1,.psm1,.sql,.toml,.ini,.cfg,.conf";
-
-    private sealed record Attachment(string FileName, string Text);
 
     protected override void OnParametersSet()
     {
@@ -153,18 +47,6 @@ else
                 Nav.NavigateTo($"chat/{fallback.Id}", replace: true);
             else
                 Nav.NavigateTo("/", replace: true);
-            return;
-        }
-
-        if (_subscribedId != Id)
-        {
-            if (_subscribedId is int prev && Manager.Get(prev) is { } prevVm)
-                prevVm.Changed -= OnChanged;
-            Chat!.Changed += OnChanged;
-            _subscribedId = Id;
-            _prompt = "";
-            _attachments.Clear();
-            _attachError = null;
         }
     }
 
@@ -175,118 +57,6 @@ else
             await Hydrator.HydrateAsync();
             _hydrated = true;
             StateHasChanged();
-            return;
         }
-
-        if (!_hydrated || Chat is null) return;
-        await SafeInvokeAsync("yamcaChat.init", _scrollContainer);
-        await SafeInvokeAsync("yamcaChat.scrollIfSticky", _scrollAnchor);
-    }
-
-    private void OnChanged() => InvokeAsync(StateHasChanged);
-
-    private async Task OnSend()
-    {
-        if (Chat is null || Chat.IsRunning) return;
-        if (string.IsNullOrWhiteSpace(_prompt) && _attachments.Count == 0) return;
-
-        var p = ComposePrompt(_prompt, _attachments);
-        _prompt = "";
-        _attachments.Clear();
-        _attachError = null;
-        await Chat.SendAsync(p);
-    }
-
-    private static string ComposePrompt(string userText, IReadOnlyList<Attachment> attachments)
-    {
-        if (attachments.Count == 0) return userText;
-        var sb = new StringBuilder();
-        foreach (var a in attachments)
-        {
-            sb.Append("Attached file: ").AppendLine(a.FileName);
-            sb.AppendLine("```");
-            sb.AppendLine(a.Text);
-            sb.AppendLine("```");
-            sb.AppendLine();
-        }
-        sb.Append(userText);
-        return sb.ToString();
-    }
-
-    private async Task OnFilesChanged(IReadOnlyList<IBrowserFile>? files)
-    {
-        if (files is null) return;
-        _attachError = null;
-        foreach (var file in files)
-        {
-            if (file.Size > MaxAttachmentBytes)
-            {
-                _attachError = $"\"{file.Name}\" is larger than {MaxAttachmentBytes / 1024} KB and was skipped.";
-                continue;
-            }
-            try
-            {
-                using var stream = file.OpenReadStream(MaxAttachmentBytes);
-                using var reader = new StreamReader(stream);
-                var text = await reader.ReadToEndAsync();
-                _attachments.Add(new Attachment(file.Name, text));
-            }
-            catch (Exception ex)
-            {
-                _attachError = $"Could not read \"{file.Name}\": {ex.Message}";
-            }
-        }
-        StateHasChanged();
-    }
-
-    private void RemoveAttachment(Attachment a)
-    {
-        _attachments.Remove(a);
-        StateHasChanged();
-    }
-
-    private async Task OnKeyDown(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter" && !e.ShiftKey)
-        {
-            await OnSend();
-        }
-    }
-
-    private void OnCancel() => Chat?.Cancel();
-
-    private string ContextBadgeText()
-    {
-        var used = Chat!.CurrentContextTokens.ToString("N0");
-        return Chat.MaxContextTokens is int max
-            ? $"{used} / {max:N0} tokens"
-            : $"~{used} tokens";
-    }
-
-    private string ContextBadgeTooltip()
-    {
-        if (Chat!.MaxContextTokens is int max)
-        {
-            var pct = max > 0 ? (Chat.CurrentContextTokens * 100.0 / max).ToString("0.0") : "0";
-            var src = Chat.MaxContextSource ?? "server";
-            return $"{pct}% of context used. Max from {src}.";
-        }
-        return "Estimated context size (chars / 4). Backend did not report a max.";
-    }
-
-private async Task SafeInvokeAsync(string identifier, params object?[] args)
-    {
-        try
-        {
-            await JS.InvokeVoidAsync(identifier, args);
-        }
-        catch (JSDisconnectedException) { /* circuit gone */ }
-        catch (TaskCanceledException)   { /* tab closing */ }
-    }
-
-    public void Dispose()
-    {
-        if (_subscribedId is int prev && Manager.Get(prev) is { } prevVm)
-            prevVm.Changed -= OnChanged;
     }
 }

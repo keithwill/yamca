@@ -31,6 +31,7 @@
                         Disabled="@(!Sessions.CanCreate)">
                 New Chat
             </MudNavLink>
+            <MudNavLink Href="split" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.GridView">Split View</MudNavLink>
             <MudNavLink Href="settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
         </MudNavMenu>
     </MudDrawer>
@@ -60,6 +61,8 @@
     {
         if (!Sessions.CanCreate) return;
         var vm = Sessions.Create();
+        // Stay put when the user is in split view so they see the tile reflow.
+        if (IsOnSplit()) return;
         Nav.NavigateTo($"chat/{vm.Id}");
     }
 
@@ -68,11 +71,19 @@
         var next = Sessions.PickNextActive(id);
         var wasActive = CurrentChatId() == id;
         Sessions.Close(id);
+        // In split view, closing a sidebar entry should never navigate away.
+        if (IsOnSplit()) return;
         if (!wasActive) return;
         if (next is int nextId)
             Nav.NavigateTo($"chat/{nextId}");
         else
             Nav.NavigateTo("/");
+    }
+
+    private bool IsOnSplit()
+    {
+        var uri = Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/');
+        return string.Equals(uri, "split", StringComparison.OrdinalIgnoreCase);
     }
 
     private void OnRowMouseUp(MouseEventArgs e, int id)

@@ -123,6 +123,45 @@ h1:focus {
     opacity: 1;
 }
 
+.yamca-split {
+    display: grid;
+    gap: 4px;
+    height: 100vh;
+    width: 100%;
+}
+.yamca-split-1 { grid-template: 1fr / 1fr; }
+.yamca-split-2 { grid-template: 1fr / 1fr 1fr; }
+.yamca-split-3 { grid-template: 1fr 1fr / 1fr 1fr; }
+.yamca-split-3 > :nth-child(1) { grid-column: 1 / span 2; }
+.yamca-split-4 { grid-template: 1fr 1fr / 1fr 1fr; }
+.yamca-split > * {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+.yamca-split .yamca-page {
+    height: 100%;
+}
+
+.yamca-tile-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem 0.25rem 0.75rem;
+    border-bottom: 1px solid rgba(127, 127, 127, 0.25);
+    background: rgba(255, 255, 255, 0.02);
+}
+.yamca-tile-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.85rem;
+    opacity: 0.85;
+}
+
 .yamca-context-badge {
     font-size: 0.75rem;
     opacity: 0.65;
