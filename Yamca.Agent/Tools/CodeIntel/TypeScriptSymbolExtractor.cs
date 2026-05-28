@@ -43,28 +43,29 @@ public sealed class TypeScriptSymbolExtractor : ISymbolExtractor
                     break;
 
                 case "type_alias_declaration":
-                    var taName = target.GetChildForField("name")?.Text ?? "<anonymous>";
-                    sink.Add(new Symbol("type", $"type {taName}", target.StartPosition.Row + 1, depth));
+                    var taNameNode = target.GetChildForField("name");
+                    var taName = taNameNode?.Text ?? "<anonymous>";
+                    sink.Add(Symbol.From("type", $"type {taName}", taNameNode?.Text ?? string.Empty, target, depth));
                     break;
 
                 case "function_declaration":
                 case "generator_function_declaration":
                     var fb = target.GetChildForField("body");
-                    sink.Add(new Symbol("function", SignatureFormatter.SliceHeader(target, fb, source),
-                        target.StartPosition.Row + 1, depth));
+                    sink.Add(Symbol.From("function", SignatureFormatter.SliceHeader(target, fb, source),
+                        target.GetChildForField("name")?.Text ?? string.Empty, target, depth));
                     break;
 
                 case "method_definition":
                 case "method_signature":
                 case "abstract_method_signature":
                     var mb = target.GetChildForField("body");
-                    sink.Add(new Symbol("method", SignatureFormatter.SliceHeader(target, mb, source),
-                        target.StartPosition.Row + 1, depth));
+                    sink.Add(Symbol.From("method", SignatureFormatter.SliceHeader(target, mb, source),
+                        target.GetChildForField("name")?.Text ?? string.Empty, target, depth));
                     break;
 
                 case "public_field_definition":
-                    sink.Add(new Symbol("field", SignatureFormatter.SliceHeader(target, null, source),
-                        target.StartPosition.Row + 1, depth));
+                    sink.Add(Symbol.From("field", SignatureFormatter.SliceHeader(target, null, source),
+                        target.GetChildForField("name")?.Text ?? string.Empty, target, depth));
                     break;
 
                 case "program":
@@ -80,8 +81,9 @@ public sealed class TypeScriptSymbolExtractor : ISymbolExtractor
 
     private static void EmitContainer(Node node, string kind, int depth, List<Symbol> sink, string source)
     {
-        var name = node.GetChildForField("name")?.Text ?? "<anonymous>";
-        sink.Add(new Symbol(kind, $"{kind} {name}", node.StartPosition.Row + 1, depth));
+        var nameNode = node.GetChildForField("name");
+        var name = nameNode?.Text ?? "<anonymous>";
+        sink.Add(Symbol.From(kind, $"{kind} {name}", nameNode?.Text ?? string.Empty, node, depth));
         if (depth < 3)
         {
             var body = node.GetChildForField("body");

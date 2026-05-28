@@ -87,7 +87,6 @@ builder.Services.AddSingleton<ITool, FindFilesTool>();
 builder.Services.AddSingleton<ITool, GrepTool>();
 builder.Services.AddSingleton<ITool, ExecuteCommandTool>();
 
-builder.Services.AddSingleton<ParsedTreeCache>();
 builder.Services.AddSingleton<ISymbolExtractor, CSharpSymbolExtractor>();
 builder.Services.AddSingleton<ISymbolExtractor, PythonSymbolExtractor>();
 builder.Services.AddSingleton<ISymbolExtractor, JavaScriptSymbolExtractor>();
@@ -95,7 +94,28 @@ builder.Services.AddSingleton<ISymbolExtractor, TypeScriptSymbolExtractor>();
 builder.Services.AddSingleton<ISymbolExtractor, TsxSymbolExtractor>();
 builder.Services.AddSingleton<ISymbolExtractor, RustSymbolExtractor>();
 builder.Services.AddSingleton<ISymbolExtractor, GoSymbolExtractor>();
-builder.Services.AddSingleton<ITool, ListSymbolsTool>();
+builder.Services.AddSingleton<SymbolService>();
+
+// AST node-kind profiles for the code_find_* / code_search tools. The generic profile is
+// the fallback for any routed language without a dedicated entry (hybrid coverage).
+builder.Services.AddSingleton<ILanguageNodeProfile, GenericNodeProfile>();
+builder.Services.AddSingleton<ILanguageNodeProfile, CSharpNodeProfile>();
+builder.Services.AddSingleton<ILanguageNodeProfile, PythonNodeProfile>();
+builder.Services.AddSingleton<ILanguageNodeProfile, JavaScriptNodeProfile>();
+builder.Services.AddSingleton<ILanguageNodeProfile, TypeScriptNodeProfile>();
+builder.Services.AddSingleton<ILanguageNodeProfile, TsxNodeProfile>();
+builder.Services.AddSingleton<ILanguageNodeProfile, RustNodeProfile>();
+builder.Services.AddSingleton<ILanguageNodeProfile, GoNodeProfile>();
+builder.Services.AddSingleton<NodeProfileResolver>();
+
+builder.Services.AddSingleton<ITool, CodeListSymbolsTool>();
+builder.Services.AddSingleton<ITool, CodeExtractSymbolTool>();
+builder.Services.AddSingleton<ITool, CodeSurroundingContextTool>();
+builder.Services.AddSingleton<ITool, CodeFindDefinitionsTool>();
+builder.Services.AddSingleton<ITool, CodeFindCallsTool>();
+builder.Services.AddSingleton<ITool, CodeFindReferencesTool>();
+builder.Services.AddSingleton<ITool, CodeSearchTool>();
+builder.Services.AddSingleton<ITool, CodeEditSymbolTool>();
 builder.Services.AddScoped<ITool, LoadToolTool>();
 
 // Script-tool collaborators. InterpreterResolver / ScriptRunner are stateless apart

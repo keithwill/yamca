@@ -29,8 +29,7 @@ public sealed class CSharpSymbolExtractor : ISymbolExtractor
         {
             if (child.Type == "file_scoped_namespace_declaration")
             {
-                var nsName = NameOrAnonymous(child);
-                sink.Add(new Symbol("namespace", $"namespace {nsName}", child.StartPosition.Row + 1, currentDepth));
+                sink.Add(Symbol.From("namespace", $"namespace {NameOrAnonymous(child)}", BareName(child), child, currentDepth));
                 if (currentDepth < 3) currentDepth++;
                 continue;
             }
@@ -38,7 +37,7 @@ public sealed class CSharpSymbolExtractor : ISymbolExtractor
             if (TryContainer(child, out var containerKind))
             {
                 var name = NameOrAnonymous(child);
-                sink.Add(new Symbol(containerKind, $"{containerKind} {name}", child.StartPosition.Row + 1, currentDepth));
+                sink.Add(Symbol.From(containerKind, $"{containerKind} {name}", BareName(child), child, currentDepth));
                 if (currentDepth < 3)
                 {
                     var body = child.GetChildForField("body");
@@ -50,7 +49,7 @@ public sealed class CSharpSymbolExtractor : ISymbolExtractor
 
             if (TryMember(child, out var memberKind))
             {
-                sink.Add(new Symbol(memberKind, BuildMemberDisplay(memberKind, child, source), child.StartPosition.Row + 1, currentDepth));
+                sink.Add(Symbol.From(memberKind, BuildMemberDisplay(memberKind, child, source), MemberName(memberKind, child), child, currentDepth));
                 continue;
             }
 
@@ -116,6 +115,37 @@ public sealed class CSharpSymbolExtractor : ISymbolExtractor
     {
         var name = node.GetChildForField("name");
         return name?.Text ?? "<anonymous>";
+    }
+
+    /// <summary>Bare leaf name for lookup (empty when the node has no <c>name</c> field).</summary>
+    private static string BareName(Node node) => node.GetChildForField("name")?.Text ?? string.Empty;
+
+    private static string MemberName(string kind, Node node)
+    {
+        var name = node.GetChildForField("name");
+        if (name is not null) return name.Text ?? string.Empty;
+
+        // Fields and field-style events declare their name on a nested variable_declarator
+        // (`public int Foo, Bar;`) rather than a `name` field. Take the first declarator.
+        if (kind is "field" or "event")
+        {
+            var declarator = FirstDescendant(node, "variable_declarator");
+            return declarator?.GetChildForField("name")?.Text
+                ?? declarator?.NamedChildren.FirstOrDefault(c => c.Type == "identifier")?.Text
+                ?? string.Empty;
+        }
+        return string.Empty;
+    }
+
+    private static Node? FirstDescendant(Node node, string type)
+    {
+        foreach (var child in node.NamedChildren)
+        {
+            if (child.Type == type) return child;
+            var found = FirstDescendant(child, type);
+            if (found is not null) return found;
+        }
+        return null;
     }
 
     private static string BuildMemberDisplay(string kind, Node node, string source)

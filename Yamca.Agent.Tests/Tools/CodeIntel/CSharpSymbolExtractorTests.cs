@@ -76,6 +76,42 @@ public class CSharpSymbolExtractorTests
     }
 
     [Test]
+    public void NameAndEndLine_ArePopulated()
+    {
+        const string src = """
+            public class Foo
+            {
+                public void Bar(int x)
+                {
+                    var y = x;
+                }
+            }
+            """;
+
+        var symbols = Parse(src);
+
+        var cls = symbols.Single(s => s.Kind == "class");
+        Assert.That(cls.Name, Is.EqualTo("Foo"));
+        Assert.That(cls.Line, Is.EqualTo(1));
+        // The class spans through its closing brace.
+        Assert.That(cls.EndLine, Is.EqualTo(7));
+
+        var method = symbols.Single(s => s.Kind == "method");
+        Assert.That(method.Name, Is.EqualTo("Bar"));
+        Assert.That(method.Line, Is.EqualTo(3));
+        Assert.That(method.EndLine, Is.EqualTo(6));
+    }
+
+    [Test]
+    public void Field_NameExtractedFromDeclarator()
+    {
+        const string src = "class C { private int _count; }";
+        var symbols = Parse(src);
+        var field = symbols.Single(s => s.Kind == "field");
+        Assert.That(field.Name, Is.EqualTo("_count"));
+    }
+
+    [Test]
     public void ParseError_StillEmitsValidSymbols()
     {
         // Class is well-formed; one method body has stray characters. We only assert

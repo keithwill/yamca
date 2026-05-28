@@ -21,7 +21,7 @@ public sealed class RustSymbolExtractor : ISymbolExtractor
             {
                 case "mod_item":
                     var modName = child.GetChildForField("name")?.Text ?? "<anonymous>";
-                    sink.Add(new Symbol("mod", $"mod {modName}", child.StartPosition.Row + 1, depth));
+                    sink.Add(Symbol.From("mod", $"mod {modName}", child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
                     if (depth < 3)
                     {
                         var body = child.GetChildForField("body");
@@ -33,7 +33,7 @@ public sealed class RustSymbolExtractor : ISymbolExtractor
                     var implType = child.GetChildForField("type")?.Text ?? "?";
                     var implTrait = child.GetChildForField("trait")?.Text;
                     var implLabel = implTrait is null ? $"impl {implType}" : $"impl {implTrait} for {implType}";
-                    sink.Add(new Symbol("impl", implLabel, child.StartPosition.Row + 1, depth));
+                    sink.Add(Symbol.From("impl", implLabel, child.GetChildForField("type")?.Text ?? string.Empty, child, depth));
                     if (depth < 3)
                     {
                         var body = child.GetChildForField("body");
@@ -43,7 +43,7 @@ public sealed class RustSymbolExtractor : ISymbolExtractor
 
                 case "trait_item":
                     var traitName = child.GetChildForField("name")?.Text ?? "<anonymous>";
-                    sink.Add(new Symbol("trait", $"trait {traitName}", child.StartPosition.Row + 1, depth));
+                    sink.Add(Symbol.From("trait", $"trait {traitName}", child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
                     if (depth < 3)
                     {
                         var body = child.GetChildForField("body");
@@ -52,35 +52,35 @@ public sealed class RustSymbolExtractor : ISymbolExtractor
                     break;
 
                 case "struct_item":
-                    sink.Add(new Symbol("struct",
+                    sink.Add(Symbol.From("struct",
                         SignatureFormatter.SliceHeader(child, child.GetChildForField("body"), source),
-                        child.StartPosition.Row + 1, depth));
+                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
                     break;
 
                 case "enum_item":
-                    sink.Add(new Symbol("enum",
+                    sink.Add(Symbol.From("enum",
                         SignatureFormatter.SliceHeader(child, child.GetChildForField("body"), source),
-                        child.StartPosition.Row + 1, depth));
+                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
                     break;
 
                 case "function_item":
                 case "function_signature_item":
-                    sink.Add(new Symbol("fn",
+                    sink.Add(Symbol.From("fn",
                         SignatureFormatter.SliceHeader(child, child.GetChildForField("body"), source),
-                        child.StartPosition.Row + 1, depth));
+                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
                     break;
 
                 case "const_item":
                 case "static_item":
-                    sink.Add(new Symbol(child.Type == "const_item" ? "const" : "static",
+                    sink.Add(Symbol.From(child.Type == "const_item" ? "const" : "static",
                         SignatureFormatter.SliceHeader(child, null, source),
-                        child.StartPosition.Row + 1, depth));
+                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
                     break;
 
                 case "type_item":
-                    sink.Add(new Symbol("type",
+                    sink.Add(Symbol.From("type",
                         SignatureFormatter.SliceHeader(child, null, source),
-                        child.StartPosition.Row + 1, depth));
+                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
                     break;
 
                 case "source_file":

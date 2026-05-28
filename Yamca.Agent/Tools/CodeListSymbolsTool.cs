@@ -1,31 +1,27 @@
 using System.Text;
 using System.Text.Json;
-using TreeSitter;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Tools.CodeIntel;
 
 namespace Yamca.Agent.Tools;
 
-public sealed class ListSymbolsTool : ITool
+public sealed class CodeListSymbolsTool : ITool
 {
     private const int DefaultMaxFiles = 50;
     private const int HardMaxFiles = 200;
     private const int DefaultMaxSymbols = 2000;
     private const int HardMaxSymbols = 5000;
-    private const long MaxFileBytes = 2L * 1024 * 1024;
 
-    private readonly ParsedTreeCache _cache;
-    private readonly Dictionary<string, ISymbolExtractor> _extractorsByLanguage;
+    private readonly SymbolService _symbols;
 
-    public ListSymbolsTool(ParsedTreeCache cache, IEnumerable<ISymbolExtractor> extractors)
+    public CodeListSymbolsTool(SymbolService symbols)
     {
-        _cache = cache;
-        _extractorsByLanguage = extractors.ToDictionary(e => e.LanguageId, StringComparer.Ordinal);
+        _symbols = symbols;
     }
 
-    public string Name => "list_symbols";
+    public string Name => "code_list_symbols";
 
-    public string Description => "Extract code structure (namespaces, classes, methods, functions) from a source file or directory. Cheaper than read_file for orientation: returns ~50–200 tokens per file instead of hundreds. Honors .gitignore for directories; files with unsupported extensions are silently skipped (directory mode) or reported (file mode).";
+    public string Description => "Extract code structure (namespaces, classes, methods, functions) from a source file or directory. Cheaper than read_file for orientation: returns ~50–200 tokens per file instead of hundreds. Honors .gitignore for directories; unsupported extensions are skipped (directory mode) or reported (file mode). To read one symbol's source rather than the whole file, use code_extract_symbol; to search code by symbol, search for code_find_definitions / code_find_calls / code_search via load_tool.";
 
     public string ParametersSchema => """
     {
@@ -66,22 +62,20 @@ public sealed class ListSymbolsTool : ITool
 
         return isDirectory
             ? await OutlineDirectoryAsync(resolved, maxFiles, maxSymbols, cancellationToken)
-            : await OutlineSingleFileAsync(resolved, displayPath: Path.GetFileName(resolved), maxSymbols, cancellationToken);
+            : await OutlineSingleFileAsync(resolved, Path.GetFileName(resolved), maxSymbols, cancellationToken);
     }
 
     private async Task<ToolResult> OutlineSingleFileAsync(string absolutePath, string displayPath, int maxSymbols, CancellationToken ct)
     {
-        var languageId = LanguageRouter.GetLanguageId(absolutePath);
-        if (languageId is null)
-            return ToolResult.Error($"Unsupported file type: {Path.GetExtension(absolutePath)}");
-
-        if (!_extractorsByLanguage.TryGetValue(languageId, out var extractor))
-            return ToolResult.Error($"No symbol extractor registered for language '{languageId}'.");
-
-        var rendered = await RenderFileAsync(absolutePath, displayPath, extractor, maxSymbols, ct);
-        return rendered is null
-            ? ToolResult.Error($"Could not render symbols for '{absolutePath}'.")
-            : ToolResult.Ok(rendered);
+        var load = await _symbols.LoadAsync(absolutePath, ct);
+        return load.Status switch
+        {
+            SymbolLoadStatus.Unsupported => ToolResult.Error(load.Note ?? "Unsupported file type."),
+            SymbolLoadStatus.NoExtractor => ToolResult.Error(load.Note ?? "No symbol extractor."),
+            SymbolLoadStatus.ReadError => ToolResult.Error($"Could not render symbols for '{absolutePath}'."),
+            SymbolLoadStatus.Skipped => ToolResult.Ok(RenderHeaderOnly(displayPath, load.Note ?? "# skipped")),
+            _ => ToolResult.Ok(RenderBlock(displayPath, Cap(load.Symbols, maxSymbols), load.HasErrors)),
+        };
     }
 
     private async Task<ToolResult> OutlineDirectoryAsync(string root, int maxFiles, int maxSymbols, CancellationToken ct)
@@ -99,18 +93,27 @@ public sealed class ListSymbolsTool : ITool
                 if (filesEmitted >= maxFiles) { truncatedFiles = true; break; }
                 if (symbolsEmitted >= maxSymbols) { truncatedSymbols = true; break; }
 
-                var languageId = LanguageRouter.GetLanguageId(file);
-                if (languageId is null) continue;
-                if (!_extractorsByLanguage.TryGetValue(languageId, out var extractor)) continue;
+                var load = await _symbols.LoadAsync(file, ct);
+                // Files we can't outline (wrong extension, no extractor, unreadable) are
+                // silently skipped in directory mode.
+                if (load.Status is SymbolLoadStatus.Unsupported or SymbolLoadStatus.NoExtractor or SymbolLoadStatus.ReadError)
+                    continue;
 
                 var rel = FileSearch.ToForwardSlashRelative(root, file);
-                var remaining = Math.Max(0, maxSymbols - symbolsEmitted);
-                if (remaining == 0) { truncatedSymbols = true; break; }
 
-                var rendered = await RenderFileAsync(file, rel, extractor, remaining, ct);
-                if (rendered is null) continue;
+                string rendered;
+                if (load.Status == SymbolLoadStatus.Skipped)
+                {
+                    rendered = RenderHeaderOnly(rel, load.Note ?? "# skipped");
+                }
+                else
+                {
+                    var remaining = Math.Max(0, maxSymbols - symbolsEmitted);
+                    if (remaining == 0) { truncatedSymbols = true; break; }
+                    rendered = RenderBlock(rel, Cap(load.Symbols, remaining), load.HasErrors);
+                }
 
-                // CountSymbolLines: lines that are not the path header (line 0 of the block).
+                // Lines that are not the path header (line 0 of the block).
                 var symbolLineCount = CountLines(rendered) - 1;
                 if (symbolLineCount <= 0) continue;
 
@@ -121,7 +124,7 @@ public sealed class ListSymbolsTool : ITool
         }
         catch (OperationCanceledException)
         {
-            return ToolResult.Error("list_symbols cancelled.");
+            return ToolResult.Error("code_list_symbols cancelled.");
         }
 
         if (filesEmitted == 0)
@@ -135,54 +138,8 @@ public sealed class ListSymbolsTool : ITool
         return ToolResult.Ok(output.ToString());
     }
 
-    private async Task<string?> RenderFileAsync(string absolutePath, string displayPath, ISymbolExtractor extractor, int maxSymbols, CancellationToken ct)
-    {
-        FileInfo info;
-        try { info = new FileInfo(absolutePath); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
-
-        if (info.Length > MaxFileBytes)
-            return RenderHeaderOnly(displayPath, $"# skipped: too large ({info.Length / 1024} KB)");
-
-        if (await FileProbe.IsLikelyBinaryAsync(absolutePath, ct))
-            return RenderHeaderOnly(displayPath, "# skipped: binary file");
-
-        var mtime = info.LastWriteTimeUtc;
-        if (_cache.TryGet(absolutePath, mtime, info.Length, out var cached))
-            return cached;
-
-        string source;
-        try
-        {
-            source = await File.ReadAllTextAsync(absolutePath, ct);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-
-        string rendered;
-        try
-        {
-            using var language = new Language(extractor.LanguageId);
-            using var parser = new Parser(language);
-            using var tree = parser.Parse(source);
-            if (tree is null)
-                return RenderHeaderOnly(displayPath, "# parse failed");
-
-            var symbols = extractor.Extract(tree.RootNode, source).Take(maxSymbols).ToList();
-            rendered = RenderBlock(displayPath, symbols, tree.RootNode.HasError);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or DllNotFoundException or ArgumentException)
-        {
-            // Native lib for this language failed to load, or query failed. Surface a
-            // skipped-block so the caller still gets a file entry.
-            return RenderHeaderOnly(displayPath, $"# skipped: {ex.Message}");
-        }
-
-        _cache.Set(absolutePath, mtime, info.Length, rendered);
-        return rendered;
-    }
+    private static IReadOnlyList<Symbol> Cap(IReadOnlyList<Symbol> symbols, int max) =>
+        symbols.Count <= max ? symbols : symbols.Take(max).ToList();
 
     private static string RenderHeaderOnly(string displayPath, string note)
     {

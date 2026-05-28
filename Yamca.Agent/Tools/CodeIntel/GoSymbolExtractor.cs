@@ -20,15 +20,15 @@ public sealed class GoSymbolExtractor : ISymbolExtractor
             switch (child.Type)
             {
                 case "function_declaration":
-                    sink.Add(new Symbol("func",
+                    sink.Add(Symbol.From("func",
                         SignatureFormatter.SliceHeader(child, child.GetChildForField("body"), source),
-                        child.StartPosition.Row + 1, depth));
+                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
                     break;
 
                 case "method_declaration":
-                    sink.Add(new Symbol("method",
+                    sink.Add(Symbol.From("method",
                         SignatureFormatter.SliceHeader(child, child.GetChildForField("body"), source),
-                        child.StartPosition.Row + 1, depth));
+                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
                     break;
 
                 case "type_declaration":
@@ -43,7 +43,7 @@ public sealed class GoSymbolExtractor : ISymbolExtractor
                             "interface_type" => "interface",
                             _ => "type",
                         };
-                        sink.Add(new Symbol(kind, $"{kind} {name}", spec.StartPosition.Row + 1, depth));
+                        sink.Add(Symbol.From(kind, $"{kind} {name}", spec.GetChildForField("name")?.Text ?? string.Empty, spec, depth));
                     }
                     break;
 
@@ -54,9 +54,9 @@ public sealed class GoSymbolExtractor : ISymbolExtractor
                         if (spec.Type != "const_spec" && spec.Type != "var_spec") continue;
                         var nameNode = spec.GetChildForField("name") ?? spec.NamedChildren.FirstOrDefault();
                         if (nameNode is null) continue;
-                        sink.Add(new Symbol(child.Type == "const_declaration" ? "const" : "var",
+                        sink.Add(Symbol.From(child.Type == "const_declaration" ? "const" : "var",
                             $"{(child.Type == "const_declaration" ? "const" : "var")} {nameNode.Text}",
-                            spec.StartPosition.Row + 1, depth));
+                            nameNode.Text ?? string.Empty, spec, depth));
                     }
                     break;
 

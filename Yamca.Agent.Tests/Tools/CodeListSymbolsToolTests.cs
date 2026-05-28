@@ -6,18 +6,18 @@ using Yamca.Agent.Tools.CodeIntel;
 namespace Yamca.Agent.Tests.Tools;
 
 [TestFixture]
-public class ListSymbolsToolTests
+public class CodeListSymbolsToolTests
 {
     private TempWorkspace _ws = null!;
-    private ParsedTreeCache _cache = null!;
-    private ListSymbolsTool _tool = null!;
+    private SymbolService _symbols = null!;
+    private CodeListSymbolsTool _tool = null!;
 
     [SetUp]
     public void SetUp()
     {
         _ws = new TempWorkspace();
-        _cache = new ParsedTreeCache();
-        _tool = new ListSymbolsTool(_cache, new ISymbolExtractor[] { new CSharpSymbolExtractor() });
+        _symbols = new SymbolService(new ISymbolExtractor[] { new CSharpSymbolExtractor() });
+        _tool = new CodeListSymbolsTool(_symbols);
     }
 
     [TearDown]
@@ -146,7 +146,7 @@ public class ListSymbolsToolTests
     }
 
     [Test]
-    public async Task CacheHit_AvoidsReparse()
+    public async Task CacheHit_PopulatesCache()
     {
         var path = _ws.WriteFile("Hit.cs", "class Hit { }");
         var ctx = new ToolContext(_ws.Workspace, restrictToWorkspace: true);
@@ -154,17 +154,15 @@ public class ListSymbolsToolTests
         var first = await _tool.ExecuteAsync(
             Json.Parse("""{ "path": "Hit.cs" }"""), ctx, CancellationToken.None);
 
-        // Delete the underlying file. If the cache works, the second call returns the
-        // first result without touching disk.
+        // Delete the underlying file. The path-existence check runs before the loader, so
+        // the second call still surfaces a not-found error; we validate the cache via Count.
         File.Delete(path);
 
         var second = await _tool.ExecuteAsync(
             Json.Parse("""{ "path": "Hit.cs" }"""), ctx, CancellationToken.None);
 
         Assert.That(first.IsError, Is.False);
-        // The path-existence check is performed before the cache; after delete we will
-        // still get the path-not-found error. So we instead validate the cache via Count:
-        Assert.That(_cache.Count, Is.EqualTo(1));
+        Assert.That(_symbols.CacheCount, Is.EqualTo(1));
         Assert.That(second.IsError, Is.True);
         Assert.That(second.Content, Does.Contain("Path not found"));
     }
