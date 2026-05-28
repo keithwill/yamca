@@ -26,8 +26,22 @@ public interface ITool
 
     /// <summary>True = excluded from the initial tool list; the LLM must call
     /// <c>load_tool</c> to obtain this tool's schema before invoking it. Once loaded,
-    /// the schema stays in the tool list for the rest of the session. Default: false.</summary>
+    /// the schema stays in the tool list for the rest of the session. Default: false.
+    /// Source of truth for <see cref="DefaultAvailability"/>; user settings override.</summary>
     bool Deferred => false;
+
+    /// <summary>Default availability when the user has not set a per-tool override.
+    /// Derived from <see cref="Deferred"/> by default so existing tools keep their behavior.</summary>
+    Availability DefaultAvailability => Deferred ? Availability.Deferred : Availability.Eager;
+
+    /// <summary>True = tool cannot be Deferred or Hidden by the user (e.g. <c>load_tool</c>
+    /// itself; without it the LLM cannot discover deferred tools at all). UI locks the dropdown.</summary>
+    bool MandatoryEager => false;
+
+    /// <summary>False = the Hidden option is suppressed in the UI. Use for tools the harness
+    /// invokes outside the model's tool-call loop (currently none) or that would brick the
+    /// LLM if hidden. Default: true.</summary>
+    bool CanBeHidden => true;
 
     /// <summary>True (default) = show in the settings permissions table.</summary>
     bool ExposedInSettings => true;

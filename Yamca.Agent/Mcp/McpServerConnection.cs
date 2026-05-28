@@ -105,8 +105,9 @@ public sealed class McpServerConnection : IAsyncDisposable
         }
 
         var callTimeout = CallTimeout;
+        var defaultAvailability = Config.DefaultToolAvailability;
         var adapters = tools
-            .Select(t => new McpToolAdapter(Config.Id, t, Log, callTimeout))
+            .Select(t => new McpToolAdapter(Config.Id, t, Log, callTimeout, defaultAvailability))
             .ToArray();
 
         lock (_gate)

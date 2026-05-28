@@ -22,7 +22,12 @@ public sealed class McpToolAdapter : ITool
     private readonly TimeSpan _callTimeout;
     private string? _schemaJsonCache;
 
-    public McpToolAdapter(string serverId, McpClientTool tool, McpServerLogBuffer log, TimeSpan callTimeout)
+    public McpToolAdapter(
+        string serverId,
+        McpClientTool tool,
+        McpServerLogBuffer log,
+        TimeSpan callTimeout,
+        Availability defaultAvailability = Availability.Deferred)
     {
         if (string.IsNullOrEmpty(serverId)) throw new ArgumentException("Server id is required.", nameof(serverId));
         ArgumentNullException.ThrowIfNull(tool);
@@ -32,6 +37,7 @@ public sealed class McpToolAdapter : ITool
         _tool = tool;
         _log = log;
         _callTimeout = callTimeout > TimeSpan.Zero ? callTimeout : McpServerConnection.DefaultCallTimeout;
+        DefaultAvailability = defaultAvailability;
 
         UnderlyingToolName = tool.Name;
         Name = BuildName(serverId, tool.Name);
@@ -52,9 +58,10 @@ public sealed class McpToolAdapter : ITool
     // Third-party code: opt-in by default.
     public PermissionLevel DefaultPermission => PermissionLevel.Ask;
 
-    // Deferred so a user with several busy servers doesn't pay the token cost
-    // of dozens of tool schemas on every iteration.
-    public bool Deferred => true;
+    // Default availability comes from the server config (typically Deferred so a
+    // user with several busy servers doesn't pay the token cost of dozens of tool
+    // schemas on every iteration). The Tools page can override per-tool.
+    public Availability DefaultAvailability { get; }
 
     public bool ExposedInSettings => true;
 

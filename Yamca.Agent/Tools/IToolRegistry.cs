@@ -9,12 +9,14 @@ public interface IToolRegistry
     ITool? Get(string name);
 
     /// <summary>ChatTool definitions to send with a chat completion request. Includes all
-    /// non-deferred tools plus any deferred tools that have been loaded for this session.</summary>
-    IReadOnlyList<ChatTool> GetChatTools(LoadedToolSet loaded);
+    /// Eager tools plus any Deferred tools that have been loaded for this session.
+    /// Hidden tools are never included.</summary>
+    IReadOnlyList<ChatTool> GetChatTools(LoadedToolSet loaded, IAvailabilityResolver availability);
 
-    /// <summary>All tools marked <see cref="ITool.Deferred"/>, regardless of load state.
-    /// Used by <c>load_tool</c> to advertise available names and validate load requests.</summary>
-    IReadOnlyList<ITool> GetDeferredTools();
+    /// <summary>Tools whose effective availability is <see cref="Availability.Deferred"/>,
+    /// regardless of load state. Used by <c>load_tool</c> to advertise loadable names.
+    /// Hidden tools are never returned — that is what distinguishes Hidden from Deferred.</summary>
+    IReadOnlyList<ITool> GetDeferredTools(IAvailabilityResolver availability);
 
     /// <summary>Tools to display in the settings permissions table.</summary>
     IReadOnlyList<ITool> GetSettingsTools();

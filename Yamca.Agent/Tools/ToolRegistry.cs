@@ -57,22 +57,29 @@ public sealed class ToolRegistry : IToolRegistry
         return null;
     }
 
-    public IReadOnlyList<ChatTool> GetChatTools(LoadedToolSet loaded)
+    public IReadOnlyList<ChatTool> GetChatTools(LoadedToolSet loaded, IAvailabilityResolver availability)
     {
         ArgumentNullException.ThrowIfNull(loaded);
+        ArgumentNullException.ThrowIfNull(availability);
         var dynamicTools = CollectDynamic(out var dynamicNames);
-        var all = EnumerateAll(dynamicTools, dynamicNames);
-        return all
-            .Where(t => t.ExposedToLlm && (!t.Deferred || loaded.Contains(t.Name)))
-            .Select(t => new ChatTool(t.Name, t.Description, t.ParametersSchema))
-            .ToList();
+        var result = new List<ChatTool>();
+        foreach (var t in EnumerateAll(dynamicTools, dynamicNames))
+        {
+            if (!t.ExposedToLlm) continue;
+            var av = availability.Resolve(t.Name);
+            if (av == Availability.Hidden) continue;
+            if (av == Availability.Deferred && !loaded.Contains(t.Name)) continue;
+            result.Add(new ChatTool(t.Name, t.Description, t.ParametersSchema));
+        }
+        return result;
     }
 
-    public IReadOnlyList<ITool> GetDeferredTools()
+    public IReadOnlyList<ITool> GetDeferredTools(IAvailabilityResolver availability)
     {
+        ArgumentNullException.ThrowIfNull(availability);
         var dynamicTools = CollectDynamic(out var dynamicNames);
         return EnumerateAll(dynamicTools, dynamicNames)
-            .Where(t => t.ExposedToLlm && t.Deferred)
+            .Where(t => t.ExposedToLlm && availability.Resolve(t.Name) == Availability.Deferred)
             .ToList();
     }
 

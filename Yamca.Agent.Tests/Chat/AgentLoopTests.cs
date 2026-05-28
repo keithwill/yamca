@@ -16,6 +16,7 @@ public class AgentLoopTests
     private StubTool _tool = null!;
     private ToolRegistry _registry = null!;
     private PermissionResolver _resolver = null!;
+    private Yamca.Agent.Tests.Tools.TestAvailabilityResolver _availability = null!;
     private LoadedToolSet _loaded = null!;
     private AgentLoop _loop = null!;
 
@@ -30,11 +31,12 @@ public class AgentLoopTests
         _tool = new StubTool("read_file", PermissionLevel.Allow);
         _registry = new ToolRegistry(new ITool[] { _tool });
         _resolver = new PermissionResolver(_registry, _settings);
+        _availability = new Yamca.Agent.Tests.Tools.TestAvailabilityResolver(_registry);
         _loaded = new LoadedToolSet();
 
         var session = new ChatSession("sys");
         _loop = new AgentLoop(
-            session, _llm, _registry, _resolver, _approvals, _store, _ws.Workspace, _loaded,
+            session, _llm, _registry, _resolver, _availability, _approvals, _store, _ws.Workspace, _loaded,
             new AgentLoopOptions { MaxIterations = 5 });
     }
 
@@ -83,8 +85,9 @@ public class AgentLoopTests
         _tool = new StubTool("write_file", PermissionLevel.Ask);
         _registry = new ToolRegistry(new ITool[] { _tool });
         _resolver = new PermissionResolver(_registry, _settings);
+        _availability = new Yamca.Agent.Tests.Tools.TestAvailabilityResolver(_registry);
         _loop = new AgentLoop(
-            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace, _loaded);
+            new ChatSession("sys"), _llm, _registry, _resolver, _availability, _approvals, _store, _ws.Workspace, _loaded);
 
         _llm.EnqueueToolCall("c1", "write_file", """{"path":"a"}""");
         _llm.EnqueueText("ok");
@@ -107,8 +110,9 @@ public class AgentLoopTests
         _tool = new StubTool("write_file", PermissionLevel.Ask);
         _registry = new ToolRegistry(new ITool[] { _tool });
         _resolver = new PermissionResolver(_registry, _settings);
+        _availability = new Yamca.Agent.Tests.Tools.TestAvailabilityResolver(_registry);
         _loop = new AgentLoop(
-            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace, _loaded);
+            new ChatSession("sys"), _llm, _registry, _resolver, _availability, _approvals, _store, _ws.Workspace, _loaded);
 
         _llm.EnqueueToolCall("c1", "write_file", "{}");
         _llm.EnqueueText("understood");
@@ -130,8 +134,9 @@ public class AgentLoopTests
         _tool = new StubTool("write_file", PermissionLevel.Ask);
         _registry = new ToolRegistry(new ITool[] { _tool });
         _resolver = new PermissionResolver(_registry, _settings);
+        _availability = new Yamca.Agent.Tests.Tools.TestAvailabilityResolver(_registry);
         _loop = new AgentLoop(
-            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace, _loaded);
+            new ChatSession("sys"), _llm, _registry, _resolver, _availability, _approvals, _store, _ws.Workspace, _loaded);
 
         _llm.EnqueueToolCall("c1", "write_file", "{}");
         _llm.EnqueueToolCall("c2", "write_file", "{}");
@@ -162,8 +167,9 @@ public class AgentLoopTests
                 ["write_file"] = new() { Permission = PermissionLevel.Deny },
             });
         _resolver = new PermissionResolver(_registry, _settings);
+        _availability = new Yamca.Agent.Tests.Tools.TestAvailabilityResolver(_registry);
         _loop = new AgentLoop(
-            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace, _loaded);
+            new ChatSession("sys"), _llm, _registry, _resolver, _availability, _approvals, _store, _ws.Workspace, _loaded);
 
         _llm.EnqueueToolCall("c1", "write_file", "{}");
         _llm.EnqueueText("ack");
@@ -180,8 +186,9 @@ public class AgentLoopTests
         _tool = new StubTool("read_file", PermissionLevel.Allow);
         _registry = new ToolRegistry(new ITool[] { _tool });
         _resolver = new PermissionResolver(_registry, _settings);
+        _availability = new Yamca.Agent.Tests.Tools.TestAvailabilityResolver(_registry);
         _loop = new AgentLoop(
-            new ChatSession("sys"), _llm, _registry, _resolver, _approvals, _store, _ws.Workspace, _loaded,
+            new ChatSession("sys"), _llm, _registry, _resolver, _availability, _approvals, _store, _ws.Workspace, _loaded,
             new AgentLoopOptions { MaxIterations = 3 });
 
         for (var i = 0; i < 5; i++)

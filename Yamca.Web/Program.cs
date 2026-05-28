@@ -130,6 +130,7 @@ builder.Services.AddScoped<LoadedToolSet>();
 builder.Services.AddScoped<SessionSettings>();
 builder.Services.AddScoped<ISessionSettings>(sp => sp.GetRequiredService<SessionSettings>());
 builder.Services.AddScoped<IPermissionResolver, PermissionResolver>();
+builder.Services.AddScoped<IAvailabilityResolver, AvailabilityResolver>();
 builder.Services.AddScoped<IApprovalCoordinator, ApprovalCoordinator>();
 builder.Services.AddScoped<IPermissionStore, SessionSettingsPermissionStore>();
 

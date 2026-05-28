@@ -16,6 +16,7 @@ public sealed class ChatViewModel : IDisposable
     private readonly IWorkspace _workspace;
     private readonly IToolRegistry _tools;
     private readonly IPermissionResolver _permissions;
+    private readonly IAvailabilityResolver _availability;
     private readonly IApprovalCoordinator _approvals;
     private readonly IPermissionStore _permissionStore;
     private readonly SessionSettings _settings;
@@ -37,6 +38,7 @@ public sealed class ChatViewModel : IDisposable
         IWorkspace workspace,
         IToolRegistry tools,
         IPermissionResolver permissions,
+        IAvailabilityResolver availability,
         IApprovalCoordinator approvals,
         IPermissionStore permissionStore,
         SessionSettings settings,
@@ -50,6 +52,7 @@ public sealed class ChatViewModel : IDisposable
         _workspace = workspace;
         _tools = tools;
         _permissions = permissions;
+        _availability = availability;
         _approvals = approvals;
         _permissionStore = permissionStore;
         _settings = settings;
@@ -392,7 +395,7 @@ public sealed class ChatViewModel : IDisposable
         var session = new ChatSession(_workspace, prompt, instructions);
 
         _loop = new AgentLoop(
-            session, completion, _tools, _permissions, _approvals, _permissionStore, _workspace, _loadedTools);
+            session, completion, _tools, _permissions, _availability, _approvals, _permissionStore, _workspace, _loadedTools);
 
         StartApprovalConsumer();
         _ = DetectCapabilitiesAsync(endpoint);

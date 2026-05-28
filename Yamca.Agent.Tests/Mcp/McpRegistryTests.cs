@@ -152,6 +152,14 @@ public class ToolRegistryDynamicSourceTests
             => Task.FromResult(ToolResult.Ok("ok"));
     }
 
+    private sealed class DefaultsResolver : IAvailabilityResolver
+    {
+        private readonly IToolRegistry _registry;
+        public DefaultsResolver(IToolRegistry registry) { _registry = registry; }
+        public Availability Resolve(string toolName)
+            => _registry.Get(toolName)?.DefaultAvailability ?? Availability.Eager;
+    }
+
     private sealed class StubSource : IDynamicToolSource
     {
         public List<ITool> Tools { get; } = new();
@@ -166,12 +174,13 @@ public class ToolRegistryDynamicSourceTests
         var registry = new ToolRegistry(new ITool[] { new StubTool("static_tool") }, new[] { source });
 
         var loaded = new Yamca.Agent.Chat.LoadedToolSet();
-        var before = registry.GetChatTools(loaded).Select(t => t.Name).ToList();
+        var availability = new DefaultsResolver(registry);
+        var before = registry.GetChatTools(loaded, availability).Select(t => t.Name).ToList();
         Assert.That(before, Does.Not.Contain("mcp__fs__read"));
         Assert.That(before, Does.Contain("static_tool"));
 
         loaded.MarkLoaded("mcp__fs__read");
-        var after = registry.GetChatTools(loaded).Select(t => t.Name).ToList();
+        var after = registry.GetChatTools(loaded, availability).Select(t => t.Name).ToList();
         Assert.That(after, Does.Contain("mcp__fs__read"));
     }
 
@@ -192,8 +201,9 @@ public class ToolRegistryDynamicSourceTests
         var source = new StubSource();
         source.Tools.Add(new StubTool("mcp__fs__read", deferred: true));
         var registry = new ToolRegistry(Array.Empty<ITool>(), new[] { source });
+        var availability = new DefaultsResolver(registry);
 
-        Assert.That(registry.GetDeferredTools().Select(t => t.Name), Does.Contain("mcp__fs__read"));
+        Assert.That(registry.GetDeferredTools(availability).Select(t => t.Name), Does.Contain("mcp__fs__read"));
     }
 
     [Test]

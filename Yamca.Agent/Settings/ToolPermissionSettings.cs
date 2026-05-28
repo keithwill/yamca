@@ -1,4 +1,5 @@
 using Yamca.Agent.Permissions;
+using Yamca.Agent.Tools;
 
 namespace Yamca.Agent.Settings;
 
@@ -10,4 +11,5 @@ public sealed record ToolPermissionSettings
 {
     public PermissionLevel? Permission { get; init; }
     public bool? RestrictToWorkspace { get; init; }
+    public Availability? Availability { get; init; }
 }

@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using Yamca.Agent.Mcp;
+using Yamca.Agent.Tools;
 
 namespace Yamca.Agent.Tests.Mcp;
 
@@ -56,6 +57,54 @@ public class McpServerConfigJsonTests
         Assert.That(McpServerConfigJson.DeserializeList(null), Is.Empty);
         Assert.That(McpServerConfigJson.DeserializeList(""), Is.Empty);
         Assert.That(McpServerConfigJson.DeserializeList("not json"), Is.Empty);
+    }
+
+    [Test]
+    public void DeserializeList_DefaultToolAvailability_DefaultsToDeferred()
+    {
+        var json = """
+        [
+          { "id": "a", "config": { "command": "x" } }
+        ]
+        """;
+
+        var list = McpServerConfigJson.DeserializeList(json);
+
+        Assert.That(list, Has.Count.EqualTo(1));
+        Assert.That(list[0].DefaultToolAvailability, Is.EqualTo(Availability.Deferred));
+    }
+
+    [Test]
+    public void DeserializeList_DefaultToolAvailability_HonorsEager()
+    {
+        var json = """
+        [
+          { "id": "a", "defaultToolAvailability": "eager", "config": { "command": "x" } }
+        ]
+        """;
+
+        var list = McpServerConfigJson.DeserializeList(json);
+
+        Assert.That(list[0].DefaultToolAvailability, Is.EqualTo(Availability.Eager));
+    }
+
+    [Test]
+    public void Roundtrip_PreservesDefaultToolAvailability()
+    {
+        var original = new[]
+        {
+            new McpServerConfig(
+                Id: "a", Enabled: true,
+                Stdio: new McpStdioConfig("x", System.Array.Empty<string>()),
+                Http: null, CallTimeoutSeconds: null,
+                DefaultToolAvailability: Availability.Eager),
+        };
+
+        var serialized = McpServerConfigJson.SerializeList(original);
+        var parsed = McpServerConfigJson.DeserializeList(serialized);
+
+        Assert.That(parsed, Has.Count.EqualTo(1));
+        Assert.That(parsed[0].DefaultToolAvailability, Is.EqualTo(Availability.Eager));
     }
 
     [Test]

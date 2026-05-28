@@ -12,7 +12,7 @@ public sealed class ReadFileTool : ITool
 
     public string Name => "read_file";
 
-    public string Description => "Read a UTF-8 text file. Output is formatted with 1-indexed line numbers (like 'cat -n'). By default returns up to the first 2000 lines; use 'offset' and 'limit' to page through larger files. Long individual lines are truncated. Binary files are refused.";
+    public string Description => "Read a UTF-8 text file. Output is formatted with 1-indexed line numbers (like 'cat -n'). By default returns up to the first 2000 lines; use 'offset' and 'limit' to page through larger files. Long individual lines are truncated. Binary files are refused. To modify or remove a file, use edit_file, write_file, or delete_file — if any are not in the current tool list, call load_tool to make them available.";
 
     public string ParametersSchema => """
     {

@@ -50,8 +50,9 @@ public class ToolRegistryTests
     public void GetChatTools_ExcludesDeferredTools_WhenNotLoaded()
     {
         var registry = NewRegistry();
+        var availability = new TestAvailabilityResolver(registry);
 
-        var chatTools = registry.GetChatTools(new LoadedToolSet());
+        var chatTools = registry.GetChatTools(new LoadedToolSet(), availability);
 
         // delete_file and execute_command are deferred — should not appear in the initial list.
         Assert.That(chatTools.Select(t => t.Name), Is.EquivalentTo(new[]
@@ -69,10 +70,11 @@ public class ToolRegistryTests
     public void GetChatTools_IncludesDeferredTools_OnceLoaded()
     {
         var registry = NewRegistry();
+        var availability = new TestAvailabilityResolver(registry);
         var loaded = new LoadedToolSet();
         loaded.MarkLoaded("delete_file");
 
-        var chatTools = registry.GetChatTools(loaded);
+        var chatTools = registry.GetChatTools(loaded, availability);
 
         Assert.That(chatTools.Select(t => t.Name), Is.EquivalentTo(new[]
         {
@@ -84,11 +86,51 @@ public class ToolRegistryTests
     public void GetDeferredTools_ReturnsOnlyDeferredOnes()
     {
         var registry = NewRegistry();
+        var availability = new TestAvailabilityResolver(registry);
 
-        Assert.That(registry.GetDeferredTools().Select(t => t.Name), Is.EquivalentTo(new[]
+        Assert.That(registry.GetDeferredTools(availability).Select(t => t.Name), Is.EquivalentTo(new[]
         {
             "delete_file", "execute_command"
         }));
+    }
+
+    [Test]
+    public void GetChatTools_OverrideEagerToDeferred_RemovesFromInitialList()
+    {
+        var registry = NewRegistry();
+        var availability = new TestAvailabilityResolver(registry)
+            .Set("read_file", Availability.Deferred);
+
+        var chatTools = registry.GetChatTools(new LoadedToolSet(), availability);
+
+        Assert.That(chatTools.Select(t => t.Name), Does.Not.Contain("read_file"));
+        Assert.That(registry.GetDeferredTools(availability).Select(t => t.Name), Does.Contain("read_file"));
+    }
+
+    [Test]
+    public void GetChatTools_OverrideDeferredToEager_AddsToInitialList()
+    {
+        var registry = NewRegistry();
+        var availability = new TestAvailabilityResolver(registry)
+            .Set("delete_file", Availability.Eager);
+
+        var chatTools = registry.GetChatTools(new LoadedToolSet(), availability);
+
+        Assert.That(chatTools.Select(t => t.Name), Does.Contain("delete_file"));
+    }
+
+    [Test]
+    public void Hidden_ExcludedFromBothChatListAndDeferredList()
+    {
+        var registry = NewRegistry();
+        var availability = new TestAvailabilityResolver(registry)
+            .Set("delete_file", Availability.Hidden);
+
+        var chat = registry.GetChatTools(new LoadedToolSet(), availability).Select(t => t.Name).ToList();
+        var deferred = registry.GetDeferredTools(availability).Select(t => t.Name).ToList();
+
+        Assert.That(chat, Does.Not.Contain("delete_file"));
+        Assert.That(deferred, Does.Not.Contain("delete_file"));
     }
 
     [Test]

@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
+using Yamca.Agent.Tools;
 
 namespace Yamca.Web.Services;
 
@@ -399,6 +400,7 @@ public sealed class SessionSettings : ISessionSettings
             {
                 Permission = entry.Permission,
                 RestrictToWorkspace = entry.RestrictToWorkspace,
+                Availability = entry.Availability,
             };
         }
         return new ToolSettingsMap(dict);
@@ -413,6 +415,7 @@ public sealed class SessionSettings : ISessionSettings
             {
                 Permission = entry.Permission,
                 RestrictToWorkspace = entry.RestrictToWorkspace,
+                Availability = entry.Availability,
             };
         }
         return dto;
@@ -497,6 +500,7 @@ public sealed class SessionSettings : ISessionSettings
     {
         public Yamca.Agent.Permissions.PermissionLevel? Permission { get; set; }
         public bool? RestrictToWorkspace { get; set; }
+        public Availability? Availability { get; set; }
     }
 
     private sealed class ScriptsDto

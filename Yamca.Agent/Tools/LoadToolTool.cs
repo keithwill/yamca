@@ -35,8 +35,9 @@ public sealed class LoadToolTool : ITool
     private HashSet<string> CurrentDeferredNames()
     {
         var registry = _services.GetRequiredService<IToolRegistry>();
+        var availability = _services.GetRequiredService<IAvailabilityResolver>();
         return new HashSet<string>(
-            registry.GetDeferredTools().Select(t => t.Name),
+            registry.GetDeferredTools(availability).Select(t => t.Name),
             StringComparer.Ordinal);
     }
 
@@ -47,7 +48,8 @@ public sealed class LoadToolTool : ITool
         get
         {
             var registry = _services.GetRequiredService<IToolRegistry>();
-            var deferred = registry.GetDeferredTools();
+            var availability = _services.GetRequiredService<IAvailabilityResolver>();
+            var deferred = registry.GetDeferredTools(availability);
             var sb = new StringBuilder();
             sb.Append("Load schemas for one or more deferred tools so they become callable for the rest of this session. ");
             if (deferred.Count == 0)
@@ -83,6 +85,12 @@ public sealed class LoadToolTool : ITool
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
     public bool ExposedInSettings => false;
+
+    // load_tool is the only mandatory-eager tool: without it in the initial schema,
+    // the model cannot discover deferred tools at all.
+    public bool MandatoryEager => true;
+
+    public bool CanBeHidden => false;
 
     public Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {

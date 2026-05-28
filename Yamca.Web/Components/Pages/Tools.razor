@@ -1,0 +1,206 @@
+@page "/tools"
+@rendermode InteractiveServer
+@implements IDisposable
+@using Yamca.Agent.Tools
+
+<PageTitle>Tools — yamca</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+
+@if (!_hydrated)
+{
+    <MudProgressCircular Indeterminate="true" />
+    <MudText Typo="Typo.body2" Class="ml-2 d-inline">Loading from localStorage&hellip;</MudText>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.h6">Tools</MudText>
+            <MudSpacer />
+            <MudTabs @bind-ActivePanelIndex="_tierIndex" Rounded="true" Color="Color.Primary">
+                <MudTabPanel Text="Project" />
+                <MudTabPanel Text="Global" />
+            </MudTabs>
+        </div>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            Project overrides Global. Unset (<em>inherit</em>) falls through to Global, then to the tool's default.
+            <strong>Availability</strong> controls what the LLM sees: <em>Eager</em> = in every tool list,
+            <em>Deferred</em> = discoverable via <code>load_tool</code>, <em>Hidden</em> = invisible.
+            @if (_tierIndex == 0)
+            {
+                <text>Stored in </text>
+                <MudTooltip Text="@Keys.ProjectKey" Placement="Placement.Top"><code>@SettingsHelpers.ShortKey(Keys.ProjectKey)</code></MudTooltip><text>.</text>
+            }
+            else { <text>Stored in <code>@Keys.GlobalKey</code>.</text> }
+        </MudText>
+
+        <MudTable Items="ToolRegistry.GetSettingsTools()" Hover="true" Dense="true" Class="mud-table-bordered">
+            <HeaderContent>
+                <MudTh>Tool</MudTh>
+                <MudTh>Availability</MudTh>
+                <MudTh>Permission</MudTh>
+                <MudTh>Restrict to workspace</MudTh>
+                <MudTh>Effective</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudTooltip Text="@context.Description" Placement="Placement.Right">
+                        <MudText Typo="Typo.body2"><b>@ToolDisplayName(context.Name)</b></MudText>
+                    </MudTooltip>
+                </MudTd>
+                <MudTd>
+                    @{
+                        var avEntry = CurrentMap.Get(context.Name)?.Availability;
+                        var locked = context.MandatoryEager;
+                    }
+                    <div class="d-flex align-center" style="gap: 4px;">
+                        <MudSelect T="Availability?" Value="avEntry" Disabled="locked"
+                                   ValueChanged="@((Availability? a) => SetAvailability(context.Name, a))"
+                                   Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                            <MudSelectItem T="Availability?" Value="@((Availability?)null)">inherit</MudSelectItem>
+                            <MudSelectItem T="Availability?" Value="@((Availability?)Availability.Eager)">Eager</MudSelectItem>
+                            <MudSelectItem T="Availability?" Value="@((Availability?)Availability.Deferred)">Deferred</MudSelectItem>
+                            @if (context.CanBeHidden)
+                            {
+                                <MudSelectItem T="Availability?" Value="@((Availability?)Availability.Hidden)">Hidden</MudSelectItem>
+                            }
+                        </MudSelect>
+                        @if (locked)
+                        {
+                            <MudTooltip Text="Required by yamca's internals; cannot be deferred or hidden.">
+                                <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" />
+                            </MudTooltip>
+                        }
+                    </div>
+                </MudTd>
+                <MudTd>
+                    @{
+                        var entry = CurrentMap.Get(context.Name);
+                        var selected = entry?.Permission;
+                    }
+                    <MudSelect T="PermissionLevel?" Value="selected"
+                               ValueChanged="@((PermissionLevel? p) => SetPermission(context.Name, p))"
+                               Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                        <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)null)">inherit</MudSelectItem>
+                        <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Allow)">Allow</MudSelectItem>
+                        <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Ask)">Ask</MudSelectItem>
+                        <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Deny)">Deny</MudSelectItem>
+                    </MudSelect>
+                </MudTd>
+                <MudTd>
+                    @if (context.SupportsWorkspaceRestriction)
+                    {
+                        var restrict = CurrentMap.Get(context.Name)?.RestrictToWorkspace;
+                        <MudSelect T="bool?" Value="restrict"
+                                   ValueChanged="@((bool? b) => SetRestrict(context.Name, b))"
+                                   Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                            <MudSelectItem T="bool?" Value="@((bool?)null)">inherit</MudSelectItem>
+                            <MudSelectItem T="bool?" Value="@((bool?)true)">On</MudSelectItem>
+                            <MudSelectItem T="bool?" Value="@((bool?)false)">Off</MudSelectItem>
+                        </MudSelect>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">n/a</MudText>
+                    }
+                </MudTd>
+                <MudTd>
+                    <div class="d-flex align-center" style="gap: 4px;">
+                        <MudChip T="string" Size="Size.Small" Color="@AvColor(AvailabilityResolver.Resolve(context.Name))">
+                            @AvailabilityResolver.Resolve(context.Name)
+                        </MudChip>
+                        <MudChip T="string" Size="Size.Small" Color="@PermColor(PermissionResolver.Resolve(context.Name))">
+                            @PermissionResolver.Resolve(context.Name)
+                        </MudChip>
+                    </div>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+</MudContainer>
+
+@code {
+    [Inject] private SessionSettings Session { get; set; } = default!;
+    [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
+    [Inject] private IToolRegistry ToolRegistry { get; set; } = default!;
+    [Inject] private IPermissionResolver PermissionResolver { get; set; } = default!;
+    [Inject] private IAvailabilityResolver AvailabilityResolver { get; set; } = default!;
+    [Inject] private WorkspaceKey Keys { get; set; } = default!;
+
+    private bool _hydrated;
+    private int _tierIndex; // 0 = Project, 1 = Global
+
+    private static string ToolDisplayName(string name) => name switch
+    {
+        "execute_registered_script" => "execute_script (registered)",
+        "execute_discovered_script" => "execute_script (discovered)",
+        _ => name,
+    };
+
+    private SettingsTier CurrentTier => _tierIndex == 0 ? SettingsTier.Project : SettingsTier.Global;
+    private ToolSettingsMap CurrentMap => CurrentTier == SettingsTier.Project ? Session.Project : Session.Global;
+
+    protected override void OnInitialized()
+    {
+        Session.Changed += OnSettingsChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Hydrator.HydrateAsync();
+        _hydrated = true;
+        StateHasChanged();
+    }
+
+    private void OnSettingsChanged(SettingsTier _) => InvokeAsync(StateHasChanged);
+
+    private void SetPermission(string toolName, PermissionLevel? perm)
+    {
+        var existing = CurrentMap.Get(toolName) ?? new ToolPermissionSettings();
+        ApplyEntry(toolName, existing with { Permission = perm });
+    }
+
+    private void SetRestrict(string toolName, bool? restrict)
+    {
+        var existing = CurrentMap.Get(toolName) ?? new ToolPermissionSettings();
+        ApplyEntry(toolName, existing with { RestrictToWorkspace = restrict });
+    }
+
+    private void SetAvailability(string toolName, Availability? availability)
+    {
+        var existing = CurrentMap.Get(toolName) ?? new ToolPermissionSettings();
+        ApplyEntry(toolName, existing with { Availability = availability });
+    }
+
+    private void ApplyEntry(string toolName, ToolPermissionSettings entry)
+    {
+        var collapsed = (entry.Permission is null && entry.RestrictToWorkspace is null && entry.Availability is null)
+            ? null
+            : entry;
+        Session.SetToolEntry(CurrentTier, toolName, collapsed);
+    }
+
+    private static Color PermColor(PermissionLevel level) => level switch
+    {
+        PermissionLevel.Allow => Color.Success,
+        PermissionLevel.Deny  => Color.Error,
+        _                     => Color.Warning,
+    };
+
+    private static Color AvColor(Availability av) => av switch
+    {
+        Availability.Eager    => Color.Success,
+        Availability.Deferred => Color.Info,
+        Availability.Hidden   => Color.Error,
+        _                     => Color.Default,
+    };
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSettingsChanged;
+    }
+}

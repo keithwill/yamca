@@ -15,6 +15,7 @@ public sealed class AgentLoop
     private readonly IChatCompletionClient _client;
     private readonly IToolRegistry _tools;
     private readonly IPermissionResolver _permissions;
+    private readonly IAvailabilityResolver _availability;
     private readonly IApprovalCoordinator _approvals;
     private readonly IPermissionStore _permissionStore;
     private readonly IWorkspace _workspace;
@@ -26,6 +27,7 @@ public sealed class AgentLoop
         IChatCompletionClient client,
         IToolRegistry tools,
         IPermissionResolver permissions,
+        IAvailabilityResolver availability,
         IApprovalCoordinator approvals,
         IPermissionStore permissionStore,
         IWorkspace workspace,
@@ -36,6 +38,7 @@ public sealed class AgentLoop
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(tools);
         ArgumentNullException.ThrowIfNull(permissions);
+        ArgumentNullException.ThrowIfNull(availability);
         ArgumentNullException.ThrowIfNull(approvals);
         ArgumentNullException.ThrowIfNull(permissionStore);
         ArgumentNullException.ThrowIfNull(workspace);
@@ -45,6 +48,7 @@ public sealed class AgentLoop
         _client = client;
         _tools = tools;
         _permissions = permissions;
+        _availability = availability;
         _approvals = approvals;
         _permissionStore = permissionStore;
         _workspace = workspace;
@@ -66,8 +70,9 @@ public sealed class AgentLoop
             cancellationToken.ThrowIfCancellationRequested();
 
             // Rebuild each iteration so schemas loaded by load_tool mid-turn become
-            // visible to the LLM on the very next round-trip.
-            var chatTools = _tools.GetChatTools(_loadedTools);
+            // visible to the LLM on the very next round-trip. The resolver is also
+            // queried per iteration so user toggles on the Tools page take effect live.
+            var chatTools = _tools.GetChatTools(_loadedTools, _availability);
 
             string content = "";
             IReadOnlyList<LlmToolCallRequest> toolCalls = Array.Empty<LlmToolCallRequest>();
@@ -130,7 +135,15 @@ public sealed class AgentLoop
             yield break;
         }
 
-        if (tool.Deferred && !_loadedTools.Contains(tool.Name))
+        var effective = _availability.Resolve(tool.Name);
+        if (effective == Availability.Hidden)
+        {
+            var msg = $"Unknown tool '{call.ToolName}'.";
+            _session.AppendToolResult(call.CallId, msg);
+            yield return new ToolDeniedEvent(call.CallId, call.ToolName, msg);
+            yield break;
+        }
+        if (effective == Availability.Deferred && !_loadedTools.Contains(tool.Name))
         {
             var msg = $"Tool '{call.ToolName}' is deferred and has not been loaded. Call load_tool with tool_names=[\"{call.ToolName}\"] first.";
             _session.AppendToolResult(call.CallId, msg);

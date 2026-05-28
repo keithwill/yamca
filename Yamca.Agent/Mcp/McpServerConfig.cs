@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Yamca.Agent.Tools;
 
 namespace Yamca.Agent.Mcp;
 
@@ -14,7 +15,8 @@ public sealed record McpServerConfig(
     bool Enabled,
     McpStdioConfig? Stdio,
     McpHttpConfig? Http = null,
-    int? CallTimeoutSeconds = null)
+    int? CallTimeoutSeconds = null,
+    Availability DefaultToolAvailability = Availability.Deferred)
 {
     public McpTransportKind TransportKind =>
         Http is not null ? McpTransportKind.Http : McpTransportKind.Stdio;
@@ -81,6 +83,7 @@ public static class McpServerConfigJson
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         WriteIndented = false,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
     private static readonly JsonSerializerOptions PrettyOptions = new()
@@ -89,6 +92,7 @@ public static class McpServerConfigJson
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         WriteIndented = true,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
     /// <summary>Identifier rules: kebab/snake-case slug, ASCII letters/digits/underscore/hyphen,
@@ -208,6 +212,7 @@ public static class McpServerConfigJson
         }
 
         var enabled = dto.Enabled ?? true;
+        var defaultAvailability = dto.DefaultToolAvailability ?? Availability.Deferred;
 
         if (hasStdio)
         {
@@ -218,7 +223,10 @@ public static class McpServerConfigJson
                     ? null
                     : new Dictionary<string, string>(dto.Config.Env, StringComparer.Ordinal),
                 WorkingDirectory: string.IsNullOrWhiteSpace(dto.Config.Cwd) ? null : dto.Config.Cwd);
-            return McpConfigParseResult.Ok(new McpServerConfig(dto.Id!, enabled, stdio, Http: null, CallTimeoutSeconds: timeoutSeconds));
+            return McpConfigParseResult.Ok(new McpServerConfig(
+                dto.Id!, enabled, stdio, Http: null,
+                CallTimeoutSeconds: timeoutSeconds,
+                DefaultToolAvailability: defaultAvailability));
         }
 
         // HTTP — validate the URL eagerly so a typo surfaces in the dialog
@@ -235,13 +243,17 @@ public static class McpServerConfigJson
             Headers: dto.Config.Headers is null
                 ? null
                 : new Dictionary<string, string>(dto.Config.Headers, StringComparer.Ordinal));
-        return McpConfigParseResult.Ok(new McpServerConfig(dto.Id!, enabled, Stdio: null, Http: http, CallTimeoutSeconds: timeoutSeconds));
+        return McpConfigParseResult.Ok(new McpServerConfig(
+            dto.Id!, enabled, Stdio: null, Http: http,
+            CallTimeoutSeconds: timeoutSeconds,
+            DefaultToolAvailability: defaultAvailability));
     }
 
     private static ServerDto ToDto(McpServerConfig c) => new()
     {
         Id = c.Id,
         Enabled = c.Enabled,
+        DefaultToolAvailability = c.DefaultToolAvailability,
         Config = new ConfigDto
         {
             Command = c.Stdio?.Command,
@@ -262,6 +274,7 @@ public static class McpServerConfigJson
     {
         public string? Id { get; set; }
         public bool? Enabled { get; set; }
+        public Availability? DefaultToolAvailability { get; set; }
         public ConfigDto? Config { get; set; }
 
         // Bare-mcp.json passthroughs (the user pasted just the inner object).

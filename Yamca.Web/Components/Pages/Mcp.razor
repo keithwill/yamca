@@ -146,6 +146,19 @@ else
                 </MudSelect>
             }
 
+            @if (_mcpAddType != McpAddType.Json)
+            {
+                <MudSelect T="Availability" Value="_mcpFormDefaultAvailability"
+                           ValueChanged="@((Availability v) => _mcpFormDefaultAvailability = v)"
+                           Label="Default tool availability"
+                           HelperText="Initial visibility for every tool this server exposes. Individual tools can still be overridden on the Tools page. Deferred is the safe default for chatty servers."
+                           Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense" Class="mb-3">
+                    <MudSelectItem T="Availability" Value="Availability.Deferred">Deferred</MudSelectItem>
+                    <MudSelectItem T="Availability" Value="Availability.Eager">Eager</MudSelectItem>
+                    <MudSelectItem T="Availability" Value="Availability.Hidden">Hidden</MudSelectItem>
+                </MudSelect>
+            }
+
             @switch (_mcpAddType)
             {
                 case McpAddType.Command:
@@ -363,6 +376,7 @@ else
     private readonly List<KvRow> _mcpFormHeaders = new();
 
     private int? _mcpFormTimeoutSeconds;
+    private Availability _mcpFormDefaultAvailability = Availability.Deferred;
 
     private sealed class KvRow
     {
@@ -376,6 +390,7 @@ else
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         WriteIndented = false,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
     private bool _mcpLogOpen;
@@ -461,6 +476,7 @@ else
             }
         }
         _mcpFormTimeoutSeconds = existing.CallTimeoutSeconds;
+        _mcpFormDefaultAvailability = existing.DefaultToolAvailability;
         _mcpAddOpen = true;
     }
 
@@ -473,6 +489,7 @@ else
         _mcpFormUrl = string.Empty;
         _mcpFormHeaders.Clear();
         _mcpFormTimeoutSeconds = null;
+        _mcpFormDefaultAvailability = Availability.Deferred;
     }
 
     private async Task ConfirmMcpDialog()
@@ -526,7 +543,11 @@ else
         if (!string.IsNullOrWhiteSpace(_mcpFormCwd)) config["cwd"] = _mcpFormCwd.Trim();
         if (_mcpFormTimeoutSeconds is { } t) config["timeoutSeconds"] = t;
 
-        var wrapper = new Dictionary<string, object?>(StringComparer.Ordinal) { ["config"] = config };
+        var wrapper = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["config"] = config,
+            ["defaultToolAvailability"] = _mcpFormDefaultAvailability,
+        };
         return JsonSerializer.Serialize(wrapper, s_mcpFormJsonOptions);
     }
 
@@ -544,7 +565,11 @@ else
 
         if (_mcpFormTimeoutSeconds is { } t) config["timeoutSeconds"] = t;
 
-        var wrapper = new Dictionary<string, object?>(StringComparer.Ordinal) { ["config"] = config };
+        var wrapper = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["config"] = config,
+            ["defaultToolAvailability"] = _mcpFormDefaultAvailability,
+        };
         return JsonSerializer.Serialize(wrapper, s_mcpFormJsonOptions);
     }
 
