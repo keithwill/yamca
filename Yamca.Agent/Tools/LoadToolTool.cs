@@ -19,8 +19,6 @@ public sealed class LoadToolTool : ITool
     // for the same pattern.
     private readonly IServiceProvider _services;
     private readonly LoadedToolSet _loaded;
-    private HashSet<string>? _deferredNamesCache;
-    private string? _descriptionCache;
 
     public LoadToolTool(IServiceProvider services, LoadedToolSet loaded)
     {
@@ -30,36 +28,16 @@ public sealed class LoadToolTool : ITool
         _loaded = loaded;
     }
 
-    private HashSet<string> DeferredNames
+    // Recomputed per access: MCP servers may finish connecting after the first
+    // iteration of a turn, adding new deferred tools mid-session. AgentLoop
+    // queries Description (via ChatTool) every iteration, so this stays fresh
+    // for the LLM. Cost is negligible — deferred lists are tiny.
+    private HashSet<string> CurrentDeferredNames()
     {
-        get
-        {
-            EnsureCached();
-            return _deferredNamesCache!;
-        }
-    }
-
-    private void EnsureCached()
-    {
-        if (_deferredNamesCache is not null) return;
-
         var registry = _services.GetRequiredService<IToolRegistry>();
-        var deferred = registry.GetDeferredTools();
-        _deferredNamesCache = new HashSet<string>(deferred.Select(t => t.Name), StringComparer.Ordinal);
-
-        var sb = new StringBuilder();
-        sb.Append("Load schemas for one or more deferred tools so they become callable for the rest of this session. ");
-        if (_deferredNamesCache.Count == 0)
-        {
-            sb.Append("No deferred tools are currently registered.");
-        }
-        else
-        {
-            sb.Append("Deferred tools: ");
-            sb.Append(string.Join(", ", deferred.Select(t => t.Name)));
-            sb.Append('.');
-        }
-        _descriptionCache = sb.ToString();
+        return new HashSet<string>(
+            registry.GetDeferredTools().Select(t => t.Name),
+            StringComparer.Ordinal);
     }
 
     public string Name => "load_tool";
@@ -68,8 +46,19 @@ public sealed class LoadToolTool : ITool
     {
         get
         {
-            EnsureCached();
-            return _descriptionCache!;
+            var registry = _services.GetRequiredService<IToolRegistry>();
+            var deferred = registry.GetDeferredTools();
+            var sb = new StringBuilder();
+            sb.Append("Load schemas for one or more deferred tools so they become callable for the rest of this session. ");
+            if (deferred.Count == 0)
+                sb.Append("No deferred tools are currently registered.");
+            else
+            {
+                sb.Append("Deferred tools: ");
+                sb.Append(string.Join(", ", deferred.Select(t => t.Name)));
+                sb.Append('.');
+            }
+            return sb.ToString();
         }
     }
 
@@ -107,6 +96,7 @@ public sealed class LoadToolTool : ITool
         var loadedNow = new List<string>();
         var alreadyLoaded = new List<string>();
         var unknown = new List<string>();
+        var deferredNames = CurrentDeferredNames();
 
         foreach (var item in namesProp.EnumerateArray())
         {
@@ -114,7 +104,7 @@ public sealed class LoadToolTool : ITool
                 return Task.FromResult(ToolResult.Error("Every entry in 'tool_names' must be a string."));
 
             var name = item.GetString() ?? string.Empty;
-            if (!DeferredNames.Contains(name))
+            if (!deferredNames.Contains(name))
             {
                 unknown.Add(name);
                 continue;
@@ -139,7 +129,7 @@ public sealed class LoadToolTool : ITool
             if (sb.Length > 0) sb.Append(' ');
             sb.Append("Not a deferred tool: ").Append(string.Join(", ", unknown))
               .Append(". Deferred tools are: ")
-              .Append(DeferredNames.Count == 0 ? "(none)" : string.Join(", ", DeferredNames))
+              .Append(deferredNames.Count == 0 ? "(none)" : string.Join(", ", deferredNames))
               .Append('.');
         }
 

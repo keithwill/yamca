@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using MudBlazor.Services;
 using Yamca.Agent.Chat;
 using Yamca.Agent.Git;
+using Yamca.Agent.Mcp;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
@@ -97,9 +98,17 @@ builder.Services.AddScoped<ITool, ExecuteRegisteredScriptTool>();
 builder.Services.AddScoped<ITool, ExecuteDiscoveredScriptTool>();
 builder.Services.AddScoped<ITool, ExecuteScriptTool>();
 
+// MCP host: one registry per process, shared across all chat sessions. The web
+// layer hydrates it from localStorage on first circuit and again whenever the
+// user edits the MCP server list in settings.
+builder.Services.AddSingleton<IMcpRegistry, McpRegistry>();
+builder.Services.AddSingleton<IDynamicToolSource, McpDynamicToolSource>();
+
 // IToolRegistry is scoped so its enumeration of ITool services picks up both
-// singleton tools and the per-circuit scoped script tools.
-builder.Services.AddScoped<IToolRegistry>(sp => new ToolRegistry(sp.GetServices<ITool>()));
+// singleton tools and the per-circuit scoped script tools. Dynamic sources
+// (notably MCP) are merged in at query time.
+builder.Services.AddScoped<IToolRegistry>(sp =>
+    new ToolRegistry(sp.GetServices<ITool>(), sp.GetServices<IDynamicToolSource>()));
 
 // Per-session set of deferred tools the LLM has loaded via load_tool. Scoped so
 // each browser circuit / chat session starts with an empty set.
@@ -120,6 +129,7 @@ builder.Services.AddScoped<SettingsHydrator>();
 builder.Services.AddScoped<InstructionFilesLoader>();
 builder.Services.AddScoped<WorkspaceBrowser>();
 builder.Services.AddScoped<ChatSessionManager>();
+builder.Services.AddScoped<McpConfigStore>();
 
 var app = builder.Build();
 

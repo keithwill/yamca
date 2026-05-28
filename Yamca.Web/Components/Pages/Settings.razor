@@ -400,6 +400,139 @@ else
     </MudPaper>
 
     <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.h6">MCP servers</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenMcpAddDialog">
+                Add server
+            </MudButton>
+        </div>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            Model Context Protocol servers contribute additional tools to the agent. Tools appear as
+            <code>mcp__&lt;id&gt;__&lt;tool&gt;</code> and are deferred — the LLM calls <code>load_tool</code>
+            before using one. Stored in <code>@McpConfigStore.StorageKey</code>; shared by every chat
+            session in this Yamca process.
+        </MudText>
+
+        @{
+            var mcpConfigs = McpStore.Configs;
+            var serversById = McpRegistry.Servers.ToDictionary(s => s.Config.Id, StringComparer.Ordinal);
+        }
+
+        @if (mcpConfigs.Count == 0)
+        {
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">
+                No servers configured. Paste the JSON snippet from a server's README to add one.
+            </MudText>
+        }
+        else
+        {
+            <MudTable Items="mcpConfigs" Hover="true" Dense="true" Class="mud-table-bordered">
+                <HeaderContent>
+                    <MudTh>Server</MudTh>
+                    <MudTh>Command</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Tools</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    @{
+                        serversById.TryGetValue(context.Id, out var conn);
+                        var status = conn?.Status ?? (context.Enabled ? McpServerStatus.Connecting : McpServerStatus.Disabled);
+                        var failure = conn?.FailureMessage;
+                        var toolCount = conn?.Adapters.Count ?? 0;
+                    }
+                    <MudTd>
+                        <MudSwitch T="bool" Value="context.Enabled"
+                                   ValueChanged="@((bool v) => OnMcpToggle(context.Id, v))"
+                                   Color="Color.Primary" />
+                        <code>@context.Id</code>
+                    </MudTd>
+                    <MudTd>
+                        <MudTooltip Text="@FormatMcpCommandTooltip(context)" Placement="Placement.Top">
+                            <code>@context.Stdio.Command</code>
+                        </MudTooltip>
+                    </MudTd>
+                    <MudTd>
+                        <MudChip T="string" Size="Size.Small" Color="@McpStatusColor(status)">@status</MudChip>
+                        @if (!string.IsNullOrEmpty(failure))
+                        {
+                            <MudTooltip Text="@failure" Placement="Placement.Right">
+                                <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Warning" />
+                            </MudTooltip>
+                        }
+                    </MudTd>
+                    <MudTd>@toolCount</MudTd>
+                    <MudTd>
+                        @if (conn is not null)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Description" Size="Size.Small"
+                                           OnClick="@(() => OpenMcpLogDialog(context.Id))"
+                                           aria-label="Show log" />
+                        }
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                       OnClick="@(() => RemoveMcpServer(context.Id))"
+                                       aria-label="Remove server" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+
+    <MudDialog @bind-Visible="_mcpAddOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true })">
+        <TitleContent>Add MCP server</TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.caption" Class="mb-2">
+                Paste the JSON snippet from the server's README. Either the wrapped form
+                (<code>{ "id": ..., "config": { "command": ..., "args": [...] } }</code>) or
+                the bare <code>mcp.json</code> shape (<code>{ "command": ..., "args": [...] }</code>) works.
+                If you paste the bare form, supply an id below.
+            </MudText>
+            <MudTextField T="string" @bind-Value="_mcpAddId"
+                          Label="Id (slug)"
+                          HelperText="ASCII letters, digits, hyphen, or underscore. Leave empty if the pasted JSON already has an &quot;id&quot; field."
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
+                          Placeholder="filesystem" />
+            <MudTextField T="string" @bind-Value="_mcpAddJson"
+                          Label="Config JSON"
+                          Variant="Variant.Outlined" Lines="10"
+                          Placeholder="@McpJsonPlaceholder" />
+            @if (!string.IsNullOrEmpty(_mcpAddError))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_mcpAddError</MudAlert>
+            }
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _mcpAddOpen = false)">Cancel</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ConfirmAddMcpServer">Add</MudButton>
+        </DialogActions>
+    </MudDialog>
+
+    <MudDialog @bind-Visible="_mcpLogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true })">
+        <TitleContent>MCP server log — <code>@_mcpLogServerId</code></TitleContent>
+        <DialogContent>
+            @{
+                var conn = _mcpLogServerId is null ? null : McpRegistry.Servers.FirstOrDefault(s => s.Config.Id == _mcpLogServerId);
+                var entries = conn?.Log.Snapshot() ?? Array.Empty<McpServerLogBuffer.LogEntry>();
+            }
+            @if (entries.Count == 0)
+            {
+                <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">
+                    No log entries yet.
+                </MudText>
+            }
+            else
+            {
+                <pre class="mud-paper-outlined pa-2" style="overflow:auto; max-height: 360px; font-size: 0.78rem;">@string.Join('\n', entries.Select(e => $"{e.Timestamp:HH:mm:ss}  [{e.Source}] {e.Line}"))</pre>
+            }
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _mcpLogOpen = false)">Close</MudButton>
+        </DialogActions>
+    </MudDialog>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
         <MudText Typo="Typo.h6" Class="mb-2">Backup</MudText>
         <MudText Typo="Typo.caption" Class="mb-3">
             Export your Global settings to a JSON file, or restore them from one. Project settings (stored per workspace in <code>@ShortKey(Keys.ProjectKey)</code>) are not included.
@@ -513,6 +646,8 @@ else
     [Inject] private WorkspaceBrowser Browser { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private McpConfigStore McpStore { get; set; } = default!;
+    [Inject] private IMcpRegistry McpRegistry { get; set; } = default!;
 
     private static string ToolDisplayName(string name) => name switch
     {
@@ -584,16 +719,85 @@ else
     protected override void OnInitialized()
     {
         Session.Changed += OnSettingsChanged;
+        McpRegistry.Changed += OnMcpChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
         await Hydrator.HydrateAsync();
+        if (!McpStore.Hydrated)
+        {
+            try { await McpStore.HydrateAsync(); }
+            catch (Exception ex) { Snackbar.Add($"MCP hydrate failed: {ex.Message}", Severity.Warning); }
+        }
         SyncRowsFromSession();
         _hydrated = true;
         StateHasChanged();
         _ = ValidateModelAsync();
+    }
+
+    private void OnMcpChanged() => InvokeAsync(StateHasChanged);
+
+    private bool _mcpAddOpen;
+    private string _mcpAddId = string.Empty;
+    private string _mcpAddJson = string.Empty;
+    private string? _mcpAddError;
+
+    private bool _mcpLogOpen;
+    private string? _mcpLogServerId;
+
+    private const string McpJsonPlaceholder = @"{
+  ""command"": ""npx"",
+  ""args"": [""-y"", ""@modelcontextprotocol/server-filesystem"", ""."" ]
+}";
+
+    private void OpenMcpAddDialog()
+    {
+        _mcpAddId = string.Empty;
+        _mcpAddJson = string.Empty;
+        _mcpAddError = null;
+        _mcpAddOpen = true;
+    }
+
+    private async Task ConfirmAddMcpServer()
+    {
+        var result = await McpStore.AddAsync(_mcpAddId, _mcpAddJson);
+        if (result.Config is null)
+        {
+            _mcpAddError = result.Error ?? "Could not parse config.";
+            return;
+        }
+        _mcpAddOpen = false;
+        Snackbar.Add($"MCP server '{result.Config.Id}' added.", Severity.Success);
+    }
+
+    private async Task RemoveMcpServer(string id)
+    {
+        await McpStore.RemoveAsync(id);
+        Snackbar.Add($"MCP server '{id}' removed.", Severity.Info);
+    }
+
+    private async Task OnMcpToggle(string id, bool enabled) => await McpStore.SetEnabledAsync(id, enabled);
+
+    private void OpenMcpLogDialog(string id)
+    {
+        _mcpLogServerId = id;
+        _mcpLogOpen = true;
+    }
+
+    private static Color McpStatusColor(McpServerStatus status) => status switch
+    {
+        McpServerStatus.Ready => Color.Success,
+        McpServerStatus.Failed => Color.Error,
+        McpServerStatus.Connecting => Color.Warning,
+        _ => Color.Default,
+    };
+
+    private static string FormatMcpCommandTooltip(McpServerConfig config)
+    {
+        var args = config.Stdio.Args.Count == 0 ? "" : " " + string.Join(' ', config.Stdio.Args);
+        return $"{config.Stdio.Command}{args}";
     }
 
     private void OnSettingsChanged(SettingsTier _) => InvokeAsync(StateHasChanged);
@@ -950,5 +1154,6 @@ else
     public void Dispose()
     {
         Session.Changed -= OnSettingsChanged;
+        McpRegistry.Changed -= OnMcpChanged;
     }
 }

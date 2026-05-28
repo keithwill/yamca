@@ -1,3 +1,4 @@
+@using Yamca.Agent.Mcp
 @using Yamca.Agent.Tools.ScriptExecution
 @using Yamca.Agent.Workspace
 
@@ -5,7 +6,16 @@
     <div class="d-flex align-center mb-2">
         <MudIcon Icon="@Icons.Material.Filled.Lock" Color="Color.Warning" Class="mr-2" />
         <MudText Typo="Typo.subtitle1">
-            Approve <code>@Approval.ToolName</code>?
+            @if (McpToolAdapter.TryParseName(Approval.ToolName, out var mcpServerId, out var mcpUnderlying))
+            {
+                <text>Approve </text>
+                <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="mr-1">@($"mcp: {mcpServerId}")</MudChip>
+                <code>@mcpUnderlying</code><text>?</text>
+            }
+            else
+            {
+                <text>Approve </text><code>@Approval.ToolName</code><text>?</text>
+            }
         </MudText>
     </div>
 

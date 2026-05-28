@@ -21,6 +21,7 @@ else
     [Inject] private IWorkspace Workspace { get; set; } = default!;
     [Inject] private ChatSessionManager Manager { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
+    [Inject] private McpConfigStore McpStore { get; set; } = default!;
     [Inject] private NavigationManager Nav { get; set; } = default!;
 
     [Parameter] public int? Id { get; set; }
@@ -55,6 +56,14 @@ else
         if (firstRender)
         {
             await Hydrator.HydrateAsync();
+            // MCP registry is process-wide, but config lives per-origin in
+            // localStorage — hydrate from there on the first circuit so a
+            // restart of yamca picks up the user's servers.
+            if (!McpStore.Hydrated)
+            {
+                try { await McpStore.HydrateAsync(); }
+                catch { /* a bad config blob shouldn't prevent the chat UI from loading */ }
+            }
             _hydrated = true;
             StateHasChanged();
         }
