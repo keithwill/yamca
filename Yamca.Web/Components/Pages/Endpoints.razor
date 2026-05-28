@@ -1,0 +1,398 @@
+@page "/endpoints"
+@rendermode InteractiveServer
+@implements IDisposable
+@using Yamca.Agent.Chat
+
+<PageTitle>Endpoints — yamca</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+
+@if (!_hydrated)
+{
+    <MudProgressCircular Indeterminate="true" />
+    <MudText Typo="Typo.body2" Class="ml-2 d-inline">Loading from localStorage&hellip;</MudText>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.h6">Endpoints</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenAddEndpointDialog">
+                Add endpoint
+            </MudButton>
+        </div>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            OpenAI-compatible endpoints (llama.cpp, vllm, OpenAI, OpenRouter, etc.). The
+            endpoint marked Default is used for new chats; pick a different one per-chat
+            from the chat composer. Stored in <code>@Keys.GlobalKey</code>.
+        </MudText>
+
+        <MudTable Items="Session.Endpoints.Items" Hover="true" Dense="true" Class="mud-table-bordered">
+            <HeaderContent>
+                <MudTh Style="width: 80px;">Default</MudTh>
+                <MudTh>Name</MudTh>
+                <MudTh>Base URL</MudTh>
+                <MudTh>Model</MudTh>
+                <MudTh Style="width: 120px;">Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    @{
+                        var isDefault = context.Id == Session.Endpoints.DefaultId;
+                    }
+                    <MudTooltip Text="@(isDefault ? "Default endpoint for new chats" : "Make default")">
+                        <MudIconButton Icon="@(isDefault ? Icons.Material.Filled.Star : Icons.Material.Filled.StarBorder)"
+                                       Color="@(isDefault ? Color.Warning : Color.Default)"
+                                       Size="Size.Small"
+                                       Disabled="@isDefault"
+                                       OnClick="@(() => Session.SetDefaultEndpoint(context.Id))"
+                                       aria-label="Default endpoint" />
+                    </MudTooltip>
+                </MudTd>
+                <MudTd>
+                    @if (!string.IsNullOrWhiteSpace(context.Name))
+                    {
+                        <MudText Typo="Typo.body2"><b>@context.Name</b></MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary)">
+                            @context.DisplayLabel
+                        </MudText>
+                    }
+                </MudTd>
+                <MudTd><code>@context.BaseUrl</code></MudTd>
+                <MudTd>
+                    @if (string.IsNullOrWhiteSpace(context.Model))
+                    {
+                        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">(any)</MudText>
+                    }
+                    else
+                    {
+                        <code>@context.Model</code>
+                    }
+                </MudTd>
+                <MudTd>
+                    <MudTooltip Text="Edit endpoint">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => OpenEditEndpointDialog(context.Id))"
+                                       aria-label="Edit endpoint" />
+                    </MudTooltip>
+                    <MudTooltip Text="@(Session.Endpoints.Items.Count <= 1 ? "At least one endpoint is required" : "Remove endpoint")">
+                        <span>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                           Disabled="@(Session.Endpoints.Items.Count <= 1)"
+                                           OnClick="@(() => Session.RemoveEndpoint(context.Id))"
+                                           aria-label="Remove endpoint" />
+                        </span>
+                    </MudTooltip>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+
+    <MudDialog @bind-Visible="_endpointDialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
+        <TitleContent>@(_endpointEditId is null ? "Add endpoint" : "Edit endpoint")</TitleContent>
+        <DialogContent>
+            <MudTextField T="string" @bind-Value="_epFormName"
+                          Label="Name (optional)"
+                          HelperText="Shown in the chat picker. Falls back to host · model when blank."
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
+                          Placeholder="Local llama.cpp" />
+            <MudTextField T="string" Value="_epFormBaseUrl"
+                          ValueChanged="OnEndpointBaseUrlChanged"
+                          Label="Base URL" Required="true"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
+                          Placeholder="http://localhost:8080/v1" />
+            <MudTextField T="string" Value="_epFormApiKey"
+                          ValueChanged="OnEndpointApiKeyChanged"
+                          Label="API key"
+                          InputType="InputType.Password"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+            <div class="d-flex align-center" style="gap: 4px;">
+                <MudTextField T="string" Value="_epFormModel"
+                              ValueChanged="OnEndpointModelChanged"
+                              Label="Model"
+                              DebounceInterval="500"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Class="flex-grow-1" />
+                <MudTooltip Text="Browse available models">
+                    <span>
+                        <MudIconButton Icon="@Icons.Material.Filled.Search"
+                                       Disabled="@(string.IsNullOrWhiteSpace(_epFormBaseUrl))"
+                                       OnClick="OpenEndpointModelPicker"
+                                       aria-label="Browse available models" />
+                    </span>
+                </MudTooltip>
+                @if (_epModelValidating)
+                {
+                    <MudTooltip Text="Checking model against endpoint…">
+                        <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                    </MudTooltip>
+                }
+                else if (_epModelValid is true)
+                {
+                    <MudTooltip Text="Model is available on the endpoint">
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" />
+                    </MudTooltip>
+                }
+                else if (_epModelValid is false)
+                {
+                    <MudTooltip Text="@(_epModelValidationError ?? "Model not found on endpoint")">
+                        <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Warning" />
+                    </MudTooltip>
+                }
+            </div>
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+                Optional for single-model hosts like llama.cpp. Required for multi-model
+                hosts (OpenAI, Ollama, OpenRouter, LM Studio).
+            </MudText>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _endpointDialogOpen = false)">Cancel</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       Disabled="@(string.IsNullOrWhiteSpace(_epFormBaseUrl))"
+                       OnClick="ConfirmEndpointDialog">
+                @(_endpointEditId is null ? "Add" : "Save")
+            </MudButton>
+        </DialogActions>
+    </MudDialog>
+
+    <MudDialog @bind-Visible="_epModelPickerOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
+        <TitleContent>Available models</TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.caption" Class="mb-2">
+                Fetched from <code>@_epFormBaseUrl</code>/models.
+            </MudText>
+            @if (_epModelsLoading)
+            {
+                <div class="d-flex align-center">
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                    <MudText Typo="Typo.body2" Class="ml-2">Loading…</MudText>
+                </div>
+            }
+            else if (_epModelsError is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@_epModelsError</MudAlert>
+            }
+            else if (_epModels.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">The endpoint returned no models.</MudAlert>
+            }
+            else
+            {
+                <MudList T="string" Dense="true">
+                    @foreach (var id in _epModels)
+                    {
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.SmartToy" OnClick="@(() => SelectEndpointModel(id))">
+                            <code>@id</code>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _epModelPickerOpen = false)">Close</MudButton>
+        </DialogActions>
+    </MudDialog>
+}
+
+</MudContainer>
+
+@code {
+    [Inject] private SessionSettings Session { get; set; } = default!;
+    [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
+    [Inject] private WorkspaceKey Keys { get; set; } = default!;
+    [Inject] private EndpointHealthService HealthService { get; set; } = default!;
+
+    private bool _hydrated;
+
+    private bool _endpointDialogOpen;
+    private Guid? _endpointEditId;
+    private string _epFormName = string.Empty;
+    private string _epFormBaseUrl = string.Empty;
+    private string _epFormApiKey = string.Empty;
+    private string _epFormModel = string.Empty;
+
+    private bool _epModelPickerOpen;
+    private bool _epModelsLoading;
+    private string? _epModelsError;
+    private IReadOnlyList<string> _epModels = Array.Empty<string>();
+
+    private bool _epModelValidating;
+    private bool? _epModelValid;
+    private string? _epModelValidationError;
+    private CancellationTokenSource? _epValidateCts;
+
+    protected override void OnInitialized()
+    {
+        Session.Changed += OnSettingsChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Hydrator.HydrateAsync();
+        _hydrated = true;
+        StateHasChanged();
+    }
+
+    private void OnSettingsChanged(SettingsTier _) => InvokeAsync(StateHasChanged);
+
+    private void OpenAddEndpointDialog()
+    {
+        _endpointEditId = null;
+        _epFormName = string.Empty;
+        _epFormBaseUrl = "http://localhost:8080/v1";
+        _epFormApiKey = string.Empty;
+        _epFormModel = string.Empty;
+        ResetEndpointValidation();
+        _endpointDialogOpen = true;
+    }
+
+    private void OpenEditEndpointDialog(Guid id)
+    {
+        var existing = Session.Endpoints.FindById(id);
+        if (existing is null) return;
+        _endpointEditId = id;
+        _epFormName = existing.Name ?? string.Empty;
+        _epFormBaseUrl = existing.BaseUrl;
+        _epFormApiKey = existing.ApiKey;
+        _epFormModel = existing.Model;
+        ResetEndpointValidation();
+        _endpointDialogOpen = true;
+        _ = ValidateEndpointModelAsync();
+    }
+
+    private void ConfirmEndpointDialog()
+    {
+        if (string.IsNullOrWhiteSpace(_epFormBaseUrl)) return;
+
+        var name = string.IsNullOrWhiteSpace(_epFormName) ? null : _epFormName.Trim();
+        var baseUrl = _epFormBaseUrl.Trim();
+        var apiKey = _epFormApiKey ?? string.Empty;
+        var model = (_epFormModel ?? string.Empty).Trim();
+
+        if (_endpointEditId is Guid id)
+        {
+            var existing = Session.Endpoints.FindById(id);
+            if (existing is null) return;
+            Session.UpdateEndpoint(existing with { Name = name, BaseUrl = baseUrl, ApiKey = apiKey, Model = model });
+        }
+        else
+        {
+            Session.AddEndpoint(new EndpointSettings(Guid.NewGuid(), name, baseUrl, apiKey, model));
+        }
+        _endpointDialogOpen = false;
+    }
+
+    private void OnEndpointBaseUrlChanged(string value)
+    {
+        _epFormBaseUrl = value ?? string.Empty;
+        _ = ValidateEndpointModelAsync();
+    }
+
+    private void OnEndpointApiKeyChanged(string value)
+    {
+        _epFormApiKey = value ?? string.Empty;
+        _ = ValidateEndpointModelAsync();
+    }
+
+    private void OnEndpointModelChanged(string value)
+    {
+        _epFormModel = value ?? string.Empty;
+        _ = ValidateEndpointModelAsync();
+    }
+
+    private EndpointSettings CurrentEndpointForm() => new(
+        _endpointEditId ?? Guid.Empty,
+        string.IsNullOrWhiteSpace(_epFormName) ? null : _epFormName.Trim(),
+        _epFormBaseUrl?.Trim() ?? string.Empty,
+        _epFormApiKey ?? string.Empty,
+        (_epFormModel ?? string.Empty).Trim());
+
+    private void ResetEndpointValidation()
+    {
+        _epValidateCts?.Cancel();
+        _epValidateCts = null;
+        _epModelValidating = false;
+        _epModelValid = null;
+        _epModelValidationError = null;
+    }
+
+    private async Task ValidateEndpointModelAsync()
+    {
+        _epValidateCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _epValidateCts = cts;
+
+        var endpoint = CurrentEndpointForm();
+        if (string.IsNullOrWhiteSpace(endpoint.Model) || string.IsNullOrWhiteSpace(endpoint.BaseUrl))
+        {
+            _epModelValid = null;
+            _epModelValidating = false;
+            _epModelValidationError = null;
+            StateHasChanged();
+            return;
+        }
+
+        _epModelValidating = true;
+        _epModelValid = null;
+        _epModelValidationError = null;
+        StateHasChanged();
+
+        var result = await HealthService.ListModelsAsync(endpoint, cts.Token);
+        if (cts.IsCancellationRequested) return;
+
+        _epModelValidating = false;
+        if (!result.Success)
+        {
+            _epModelValid = false;
+            _epModelValidationError = result.ErrorMessage;
+        }
+        else
+        {
+            var match = result.Models.Any(id => string.Equals(id, endpoint.Model, StringComparison.OrdinalIgnoreCase));
+            _epModelValid = match;
+            _epModelValidationError = match ? null : $"\"{endpoint.Model}\" is not in the {result.Models.Count}-model list returned by the endpoint.";
+        }
+        StateHasChanged();
+    }
+
+    private async Task OpenEndpointModelPicker()
+    {
+        if (string.IsNullOrWhiteSpace(_epFormBaseUrl)) return;
+        _epModelPickerOpen = true;
+        _epModelsLoading = true;
+        _epModelsError = null;
+        _epModels = Array.Empty<string>();
+        StateHasChanged();
+
+        var result = await HealthService.ListModelsAsync(CurrentEndpointForm());
+        _epModelsLoading = false;
+        if (result.Success)
+        {
+            _epModels = result.Models;
+        }
+        else
+        {
+            _epModelsError = result.ErrorMessage;
+        }
+        StateHasChanged();
+    }
+
+    private void SelectEndpointModel(string id)
+    {
+        _epFormModel = id;
+        _epModelPickerOpen = false;
+        _epModelValid = true;
+        _epModelValidationError = null;
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSettingsChanged;
+    }
+}

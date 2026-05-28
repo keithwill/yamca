@@ -1,0 +1,282 @@
+@page "/instructions"
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>Instructions — yamca</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+
+@if (!_hydrated)
+{
+    <MudProgressCircular Indeterminate="true" />
+    <MudText Typo="Typo.body2" Class="ml-2 d-inline">Loading from localStorage&hellip;</MudText>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-2">System prompt</MudText>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            The current workspace path is sent automatically as separate context — no need to mention it here.
+        </MudText>
+        <MudTextField Value="Session.SystemPrompt"
+                      ValueChanged="@((string v) => Session.SetSystemPrompt(v))"
+                      T="string" Variant="Variant.Outlined" Lines="4" />
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.h6">Instruction files</MudText>
+            <MudSpacer />
+            <MudTabs @bind-ActivePanelIndex="_instrTierIndex" Rounded="true" Color="Color.Primary">
+                <MudTabPanel Text="Project" />
+                <MudTabPanel Text="Global" />
+            </MudTabs>
+        </div>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            Files read from the current workspace and added to the chat context as additional system messages at session start. Each entry is a bare filename or a relative path; absolute paths are not allowed. Missing files are silently skipped.
+            @if (_instrTierIndex == 0)
+            {
+                <text> Stored in </text>
+                <MudTooltip Text="@Keys.ProjectKey" Placement="Placement.Top"><code>@SettingsHelpers.ShortKey(Keys.ProjectKey)</code></MudTooltip><text>.</text>
+            }
+            else { <text> Stored in <code>@Keys.GlobalKey</code>.</text> }
+        </MudText>
+
+        @if (_instrTierIndex == 0)
+        {
+            <MudSwitch T="bool" Value="Session.ProjectInheritsGlobalInstructions"
+                       ValueChanged="@((bool v) => Session.SetProjectInheritsGlobalInstructions(v))"
+                       Color="Color.Primary" Class="mb-2"
+                       Label="Inherit Global instruction files" />
+        }
+
+        @{
+            var rows = CurrentRows;
+        }
+
+        @if (rows.Count == 0)
+        {
+            <div class="mb-2">
+                <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">
+                    No instruction files configured.
+                </MudText>
+            </div>
+        }
+        else
+        {
+            <div class="mb-2">
+                @foreach (var row in rows)
+                {
+                    <div @key="row.Id" class="d-flex align-center mb-1" style="gap: 4px;">
+                        <MudTextField T="string" Value="@row.Path"
+                                      ValueChanged="@((string v) => OnRowPathChanged(row, v))"
+                                      Immediate="false"
+                                      DebounceInterval="400"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Class="flex-grow-1"
+                                      Placeholder="AGENTS.md or docs/style.md" />
+                        <MudTooltip Text="Browse workspace">
+                            <MudIconButton Icon="@Icons.Material.Filled.Search"
+                                           OnClick="@(() => OpenInstructionPicker(row))"
+                                           aria-label="Browse workspace" />
+                        </MudTooltip>
+                        @if (!string.IsNullOrWhiteSpace(row.Path) && !InstructionFileExists(row.Path))
+                        {
+                            <MudTooltip Text="File not found under the workspace. It will be skipped at session start.">
+                                <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Warning" />
+                            </MudTooltip>
+                        }
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       OnClick="@(() => RemoveRow(row))"
+                                       aria-label="Remove" />
+                    </div>
+                }
+            </div>
+        }
+
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="AddInstructionPath" Class="mt-2">
+            Add file
+        </MudButton>
+    </MudPaper>
+
+    <MudDialog @bind-Visible="_pickerOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
+        <TitleContent>
+            Choose instruction file
+        </TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.caption" Class="mb-2">
+                Workspace: <code>@Workspace.RootPath</code>
+            </MudText>
+            <div class="d-flex align-center mb-2" style="gap: 4px;">
+                <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward"
+                               Disabled="@string.IsNullOrEmpty(_pickerDir)"
+                               OnClick="PickerNavigateUp"
+                               aria-label="Up" />
+                <MudText Typo="Typo.body2">
+                    /@(_pickerDir)
+                </MudText>
+            </div>
+            @if (_pickerListing is null || _pickerListing.Entries.Count == 0)
+            {
+                <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">
+                    Empty directory.
+                </MudText>
+            }
+            else
+            {
+                <MudList T="string" Dense="true">
+                    @foreach (var entry in _pickerListing.Entries)
+                    {
+                        <MudListItem T="string"
+                                     Icon="@(entry.IsDirectory ? Icons.Material.Filled.Folder : Icons.Material.Filled.Description)"
+                                     OnClick="@(() => PickerSelect(entry))">
+                            @entry.Name
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _pickerOpen = false)">Cancel</MudButton>
+        </DialogActions>
+    </MudDialog>
+}
+
+</MudContainer>
+
+@code {
+    [Inject] private SessionSettings Session { get; set; } = default!;
+    [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
+    [Inject] private WorkspaceKey Keys { get; set; } = default!;
+    [Inject] private IWorkspace Workspace { get; set; } = default!;
+    [Inject] private WorkspaceBrowser Browser { get; set; } = default!;
+
+    private bool _hydrated;
+    private int _instrTierIndex; // 0 = Project, 1 = Global
+
+    private bool _pickerOpen;
+    private InstructionRow? _pickerRow;
+    private string _pickerDir = string.Empty;
+    private WorkspaceBrowser.Listing? _pickerListing;
+
+    private sealed class InstructionRow
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public string Path { get; set; } = string.Empty;
+    }
+
+    private readonly List<InstructionRow> _projectRows = new();
+    private readonly List<InstructionRow> _globalRows = new();
+    private List<InstructionRow> CurrentRows => _instrTierIndex == 0 ? _projectRows : _globalRows;
+    private SettingsTier CurrentInstructionTier => _instrTierIndex == 0 ? SettingsTier.Project : SettingsTier.Global;
+
+    protected override void OnInitialized()
+    {
+        Session.Changed += OnSettingsChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Hydrator.HydrateAsync();
+        SyncRowsFromSession();
+        _hydrated = true;
+        StateHasChanged();
+    }
+
+    private void OnSettingsChanged(SettingsTier _) => InvokeAsync(StateHasChanged);
+
+    private void SyncRowsFromSession()
+    {
+        _projectRows.Clear();
+        foreach (var p in Session.ProjectInstructionFiles)
+            _projectRows.Add(new InstructionRow { Path = p });
+        _globalRows.Clear();
+        foreach (var p in Session.GlobalInstructionFiles)
+            _globalRows.Add(new InstructionRow { Path = p });
+    }
+
+    private void PersistCurrentTier()
+    {
+        Session.SetInstructionFiles(CurrentInstructionTier, CurrentRows.Select(r => r.Path).ToList());
+    }
+
+    private void AddInstructionPath()
+    {
+        CurrentRows.Add(new InstructionRow());
+        PersistCurrentTier();
+    }
+
+    private void RemoveRow(InstructionRow row)
+    {
+        CurrentRows.Remove(row);
+        PersistCurrentTier();
+    }
+
+    private void OnRowPathChanged(InstructionRow row, string value)
+    {
+        var normalized = (value ?? string.Empty).Trim().Replace('\\', '/');
+        if (Path.IsPathRooted(normalized)) normalized = string.Empty;
+        if (row.Path == normalized) return;
+        row.Path = normalized;
+        PersistCurrentTier();
+    }
+
+    private void SetRowPath(InstructionRow row, string value)
+    {
+        row.Path = value ?? string.Empty;
+        PersistCurrentTier();
+    }
+
+    private bool InstructionFileExists(string relative)
+    {
+        if (string.IsNullOrWhiteSpace(relative)) return true;
+        try
+        {
+            var resolved = Workspace.Resolve(relative);
+            return File.Exists(resolved);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void OpenInstructionPicker(InstructionRow row)
+    {
+        _pickerRow = row;
+        _pickerDir = string.Empty;
+        _pickerListing = Browser.List(_pickerDir);
+        _pickerOpen = true;
+    }
+
+    private void PickerNavigateUp()
+    {
+        var parent = WorkspaceBrowser.Parent(_pickerDir);
+        if (parent is null) return;
+        _pickerDir = parent;
+        _pickerListing = Browser.List(_pickerDir);
+    }
+
+    private void PickerSelect(WorkspaceBrowser.Entry entry)
+    {
+        if (entry.IsDirectory)
+        {
+            _pickerDir = entry.RelativePath;
+            _pickerListing = Browser.List(_pickerDir);
+            return;
+        }
+
+        if (_pickerRow is not null)
+            SetRowPath(_pickerRow, entry.RelativePath);
+
+        _pickerOpen = false;
+        _pickerRow = null;
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSettingsChanged;
+    }
+}
