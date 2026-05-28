@@ -154,14 +154,26 @@ public sealed class McpRegistry : IMcpRegistry, IAsyncDisposable
     {
         if (a.Id != b.Id) return false;
         if (a.Enabled != b.Enabled) return false;
-        if (a.Stdio.Command != b.Stdio.Command) return false;
-        if (a.Stdio.WorkingDirectory != b.Stdio.WorkingDirectory) return false;
-        if (!a.Stdio.Args.SequenceEqual(b.Stdio.Args, StringComparer.Ordinal)) return false;
-        if (!EnvEquals(a.Stdio.Env, b.Stdio.Env)) return false;
+        if (a.CallTimeoutSeconds != b.CallTimeoutSeconds) return false;
+        if (a.TransportKind != b.TransportKind) return false;
+        if (a.Stdio is not null)
+        {
+            if (b.Stdio is null) return false;
+            if (a.Stdio.Command != b.Stdio.Command) return false;
+            if (a.Stdio.WorkingDirectory != b.Stdio.WorkingDirectory) return false;
+            if (!a.Stdio.Args.SequenceEqual(b.Stdio.Args, StringComparer.Ordinal)) return false;
+            if (!DictEquals(a.Stdio.Env, b.Stdio.Env)) return false;
+        }
+        if (a.Http is not null)
+        {
+            if (b.Http is null) return false;
+            if (a.Http.Url != b.Http.Url) return false;
+            if (!DictEquals(a.Http.Headers, b.Http.Headers)) return false;
+        }
         return true;
     }
 
-    private static bool EnvEquals(IReadOnlyDictionary<string, string>? a, IReadOnlyDictionary<string, string>? b)
+    private static bool DictEquals(IReadOnlyDictionary<string, string>? a, IReadOnlyDictionary<string, string>? b)
     {
         var aCount = a?.Count ?? 0;
         var bCount = b?.Count ?? 0;
@@ -172,6 +184,53 @@ public sealed class McpRegistry : IMcpRegistry, IAsyncDisposable
             if (!b!.TryGetValue(kv.Key, out var v)) return false;
             if (!string.Equals(v, kv.Value, StringComparison.Ordinal)) return false;
         }
+        return true;
+    }
+
+    /// <summary>Tear down the named server (if present) and re-spawn it from
+    /// its current config. Used by the settings UI's "test connection" button
+    /// to retry after a transient failure without round-tripping localStorage.</summary>
+    public async Task<bool> RestartAsync(string id, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(id)) return false;
+
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        McpServerConnection? toDispose = null;
+        McpServerConnection? fresh = null;
+        try
+        {
+            if (_disposed) return false;
+
+            List<McpServerConnection> existing;
+            lock (_readGate) existing = _connections.ToList();
+
+            var idx = existing.FindIndex(c => string.Equals(c.Config.Id, id, StringComparison.Ordinal));
+            if (idx < 0) return false;
+
+            toDispose = existing[idx];
+            fresh = new McpServerConnection(toDispose.Config);
+            fresh.StateChanged += OnConnectionStateChanged;
+            existing[idx] = fresh;
+
+            lock (_readGate) _connections = existing;
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+
+        if (toDispose is not null)
+        {
+            toDispose.StateChanged -= OnConnectionStateChanged;
+            await toDispose.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (fresh is not null)
+        {
+            _ = Task.Run(() => fresh.ConnectAsync(CancellationToken.None), CancellationToken.None);
+        }
+
+        RaiseChanged();
         return true;
     }
 }

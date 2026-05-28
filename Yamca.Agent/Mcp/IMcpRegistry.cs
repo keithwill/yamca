@@ -24,6 +24,11 @@ public interface IMcpRegistry
     /// reused; everything else is torn down and re-spawned.</summary>
     Task ReplaceAsync(IReadOnlyList<McpServerConfig> configs, CancellationToken cancellationToken = default);
 
+    /// <summary>Tear down the named server and re-spawn it from its current
+    /// config. No-op if no server has the given id. Returns true if a server
+    /// was restarted.</summary>
+    Task<bool> RestartAsync(string id, CancellationToken cancellationToken = default);
+
     /// <summary>Fires whenever the server list or any server's status changes.
     /// Used by the settings UI to refresh badges.</summary>
     event Action? Changed;

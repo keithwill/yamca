@@ -40,6 +40,11 @@ public sealed class McpServerConnection : IAsyncDisposable
         get { lock (_gate) return _adapters; }
     }
 
+    public TimeSpan CallTimeout =>
+        Config.CallTimeoutSeconds is { } seconds && seconds > 0
+            ? TimeSpan.FromSeconds(seconds)
+            : DefaultCallTimeout;
+
     public event Action? StateChanged;
 
     /// <summary>Connect to the server, handshake, and enumerate tools. Safe to
@@ -57,7 +62,7 @@ public sealed class McpServerConnection : IAsyncDisposable
         using var startupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         startupCts.CancelAfter(DefaultStartupTimeout);
 
-        StdioClientTransport transport;
+        IClientTransport transport;
         try
         {
             transport = BuildTransport();
@@ -99,8 +104,9 @@ public sealed class McpServerConnection : IAsyncDisposable
             return;
         }
 
+        var callTimeout = CallTimeout;
         var adapters = tools
-            .Select(t => new McpToolAdapter(Config.Id, t, Log, DefaultCallTimeout))
+            .Select(t => new McpToolAdapter(Config.Id, t, Log, callTimeout))
             .ToArray();
 
         lock (_gate)
@@ -113,29 +119,51 @@ public sealed class McpServerConnection : IAsyncDisposable
         RaiseStateChanged();
     }
 
-    private StdioClientTransport BuildTransport()
+    private IClientTransport BuildTransport() => Config.TransportKind switch
+    {
+        McpTransportKind.Http => BuildHttpTransport(Config.Http!),
+        _ => BuildStdioTransport(Config.Stdio!),
+    };
+
+    private StdioClientTransport BuildStdioTransport(McpStdioConfig stdio)
     {
         // On Windows the SDK calls Process.Start(command, ...) directly, which
         // does NOT consult PATHEXT. So a bare "npx" / "uvx" / "deno" — the form
         // every MCP server README ships with — would fail to launch even when
         // those commands resolve fine from PowerShell. Resolve them against
         // PATH+PATHEXT ourselves so paste-from-README works on Windows.
-        var resolvedCommand = ResolveCommand(Config.Stdio.Command);
+        var resolvedCommand = ResolveCommand(stdio.Command);
 
         var options = new StdioClientTransportOptions
         {
             Name = Config.Id,
             Command = resolvedCommand,
-            Arguments = Config.Stdio.Args.Count == 0 ? null : Config.Stdio.Args.ToList(),
-            WorkingDirectory = Config.Stdio.WorkingDirectory,
-            EnvironmentVariables = Config.Stdio.Env is null
+            Arguments = stdio.Args.Count == 0 ? null : stdio.Args.ToList(),
+            WorkingDirectory = stdio.WorkingDirectory,
+            EnvironmentVariables = stdio.Env is null
                 ? null
-                : Config.Stdio.Env.ToDictionary(kv => kv.Key, kv => (string?)kv.Value, StringComparer.Ordinal),
+                : stdio.Env.ToDictionary(kv => kv.Key, kv => (string?)kv.Value, StringComparer.Ordinal),
             // Pipe stderr lines into the per-server log so the settings UI can
             // surface them when something goes wrong.
             StandardErrorLines = line => Log.Append("stderr", line),
         };
         return new StdioClientTransport(options);
+    }
+
+    private HttpClientTransport BuildHttpTransport(McpHttpConfig http)
+    {
+        var options = new HttpClientTransportOptions
+        {
+            Name = Config.Id,
+            Endpoint = new Uri(http.Url, UriKind.Absolute),
+            // AutoDetect handles both Streamable HTTP and SSE — what every
+            // current server README expects from a client.
+            TransportMode = HttpTransportMode.AutoDetect,
+            AdditionalHeaders = http.Headers is null
+                ? null
+                : new Dictionary<string, string>(http.Headers, StringComparer.Ordinal),
+        };
+        return new HttpClientTransport(options);
     }
 
     private string ResolveCommand(string command)

@@ -99,13 +99,92 @@ public class McpServerConfigJsonTests
     }
 
     [Test]
-    public void ParseSingle_RejectsHttpTransport_AsUnsupportedInPhase1()
+    public void ParseSingle_AcceptsHttpTransport_Wrapped()
     {
-        var json = """ { "id": "fetch", "config": { "url": "https://example.com/mcp" } } """;
+        var json = """
+        { "id": "fetch", "config": { "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer x" } } }
+        """;
+
+        var result = McpServerConfigJson.ParseSingle(json);
+
+        Assert.That(result.Status, Is.EqualTo(McpConfigParseStatus.Ok));
+        Assert.That(result.Config!.TransportKind, Is.EqualTo(McpTransportKind.Http));
+        Assert.That(result.Config.Http!.Url, Is.EqualTo("https://example.com/mcp"));
+        Assert.That(result.Config.Http.Headers!["Authorization"], Is.EqualTo("Bearer x"));
+        Assert.That(result.Config.Stdio, Is.Null);
+    }
+
+    [Test]
+    public void ParseSingle_AcceptsHttpTransport_Bare()
+    {
+        var json = """ { "url": "https://example.com/mcp" } """;
+
+        var result = McpServerConfigJson.ParseSingle(json, overrideId: "fetch");
+
+        Assert.That(result.Status, Is.EqualTo(McpConfigParseStatus.Ok));
+        Assert.That(result.Config!.Http!.Url, Is.EqualTo("https://example.com/mcp"));
+    }
+
+    [Test]
+    public void ParseSingle_RejectsHttpWithBothCommandAndUrl()
+    {
+        var json = """ { "id": "x", "config": { "command": "node", "url": "https://example.com/mcp" } } """;
 
         var result = McpServerConfigJson.ParseSingle(json);
 
         Assert.That(result.Status, Is.EqualTo(McpConfigParseStatus.UnsupportedTransport));
+    }
+
+    [Test]
+    public void ParseSingle_RejectsRelativeOrFileUrl()
+    {
+        var json = """ { "id": "x", "config": { "url": "/relative" } } """;
+
+        var result = McpServerConfigJson.ParseSingle(json);
+
+        Assert.That(result.Status, Is.EqualTo(McpConfigParseStatus.InvalidUrl));
+    }
+
+    [Test]
+    public void ParseSingle_AcceptsTimeoutSecondsOverride()
+    {
+        var json = """ { "id": "x", "config": { "command": "node", "timeoutSeconds": 90 } } """;
+
+        var result = McpServerConfigJson.ParseSingle(json);
+
+        Assert.That(result.Status, Is.EqualTo(McpConfigParseStatus.Ok));
+        Assert.That(result.Config!.CallTimeoutSeconds, Is.EqualTo(90));
+    }
+
+    [Test]
+    public void ParseSingle_RejectsOutOfRangeTimeout()
+    {
+        var json = """ { "id": "x", "config": { "command": "node", "timeoutSeconds": 0 } } """;
+
+        var result = McpServerConfigJson.ParseSingle(json);
+
+        Assert.That(result.Status, Is.EqualTo(McpConfigParseStatus.InvalidTimeout));
+    }
+
+    [Test]
+    public void SerializeSingle_RoundTripsHttpAndTimeout()
+    {
+        var original = new McpServerConfig(
+            Id: "fetch",
+            Enabled: true,
+            Stdio: null,
+            Http: new McpHttpConfig(
+                Url: "https://example.com/mcp",
+                Headers: new Dictionary<string, string> { ["X-Api-Key"] = "secret" }),
+            CallTimeoutSeconds: 45);
+
+        var json = McpServerConfigJson.SerializeSingle(original);
+        var parsed = McpServerConfigJson.ParseSingle(json);
+
+        Assert.That(parsed.Status, Is.EqualTo(McpConfigParseStatus.Ok));
+        Assert.That(parsed.Config!.Http!.Url, Is.EqualTo("https://example.com/mcp"));
+        Assert.That(parsed.Config.Http.Headers!["X-Api-Key"], Is.EqualTo("secret"));
+        Assert.That(parsed.Config.CallTimeoutSeconds, Is.EqualTo(45));
     }
 
     [Test]

@@ -74,6 +74,39 @@ public sealed class McpConfigStore
         return parsed;
     }
 
+    /// <summary>Replace the config at <paramref name="originalId"/> with the
+    /// parsed contents of <paramref name="json"/>. The id may change — the
+    /// pasted JSON wins unless <paramref name="overrideId"/> is supplied.</summary>
+    public async Task<McpConfigParseResult> ReplaceAsync(
+        string originalId, string? overrideId, string json, CancellationToken cancellationToken = default)
+    {
+        var parsed = McpServerConfigJson.ParseSingle(
+            json,
+            overrideId: string.IsNullOrWhiteSpace(overrideId) ? null : overrideId.Trim());
+        if (parsed.Config is null) return parsed;
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var next = new List<McpServerConfig>(_configs.Count);
+            foreach (var c in _configs)
+            {
+                if (string.Equals(c.Id, originalId, StringComparison.Ordinal)) continue;
+                if (string.Equals(c.Id, parsed.Config.Id, StringComparison.Ordinal)) continue;
+                next.Add(c);
+            }
+            next.Add(parsed.Config);
+            ReplaceLocked(next);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+        await PersistAsync().ConfigureAwait(false);
+        await _registry.ReplaceAsync(_configs, cancellationToken).ConfigureAwait(false);
+        return parsed;
+    }
+
     public async Task RemoveAsync(string id, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(id)) return;

@@ -5,14 +5,26 @@ using System.Text.Json.Serialization;
 namespace Yamca.Agent.Mcp;
 
 /// <summary>
-/// One MCP server as it appears in <c>localStorage</c>. The <see cref="Stdio"/>
-/// payload mirrors the de-facto <c>mcp.json</c> shape so users can paste a
-/// server's README snippet without translation.
+/// One MCP server as it appears in <c>localStorage</c>. Exactly one of
+/// <see cref="Stdio"/> or <see cref="Http"/> is populated; the parser enforces
+/// that and the connection layer dispatches on whichever is set.
 /// </summary>
 public sealed record McpServerConfig(
     string Id,
     bool Enabled,
-    McpStdioConfig Stdio);
+    McpStdioConfig? Stdio,
+    McpHttpConfig? Http = null,
+    int? CallTimeoutSeconds = null)
+{
+    public McpTransportKind TransportKind =>
+        Http is not null ? McpTransportKind.Http : McpTransportKind.Stdio;
+}
+
+public enum McpTransportKind
+{
+    Stdio,
+    Http,
+}
 
 /// <summary>
 /// stdio-transport config. The fields line up 1:1 with the well-known
@@ -25,6 +37,14 @@ public sealed record McpStdioConfig(
     IReadOnlyDictionary<string, string>? Env = null,
     string? WorkingDirectory = null);
 
+/// <summary>
+/// HTTP-transport config (Streamable HTTP / SSE — the SDK auto-detects).
+/// Mirrors the <c>url</c>/<c>headers</c> shape pasted from server READMEs.
+/// </summary>
+public sealed record McpHttpConfig(
+    string Url,
+    IReadOnlyDictionary<string, string>? Headers = null);
+
 public enum McpConfigParseStatus
 {
     Ok,
@@ -33,6 +53,8 @@ public enum McpConfigParseStatus
     InvalidId,
     UnsupportedTransport,
     MissingCommand,
+    InvalidUrl,
+    InvalidTimeout,
 }
 
 public sealed record McpConfigParseResult(
@@ -59,6 +81,14 @@ public static class McpServerConfigJson
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         WriteIndented = false,
+    };
+
+    private static readonly JsonSerializerOptions PrettyOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        WriteIndented = true,
     };
 
     /// <summary>Identifier rules: kebab/snake-case slug, ASCII letters/digits/underscore/hyphen,
@@ -100,23 +130,23 @@ public static class McpServerConfigJson
     public static string SerializeList(IEnumerable<McpServerConfig> configs)
     {
         var dtos = new List<ServerDto>();
-        foreach (var c in configs)
-        {
-            dtos.Add(new ServerDto
-            {
-                Id = c.Id,
-                Enabled = c.Enabled,
-                Config = ToConfigDto(c.Stdio),
-            });
-        }
+        foreach (var c in configs) dtos.Add(ToDto(c));
         return JsonSerializer.Serialize(dtos, Options);
+    }
+
+    /// <summary>Render one config back to the wrapped JSON shape the add/edit
+    /// dialog accepts. Pretty-printed so the user can read what they're about
+    /// to edit.</summary>
+    public static string SerializeSingle(McpServerConfig config)
+    {
+        return JsonSerializer.Serialize(ToDto(config), PrettyOptions);
     }
 
     /// <summary>Parse a single server pasted from a README. Accepts both the
     /// Yamca wrapper shape (<c>{ "id": ..., "config": { ... } }</c>) and the
-    /// bare <c>mcp.json</c> shape (<c>{ "command": ..., "args": ... }</c>).
-    /// Callers may pass <paramref name="overrideId"/> from the dialog's id
-    /// field; it wins over an id embedded in the JSON.</summary>
+    /// bare <c>mcp.json</c> shape (<c>{ "command": ..., "args": ... }</c> or
+    /// <c>{ "url": ... }</c>). Callers may pass <paramref name="overrideId"/>
+    /// from the dialog's id field; it wins over an id embedded in the JSON.</summary>
     public static McpConfigParseResult ParseSingle(string? json, string? overrideId = null)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -127,8 +157,8 @@ public static class McpServerConfigJson
         catch (JsonException ex) { return McpConfigParseResult.Fail(McpConfigParseStatus.InvalidJson, ex.Message); }
         if (dto is null) return McpConfigParseResult.Fail(McpConfigParseStatus.InvalidJson, "Config is empty.");
 
-        // Bare mcp.json form: { "command": "...", "args": [...] }
-        if (dto.Config is null && !string.IsNullOrWhiteSpace(dto.Command))
+        // Bare mcp.json forms — promote the top-level fields into a synthesized config block.
+        if (dto.Config is null && (!string.IsNullOrWhiteSpace(dto.Command) || !string.IsNullOrWhiteSpace(dto.Url)))
         {
             dto.Config = new ConfigDto
             {
@@ -136,6 +166,8 @@ public static class McpServerConfigJson
                 Args = dto.Args,
                 Env = dto.Env,
                 Cwd = dto.Cwd,
+                Url = dto.Url,
+                Headers = dto.Headers,
             };
         }
 
@@ -153,37 +185,77 @@ public static class McpServerConfigJson
 
         if (dto.Config is null)
             return McpConfigParseResult.Fail(McpConfigParseStatus.UnsupportedTransport,
-                "Missing \"config\" — provide command/args (stdio) or wrap it as { \"id\":..., \"config\":{...} }.");
+                "Missing \"config\" — provide command/args (stdio) or url/headers (http).");
 
-        // Phase 1 is stdio-only. URL/headers are detected and rejected so users
-        // see a clear error instead of a silent disable.
-        if (dto.Config.Url is not null || dto.Config.Headers is not null)
+        var hasStdio = !string.IsNullOrWhiteSpace(dto.Config.Command);
+        var hasHttp = !string.IsNullOrWhiteSpace(dto.Config.Url);
+
+        if (hasStdio && hasHttp)
             return McpConfigParseResult.Fail(McpConfigParseStatus.UnsupportedTransport,
-                "HTTP transport is not supported in this build. Use a stdio command.");
+                "Set either \"command\" (stdio) or \"url\" (http), not both.");
 
-        if (string.IsNullOrWhiteSpace(dto.Config.Command))
-            return McpConfigParseResult.Fail(McpConfigParseStatus.MissingCommand, "Missing \"command\".");
+        if (!hasStdio && !hasHttp)
+            return McpConfigParseResult.Fail(McpConfigParseStatus.MissingCommand,
+                "Missing \"command\" (stdio) or \"url\" (http).");
 
-        var stdio = new McpStdioConfig(
-            Command: dto.Config.Command!,
-            Args: dto.Config.Args is null ? Array.Empty<string>() : dto.Config.Args.ToArray(),
-            Env: dto.Config.Env is null
-                ? null
-                : new Dictionary<string, string>(dto.Config.Env, StringComparer.Ordinal),
-            WorkingDirectory: string.IsNullOrWhiteSpace(dto.Config.Cwd) ? null : dto.Config.Cwd);
+        int? timeoutSeconds = null;
+        if (dto.Config.TimeoutSeconds is { } t)
+        {
+            if (t <= 0 || t > 3600)
+                return McpConfigParseResult.Fail(McpConfigParseStatus.InvalidTimeout,
+                    "\"timeoutSeconds\" must be between 1 and 3600.");
+            timeoutSeconds = t;
+        }
 
         var enabled = dto.Enabled ?? true;
-        return McpConfigParseResult.Ok(new McpServerConfig(dto.Id!, enabled, stdio));
+
+        if (hasStdio)
+        {
+            var stdio = new McpStdioConfig(
+                Command: dto.Config.Command!,
+                Args: dto.Config.Args is null ? Array.Empty<string>() : dto.Config.Args.ToArray(),
+                Env: dto.Config.Env is null
+                    ? null
+                    : new Dictionary<string, string>(dto.Config.Env, StringComparer.Ordinal),
+                WorkingDirectory: string.IsNullOrWhiteSpace(dto.Config.Cwd) ? null : dto.Config.Cwd);
+            return McpConfigParseResult.Ok(new McpServerConfig(dto.Id!, enabled, stdio, Http: null, CallTimeoutSeconds: timeoutSeconds));
+        }
+
+        // HTTP — validate the URL eagerly so a typo surfaces in the dialog
+        // instead of as a connect-time HttpRequestException later.
+        if (!Uri.TryCreate(dto.Config.Url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return McpConfigParseResult.Fail(McpConfigParseStatus.InvalidUrl,
+                "\"url\" must be an absolute http:// or https:// URL.");
+        }
+
+        var http = new McpHttpConfig(
+            Url: uri.ToString(),
+            Headers: dto.Config.Headers is null
+                ? null
+                : new Dictionary<string, string>(dto.Config.Headers, StringComparer.Ordinal));
+        return McpConfigParseResult.Ok(new McpServerConfig(dto.Id!, enabled, Stdio: null, Http: http, CallTimeoutSeconds: timeoutSeconds));
     }
 
-    private static ConfigDto ToConfigDto(McpStdioConfig stdio) => new()
+    private static ServerDto ToDto(McpServerConfig c) => new()
     {
-        Command = stdio.Command,
-        Args = stdio.Args.Count == 0 ? null : new List<string>(stdio.Args),
-        Env = stdio.Env is null || stdio.Env.Count == 0
-            ? null
-            : new Dictionary<string, string>(stdio.Env, StringComparer.Ordinal),
-        Cwd = stdio.WorkingDirectory,
+        Id = c.Id,
+        Enabled = c.Enabled,
+        Config = new ConfigDto
+        {
+            Command = c.Stdio?.Command,
+            Args = c.Stdio is null || c.Stdio.Args.Count == 0 ? null : new List<string>(c.Stdio.Args),
+            Env = c.Stdio?.Env is null || c.Stdio.Env.Count == 0
+                ? null
+                : new Dictionary<string, string>(c.Stdio.Env, StringComparer.Ordinal),
+            Cwd = c.Stdio?.WorkingDirectory,
+            Url = c.Http?.Url,
+            Headers = c.Http?.Headers is null || c.Http.Headers.Count == 0
+                ? null
+                : new Dictionary<string, string>(c.Http.Headers, StringComparer.Ordinal),
+            TimeoutSeconds = c.CallTimeoutSeconds,
+        },
     };
 
     private sealed class ServerDto
@@ -197,6 +269,8 @@ public static class McpServerConfigJson
         public List<string>? Args { get; set; }
         public Dictionary<string, string>? Env { get; set; }
         public string? Cwd { get; set; }
+        public string? Url { get; set; }
+        public Dictionary<string, string>? Headers { get; set; }
     }
 
     private sealed class ConfigDto
@@ -206,8 +280,9 @@ public static class McpServerConfigJson
         public Dictionary<string, string>? Env { get; set; }
         public string? Cwd { get; set; }
 
-        // Detected only — not honored in Phase 1.
         public string? Url { get; set; }
         public Dictionary<string, string>? Headers { get; set; }
+
+        public int? TimeoutSeconds { get; set; }
     }
 }

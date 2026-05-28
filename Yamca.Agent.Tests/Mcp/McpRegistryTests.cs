@@ -74,10 +74,65 @@ public class McpRegistryTests
         await registry.ReplaceAsync(new[] { original });
         var firstConnection = registry.Servers[0];
 
-        var changed = original with { Stdio = original.Stdio with { Args = new[] { "2" } } };
+        var changed = original with { Stdio = original.Stdio! with { Args = new[] { "2" } } };
         await registry.ReplaceAsync(new[] { changed });
 
         Assert.That(registry.Servers[0], Is.Not.SameAs(firstConnection));
+    }
+
+    [Test]
+    public async Task ReplaceAsync_ReplacesConnectionWhenTimeoutChanges()
+    {
+        await using var registry = new McpRegistry();
+        var original = new McpServerConfig("a", false, new McpStdioConfig("x", Array.Empty<string>()), Http: null, CallTimeoutSeconds: 30);
+        await registry.ReplaceAsync(new[] { original });
+        var firstConnection = registry.Servers[0];
+
+        var changed = original with { CallTimeoutSeconds = 60 };
+        await registry.ReplaceAsync(new[] { changed });
+
+        Assert.That(registry.Servers[0], Is.Not.SameAs(firstConnection));
+    }
+
+    [Test]
+    public async Task ReplaceAsync_ReplacesConnectionWhenTransportKindChanges()
+    {
+        await using var registry = new McpRegistry();
+        var stdio = new McpServerConfig("a", false, new McpStdioConfig("x", Array.Empty<string>()));
+        await registry.ReplaceAsync(new[] { stdio });
+        var firstConnection = registry.Servers[0];
+
+        var http = new McpServerConfig("a", false, Stdio: null, Http: new McpHttpConfig("https://example.com/mcp"));
+        await registry.ReplaceAsync(new[] { http });
+
+        Assert.That(registry.Servers[0], Is.Not.SameAs(firstConnection));
+        Assert.That(registry.Servers[0].Config.TransportKind, Is.EqualTo(McpTransportKind.Http));
+    }
+
+    [Test]
+    public async Task RestartAsync_ReplacesExistingConnectionInstance()
+    {
+        await using var registry = new McpRegistry();
+        var cfg = new McpServerConfig("a", false, new McpStdioConfig("x", Array.Empty<string>()));
+        await registry.ReplaceAsync(new[] { cfg });
+        var first = registry.Servers[0];
+
+        var ok = await registry.RestartAsync("a");
+
+        Assert.That(ok, Is.True);
+        Assert.That(registry.Servers, Has.Count.EqualTo(1));
+        Assert.That(registry.Servers[0], Is.Not.SameAs(first));
+    }
+
+    [Test]
+    public async Task RestartAsync_UnknownIdReturnsFalse()
+    {
+        await using var registry = new McpRegistry();
+        await registry.ReplaceAsync(Array.Empty<McpServerConfig>());
+
+        var ok = await registry.RestartAsync("nope");
+
+        Assert.That(ok, Is.False);
     }
 }
 

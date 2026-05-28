@@ -108,12 +108,12 @@ The `config` object mirrors the de facto `mcp.json` shape (`command`/`args`/`env
 - Approval prompts labeled with `[mcp: <serverId>]`.
 - Dogfood against one well-behaved server (filesystem or fetch).
 
-### Phase 2 — HTTP and polish
+### Phase 2 — HTTP and polish ✅
 
-- Streamable HTTP / SSE transport.
-- Settings UI: enable toggle, status badges, edit, remove, test-connection, per-server log buffer.
-- Per-server timeout override.
-- Diagnostics button for stdio commands.
+- Streamable HTTP / SSE transport (auto-detected via `HttpClientTransport`).
+- Settings UI: enable toggle, status badges, **edit**, remove, **test-connection** (restart), per-server log buffer.
+- Per-server `timeoutSeconds` override in config JSON.
+- Diagnostics button for stdio commands (runs `<command> --version` and shows stdout/stderr/exit code).
 
 ### Phase 3 — Beyond tools
 
