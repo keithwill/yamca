@@ -9,6 +9,7 @@ using Yamca.Agent.Mcp;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
+using Yamca.Agent.Tools.CodeIntel;
 using Yamca.Agent.Tools.ScriptExecution;
 using Yamca.Agent.Tools.ShellExecution;
 using Yamca.Agent.Workspace;
@@ -85,6 +86,16 @@ builder.Services.AddSingleton<ITool, ListDirectoryTool>();
 builder.Services.AddSingleton<ITool, FindFilesTool>();
 builder.Services.AddSingleton<ITool, GrepTool>();
 builder.Services.AddSingleton<ITool, ExecuteCommandTool>();
+
+builder.Services.AddSingleton<ParsedTreeCache>();
+builder.Services.AddSingleton<ISymbolExtractor, CSharpSymbolExtractor>();
+builder.Services.AddSingleton<ISymbolExtractor, PythonSymbolExtractor>();
+builder.Services.AddSingleton<ISymbolExtractor, JavaScriptSymbolExtractor>();
+builder.Services.AddSingleton<ISymbolExtractor, TypeScriptSymbolExtractor>();
+builder.Services.AddSingleton<ISymbolExtractor, TsxSymbolExtractor>();
+builder.Services.AddSingleton<ISymbolExtractor, RustSymbolExtractor>();
+builder.Services.AddSingleton<ISymbolExtractor, GoSymbolExtractor>();
+builder.Services.AddSingleton<ITool, ListSymbolsTool>();
 builder.Services.AddScoped<ITool, LoadToolTool>();
 
 // Script-tool collaborators. InterpreterResolver / ScriptRunner are stateless apart
