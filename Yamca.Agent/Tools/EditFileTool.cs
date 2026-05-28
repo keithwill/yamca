@@ -52,6 +52,15 @@ public sealed class EditFileTool : ITool
         try
         {
             var text = await File.ReadAllTextAsync(resolved, cancellationToken);
+
+            // read_file emits LF-only output, so a multi-line old_string from the model
+            // is LF even when the file is CRLF on disk. Translate the needles to match.
+            if (text.Contains("\r\n"))
+            {
+                oldString = oldString.Replace("\r\n", "\n").Replace("\n", "\r\n");
+                newString = newString.Replace("\r\n", "\n").Replace("\n", "\r\n");
+            }
+
             var count = CountOccurrences(text, oldString);
 
             if (count == 0)
