@@ -17,7 +17,7 @@ public class EndpointHealthServiceTests
     }
 
     private static EndpointSettings NewEndpoint(string apiKey = "") =>
-        new("http://localhost:8080/v1", apiKey, "test-model");
+        new(Guid.NewGuid(), Name: null, "http://localhost:8080/v1", apiKey, "test-model");
 
     [Test]
     public async Task ListModels_ReturnsSortedIds()

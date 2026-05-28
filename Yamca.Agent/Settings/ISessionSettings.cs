@@ -9,7 +9,7 @@ public interface ISessionSettings
     ToolSettingsMap Project { get; }
     ToolSettingsMap Global { get; }
 
-    EndpointSettings Endpoint { get; }
+    EndpointsSettings Endpoints { get; }
 
     /// <summary>System prompt for new chat sessions. Kept stable across sessions so
     /// upstream prompt caching can reuse it; per-session context like the workspace

@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.JSInterop
 @using System.Text
+@using Yamca.Agent.Settings
 @using Yamca.Agent.Workspace
 @using Yamca.Web.Components.Branching
 @using WorkspaceImpl = Yamca.Agent.Workspace.Workspace
@@ -39,6 +40,19 @@
                         </CustomContent>
                         <SelectedTemplate></SelectedTemplate>
                     </MudFileUpload>
+                    @if (Session.Endpoints.Items.Count > 1)
+                    {
+                        <MudTooltip Text="@EndpointButtonTooltip()">
+                            <span>
+                                <MudIconButton Icon="@Icons.Material.Filled.Cloud"
+                                               Color="Color.Default" Variant="Variant.Text"
+                                               Size="Size.Small"
+                                               Disabled="@(Chat.IsRunning || Chat.IsEndpointLocked)"
+                                               OnClick="OnEndpointPickerClicked"
+                                               aria-label="Select endpoint" />
+                            </span>
+                        </MudTooltip>
+                    }
                     <MudTooltip Text="@BranchTooltip">
                         <span>
                             <MudIconButton Icon="@Icons.Material.Filled.CallSplit"
@@ -140,6 +154,7 @@
     [Inject] private GitService Git { get; set; } = default!;
     [Inject] private IDialogService Dialogs { get; set; } = default!;
     [Inject] private NavigationManager Nav { get; set; } = default!;
+    [Inject] private ISessionSettings Session { get; set; } = default!;
 
     [Parameter, EditorRequired] public ChatViewModel Chat { get; set; } = default!;
     [Parameter] public bool ShowHeader { get; set; }
@@ -220,6 +235,31 @@
             }
             catch { Chat.IsGitRepository = false; }
         }
+    }
+
+    private string EndpointButtonTooltip()
+    {
+        if (Chat.LockedEndpoint is { } locked) return $"Endpoint: {locked.DisplayLabel} (locked)";
+        var ep = Chat.SelectedEndpointId is Guid id
+            ? Session.Endpoints.FindById(id)
+            : null;
+        ep ??= Session.Endpoints.Default;
+        return $"Endpoint: {ep.DisplayLabel}";
+    }
+
+    private async Task OnEndpointPickerClicked()
+    {
+        var parameters = new DialogParameters
+        {
+            ["Endpoints"] = Session.Endpoints.Items,
+            ["DefaultId"] = Session.Endpoints.DefaultId,
+            ["InitiallySelectedId"] = Chat.SelectedEndpointId ?? Session.Endpoints.DefaultId,
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await Dialogs.ShowAsync<EndpointPickerDialog>("Select endpoint", parameters, options);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not Guid id) return;
+        Chat.SelectEndpoint(id);
     }
 
     private async Task OnBranchClicked()

@@ -1,0 +1,69 @@
+@using Yamca.Agent.Settings
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.caption" Class="mb-2">
+            Pick the endpoint this chat will use. Once you send the first message the
+            chat is locked to it.
+        </MudText>
+        <MudList T="Guid" SelectedValue="_selected" SelectedValueChanged="OnSelectionChanged" Dense="true">
+            @foreach (var ep in Endpoints)
+            {
+                <MudListItem T="Guid" Value="@ep.Id" Icon="@Icons.Material.Filled.Cloud">
+                    <div class="d-flex align-center" style="gap: 8px;">
+                        <div class="flex-grow-1">
+                            @if (!string.IsNullOrWhiteSpace(ep.Name))
+                            {
+                                <MudText Typo="Typo.body2"><b>@ep.Name</b></MudText>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2"><b>@ep.DisplayLabel</b></MudText>
+                            }
+                            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+                                <code>@ep.BaseUrl</code>
+                                @if (!string.IsNullOrWhiteSpace(ep.Model))
+                                {
+                                    <text> · <code>@ep.Model</code></text>
+                                }
+                            </MudText>
+                        </div>
+                        @if (ep.Id == DefaultId)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                                Default
+                            </MudChip>
+                        }
+                    </div>
+                </MudListItem>
+            }
+        </MudList>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Confirm">
+            Use endpoint
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public IReadOnlyList<EndpointSettings> Endpoints { get; set; } = Array.Empty<EndpointSettings>();
+    [Parameter] public Guid DefaultId { get; set; }
+    [Parameter] public Guid? InitiallySelectedId { get; set; }
+
+    private Guid _selected;
+
+    protected override void OnInitialized()
+    {
+        _selected = InitiallySelectedId ?? DefaultId;
+    }
+
+    private void OnSelectionChanged(Guid value) => _selected = value;
+
+    private void Cancel() => Dialog.Cancel();
+
+    private void Confirm() => Dialog.Close(DialogResult.Ok(_selected));
+}

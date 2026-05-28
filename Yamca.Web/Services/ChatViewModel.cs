@@ -59,6 +59,28 @@ public sealed class ChatViewModel : IDisposable
 
     public int Id { get; }
 
+    /// <summary>User's preferred endpoint id for this chat. Settable while the chat
+    /// has no turns; ignored once <see cref="LockedEndpoint"/> is set. <c>null</c>
+    /// means "use whatever is configured as Default at first-send time".</summary>
+    public Guid? SelectedEndpointId { get; private set; }
+
+    /// <summary>Endpoint snapshot taken on the first send. Survives later edits or
+    /// deletion of the endpoint in Settings so an active chat keeps working.</summary>
+    public EndpointSettings? LockedEndpoint { get; private set; }
+
+    public bool IsEndpointLocked => LockedEndpoint is not null;
+
+    /// <summary>Sets the user's endpoint pick for this chat. Caller is responsible
+    /// for refusing the call once <see cref="IsEndpointLocked"/> is true; we just
+    /// ignore it to keep the lock invariant.</summary>
+    public void SelectEndpoint(Guid id)
+    {
+        if (IsEndpointLocked) return;
+        if (SelectedEndpointId == id) return;
+        SelectedEndpointId = id;
+        Raise();
+    }
+
     /// <summary>Set when this session is bound to a git worktree. Drives the
     /// Merge / Delete branch toolbar buttons and the tile-header branch label.</summary>
     public WorktreeInfo? WorktreeInfo { get; private set; }
@@ -206,6 +228,7 @@ public sealed class ChatViewModel : IDisposable
         Turns.Clear();
         Approvals.Clear();
         _loop = null;     // forces a fresh ChatSession (system prompt re-rendered) on next send
+        LockedEndpoint = null;  // a cleared chat is a fresh chat — re-pick endpoint on next send
         _lastReportedPromptTokens = null;
         _lastReportedCompletionTokens = null;
         Error = null;
@@ -216,7 +239,13 @@ public sealed class ChatViewModel : IDisposable
     {
         if (_loop is not null) return;
 
-        var endpoint = _settings.Endpoint;
+        // Snapshot the chosen endpoint so later edits/deletes in Settings don't
+        // disrupt this chat. Once locked, every subsequent turn uses the snapshot.
+        var endpoints = _settings.Endpoints;
+        var resolved = SelectedEndpointId is Guid id ? endpoints.FindById(id) : null;
+        var endpoint = resolved ?? endpoints.Default;
+        LockedEndpoint = endpoint;
+
         var modelId = string.IsNullOrWhiteSpace(endpoint.Model) ? "local-model" : endpoint.Model;
         var baseUrl = endpoint.BaseUrl.EndsWith('/') ? endpoint.BaseUrl : endpoint.BaseUrl + "/";
 

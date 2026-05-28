@@ -20,7 +20,7 @@ public sealed class SessionSettings : ISessionSettings
 
     public ToolSettingsMap Project { get; private set; } = ToolSettingsMap.Empty;
     public ToolSettingsMap Global { get; private set; } = ToolSettingsMap.Empty;
-    public EndpointSettings Endpoint { get; private set; } = EndpointSettings.Default;
+    public EndpointsSettings Endpoints { get; private set; } = EndpointsSettings.CreateDefault();
     public string SystemPrompt { get; private set; } = DefaultSystemPrompt;
     public bool MarkdownEnabled { get; private set; } = true;
     public ReasoningDisplay ReasoningDisplay { get; private set; } = ReasoningDisplay.Collapsed;
@@ -38,10 +38,52 @@ public sealed class SessionSettings : ISessionSettings
 
     // --- mutation API (used by Settings page + IPermissionStore adapter) -----------
 
-    public void SetEndpoint(EndpointSettings endpoint)
+    /// <summary>Append a new endpoint. The first endpoint added to an empty list
+    /// becomes the default automatically.</summary>
+    public void AddEndpoint(EndpointSettings endpoint)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
-        Endpoint = endpoint;
+        var items = Endpoints.Items.Append(endpoint).ToList();
+        var defaultId = Endpoints.Items.Count == 0 ? endpoint.Id : Endpoints.DefaultId;
+        Endpoints = new EndpointsSettings(items, defaultId);
+        Changed?.Invoke(SettingsTier.Global);
+    }
+
+    /// <summary>Replace the endpoint with the matching <see cref="EndpointSettings.Id"/>.
+    /// Does nothing if no entry matches.</summary>
+    public void UpdateEndpoint(EndpointSettings endpoint)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+        var idx = -1;
+        for (var i = 0; i < Endpoints.Items.Count; i++)
+        {
+            if (Endpoints.Items[i].Id == endpoint.Id) { idx = i; break; }
+        }
+        if (idx < 0) return;
+        var items = Endpoints.Items.ToList();
+        items[idx] = endpoint;
+        Endpoints = Endpoints with { Items = items };
+        Changed?.Invoke(SettingsTier.Global);
+    }
+
+    /// <summary>Remove the endpoint with the given id. Refuses to remove the last
+    /// remaining endpoint. If the default is removed, the first remaining entry
+    /// becomes the new default.</summary>
+    public void RemoveEndpoint(Guid id)
+    {
+        if (Endpoints.Items.Count <= 1) return;
+        var items = Endpoints.Items.Where(e => e.Id != id).ToList();
+        if (items.Count == Endpoints.Items.Count) return; // nothing matched
+        var defaultId = Endpoints.DefaultId == id ? items[0].Id : Endpoints.DefaultId;
+        Endpoints = new EndpointsSettings(items, defaultId);
+        Changed?.Invoke(SettingsTier.Global);
+    }
+
+    public void SetDefaultEndpoint(Guid id)
+    {
+        if (Endpoints.DefaultId == id) return;
+        if (Endpoints.FindById(id) is null) return;
+        Endpoints = Endpoints with { DefaultId = id };
         Changed?.Invoke(SettingsTier.Global);
     }
 
@@ -142,10 +184,7 @@ public sealed class SessionSettings : ISessionSettings
         var firstRun = string.IsNullOrWhiteSpace(json);
         var blob = TryDeserialize<GlobalBlob>(json) ?? new GlobalBlob();
 
-        Endpoint = new EndpointSettings(
-            BaseUrl: blob.Endpoint?.BaseUrl ?? EndpointSettings.Default.BaseUrl,
-            ApiKey:  blob.Endpoint?.ApiKey  ?? EndpointSettings.Default.ApiKey,
-            Model:   blob.Endpoint?.Model   ?? EndpointSettings.Default.Model);
+        Endpoints = EndpointsFromBlob(blob);
 
         SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
         MarkdownEnabled = blob.MarkdownEnabled ?? true;
@@ -190,7 +229,8 @@ public sealed class SessionSettings : ISessionSettings
     {
         var blob = new GlobalBlob
         {
-            Endpoint = new EndpointDto { BaseUrl = Endpoint.BaseUrl, ApiKey = Endpoint.ApiKey, Model = Endpoint.Model },
+            Endpoints = EndpointsToDto(Endpoints, includeApiKeys: true),
+            DefaultEndpointId = Endpoints.DefaultId,
             SystemPrompt = SystemPrompt,
             MarkdownEnabled = MarkdownEnabled,
             ReasoningDisplay = ReasoningDisplay,
@@ -214,13 +254,6 @@ public sealed class SessionSettings : ISessionSettings
 
     public string ExportGlobal(bool includeApiKey)
     {
-        var endpointDto = new EndpointDto
-        {
-            BaseUrl = Endpoint.BaseUrl,
-            ApiKey = includeApiKey ? Endpoint.ApiKey : string.Empty,
-            Model = Endpoint.Model,
-        };
-
         var envelope = new SettingsExportEnvelope
         {
             Format = ExportFormat,
@@ -229,7 +262,8 @@ public sealed class SessionSettings : ISessionSettings
             ExportedAt = DateTimeOffset.UtcNow,
             Global = new GlobalBlob
             {
-                Endpoint = endpointDto,
+                Endpoints = EndpointsToDto(Endpoints, includeApiKeys: includeApiKey),
+                DefaultEndpointId = Endpoints.DefaultId,
                 SystemPrompt = SystemPrompt,
                 MarkdownEnabled = MarkdownEnabled,
                 ReasoningDisplay = ReasoningDisplay,
@@ -278,10 +312,7 @@ public sealed class SessionSettings : ISessionSettings
 
     private void ApplyGlobalBlob(GlobalBlob blob)
     {
-        Endpoint = new EndpointSettings(
-            BaseUrl: blob.Endpoint?.BaseUrl ?? EndpointSettings.Default.BaseUrl,
-            ApiKey:  blob.Endpoint?.ApiKey  ?? EndpointSettings.Default.ApiKey,
-            Model:   blob.Endpoint?.Model   ?? EndpointSettings.Default.Model);
+        Endpoints = EndpointsFromBlob(blob);
         SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
         MarkdownEnabled = blob.MarkdownEnabled ?? true;
         ReasoningDisplay = blob.ReasoningDisplay ?? ReasoningDisplay.Collapsed;
@@ -348,7 +379,8 @@ public sealed class SessionSettings : ISessionSettings
 
     private sealed class GlobalBlob
     {
-        public EndpointDto? Endpoint { get; set; }
+        public List<EndpointDto>? Endpoints { get; set; }
+        public Guid? DefaultEndpointId { get; set; }
         public string? SystemPrompt { get; set; }
         public bool? MarkdownEnabled { get; set; }
         public ReasoningDisplay? ReasoningDisplay { get; set; }
@@ -367,10 +399,44 @@ public sealed class SessionSettings : ISessionSettings
 
     private sealed class EndpointDto
     {
+        public Guid? Id { get; set; }
+        public string? Name { get; set; }
         public string? BaseUrl { get; set; }
         public string? ApiKey { get; set; }
         public string? Model { get; set; }
     }
+
+    private static EndpointsSettings EndpointsFromBlob(GlobalBlob blob)
+    {
+        if (blob.Endpoints is not { Count: > 0 } list)
+            return EndpointsSettings.CreateDefault();
+
+        var items = new List<EndpointSettings>(list.Count);
+        foreach (var dto in list)
+        {
+            items.Add(new EndpointSettings(
+                Id: dto.Id ?? Guid.NewGuid(),
+                Name: string.IsNullOrWhiteSpace(dto.Name) ? null : dto.Name.Trim(),
+                BaseUrl: dto.BaseUrl ?? "",
+                ApiKey: dto.ApiKey ?? "",
+                Model: dto.Model ?? ""));
+        }
+
+        var defaultId = blob.DefaultEndpointId is Guid id && items.Any(e => e.Id == id)
+            ? id
+            : items[0].Id;
+        return new EndpointsSettings(items, defaultId);
+    }
+
+    private static List<EndpointDto> EndpointsToDto(EndpointsSettings endpoints, bool includeApiKeys) =>
+        endpoints.Items.Select(e => new EndpointDto
+        {
+            Id = e.Id,
+            Name = string.IsNullOrWhiteSpace(e.Name) ? null : e.Name,
+            BaseUrl = e.BaseUrl,
+            ApiKey = includeApiKeys ? e.ApiKey : string.Empty,
+            Model = e.Model,
+        }).ToList();
 
     private sealed class SettingsExportEnvelope
     {
