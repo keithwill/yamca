@@ -1,6 +1,8 @@
 @page "/settings"
 @rendermode InteractiveServer
 @implements IDisposable
+@using System.Text.Json
+@using System.Text.Json.Serialization
 @using Yamca.Agent.Chat
 
 <PageTitle>Settings — yamca</PageTitle>
@@ -512,22 +514,138 @@ else
     <MudDialog @bind-Visible="_mcpAddOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true })">
         <TitleContent>@(_mcpEditOriginalId is null ? "Add MCP server" : $"Edit MCP server — {_mcpEditOriginalId}")</TitleContent>
         <DialogContent>
-            <MudText Typo="Typo.caption" Class="mb-2">
-                Paste the JSON snippet from the server's README. Either the wrapped form
-                (<code>{ "id": ..., "config": { ... } }</code>) or the bare <code>mcp.json</code>
-                shape works. Supply <code>command</code>/<code>args</code> for stdio, or
-                <code>url</code>/<code>headers</code> for streamable HTTP / SSE.
-                Optional <code>timeoutSeconds</code> overrides the 30s per-call default.
-            </MudText>
             <MudTextField T="string" @bind-Value="_mcpAddId"
                           Label="Id (slug)"
-                          HelperText="ASCII letters, digits, hyphen, or underscore. Leave empty if the pasted JSON already has an &quot;id&quot; field."
+                          HelperText="ASCII letters, digits, hyphen, or underscore. Used in tool names."
                           Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
                           Placeholder="filesystem" />
-            <MudTextField T="string" @bind-Value="_mcpAddJson"
-                          Label="Config JSON"
-                          Variant="Variant.Outlined" Lines="12"
-                          Placeholder="@McpJsonPlaceholder" />
+
+            @if (_mcpEditOriginalId is null)
+            {
+                <MudSelect T="McpAddType" Value="_mcpAddType"
+                           ValueChanged="@((McpAddType v) => _mcpAddType = v)"
+                           Label="Type"
+                           Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense" Class="mb-3">
+                    <MudSelectItem T="McpAddType" Value="McpAddType.Command">Command (stdio)</MudSelectItem>
+                    <MudSelectItem T="McpAddType" Value="McpAddType.Url">URL (streamable HTTP / SSE)</MudSelectItem>
+                    <MudSelectItem T="McpAddType" Value="McpAddType.Json">JSON (paste from README)</MudSelectItem>
+                </MudSelect>
+            }
+
+            @switch (_mcpAddType)
+            {
+                case McpAddType.Command:
+                    <MudTextField T="string" @bind-Value="_mcpFormCommand"
+                                  Label="Command" Required="true"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
+                                  Placeholder="npx" />
+                    <MudTextField T="string" @bind-Value="_mcpFormArgs"
+                                  Label="Args (optional)"
+                                  HelperText="One argument per line. Empty lines are ignored."
+                                  Variant="Variant.Outlined" Lines="4" Class="mb-2"
+                                  Placeholder="@McpArgsPlaceholder" />
+                    <MudTextField T="string" @bind-Value="_mcpFormCwd"
+                                  Label="Working directory (optional)"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+
+                    <MudText Typo="Typo.subtitle2" Class="mt-2 mb-1">Environment variables (optional)</MudText>
+                    @if (_mcpFormEnv.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)" Class="mb-1">
+                            None.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <div class="mb-1">
+                            @foreach (var row in _mcpFormEnv)
+                            {
+                                <div @key="row.Id" class="d-flex align-center mb-1" style="gap: 4px;">
+                                    <MudTextField T="string" @bind-Value="row.Key"
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                  Class="flex-grow-1" Placeholder="NAME" />
+                                    <MudTextField T="string" @bind-Value="row.Value"
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                  Class="flex-grow-1" Placeholder="value" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                   OnClick="@(() => RemoveMcpEnvRow(row))"
+                                                   aria-label="Remove variable" />
+                                </div>
+                            }
+                        </div>
+                    }
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="AddMcpEnvRow" Size="Size.Small" Class="mb-3">
+                        Add variable
+                    </MudButton>
+
+                    <MudNumericField T="int?" @bind-Value="_mcpFormTimeoutSeconds"
+                                     Label="Call timeout (seconds, optional)"
+                                     HelperText="Overrides the 30s per-call default. 1–3600."
+                                     Min="1" Max="3600"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-1" />
+                    break;
+
+                case McpAddType.Url:
+                    <MudTextField T="string" @bind-Value="_mcpFormUrl"
+                                  Label="URL" Required="true"
+                                  HelperText="Absolute http:// or https:// URL."
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
+                                  Placeholder="https://example.com/mcp" />
+
+                    <MudText Typo="Typo.subtitle2" Class="mt-2 mb-1">Headers (optional)</MudText>
+                    @if (_mcpFormHeaders.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)" Class="mb-1">
+                            None.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <div class="mb-1">
+                            @foreach (var row in _mcpFormHeaders)
+                            {
+                                <div @key="row.Id" class="d-flex align-center mb-1" style="gap: 4px;">
+                                    <MudTextField T="string" @bind-Value="row.Key"
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                  Class="flex-grow-1" Placeholder="Authorization" />
+                                    <MudTextField T="string" @bind-Value="row.Value"
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                  Class="flex-grow-1" Placeholder="Bearer ..." />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                   OnClick="@(() => RemoveMcpHeaderRow(row))"
+                                                   aria-label="Remove header" />
+                                </div>
+                            }
+                        </div>
+                    }
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="AddMcpHeaderRow" Size="Size.Small" Class="mb-3">
+                        Add header
+                    </MudButton>
+
+                    <MudNumericField T="int?" @bind-Value="_mcpFormTimeoutSeconds"
+                                     Label="Call timeout (seconds, optional)"
+                                     HelperText="Overrides the 30s per-call default. 1–3600."
+                                     Min="1" Max="3600"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-1" />
+                    break;
+
+                case McpAddType.Json:
+                    <MudText Typo="Typo.caption" Class="mb-2">
+                        Paste the JSON snippet from the server's README. Either the wrapped form
+                        (<code>{ "id": ..., "config": { ... } }</code>) or the bare <code>mcp.json</code>
+                        shape works. Supply <code>command</code>/<code>args</code> for stdio, or
+                        <code>url</code>/<code>headers</code> for streamable HTTP / SSE.
+                        Optional <code>timeoutSeconds</code> overrides the 30s per-call default.
+                    </MudText>
+                    <MudTextField T="string" @bind-Value="_mcpAddJson"
+                                  Label="Config JSON"
+                                  Variant="Variant.Outlined" Lines="12"
+                                  Placeholder="@McpJsonPlaceholder" />
+                    break;
+            }
+
             @if (!string.IsNullOrEmpty(_mcpAddError))
             {
                 <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_mcpAddError</MudAlert>
@@ -535,7 +653,9 @@ else
         </DialogContent>
         <DialogActions>
             <MudButton OnClick="@(() => _mcpAddOpen = false)">Cancel</MudButton>
-            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ConfirmMcpDialog">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       Disabled="@(!CanSubmitMcpDialog())"
+                       OnClick="ConfirmMcpDialog">
                 @(_mcpEditOriginalId is null ? "Add" : "Save")
             </MudButton>
         </DialogActions>
@@ -813,6 +933,33 @@ else
     private string? _mcpAddError;
     private string? _mcpEditOriginalId;
 
+    private enum McpAddType { Command, Url, Json }
+    private McpAddType _mcpAddType = McpAddType.Command;
+
+    private string _mcpFormCommand = string.Empty;
+    private string _mcpFormArgs = string.Empty;
+    private string _mcpFormCwd = string.Empty;
+    private readonly List<KvRow> _mcpFormEnv = new();
+
+    private string _mcpFormUrl = string.Empty;
+    private readonly List<KvRow> _mcpFormHeaders = new();
+
+    private int? _mcpFormTimeoutSeconds;
+
+    private sealed class KvRow
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public string Key { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+
+    private static readonly JsonSerializerOptions s_mcpFormJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        WriteIndented = false,
+    };
+
     private bool _mcpLogOpen;
     private string? _mcpLogServerId;
 
@@ -820,6 +967,8 @@ else
     private bool _mcpDiagRunning;
     private string? _mcpDiagServerId;
     private McpDiagnostics.DiagnosticsResult? _mcpDiagResult;
+
+    private const string McpArgsPlaceholder = "-y\n@modelcontextprotocol/server-filesystem\n.";
 
     private const string McpJsonPlaceholder = @"{
   ""command"": ""npx"",
@@ -836,6 +985,8 @@ else
         _mcpAddId = string.Empty;
         _mcpAddJson = string.Empty;
         _mcpAddError = null;
+        _mcpAddType = McpAddType.Command;
+        ResetMcpFormFields();
         _mcpAddOpen = true;
     }
 
@@ -845,21 +996,64 @@ else
         if (existing is null) return;
         _mcpEditOriginalId = id;
         _mcpAddId = id;
-        _mcpAddJson = McpServerConfigJson.SerializeSingle(existing);
+        _mcpAddJson = string.Empty;
         _mcpAddError = null;
+
+        ResetMcpFormFields();
+        if (existing.Stdio is { } s)
+        {
+            _mcpAddType = McpAddType.Command;
+            _mcpFormCommand = s.Command;
+            _mcpFormArgs = string.Join('\n', s.Args);
+            _mcpFormCwd = s.WorkingDirectory ?? string.Empty;
+            if (s.Env is not null)
+            {
+                foreach (var kv in s.Env)
+                    _mcpFormEnv.Add(new KvRow { Key = kv.Key, Value = kv.Value });
+            }
+        }
+        else if (existing.Http is { } h)
+        {
+            _mcpAddType = McpAddType.Url;
+            _mcpFormUrl = h.Url;
+            if (h.Headers is not null)
+            {
+                foreach (var kv in h.Headers)
+                    _mcpFormHeaders.Add(new KvRow { Key = kv.Key, Value = kv.Value });
+            }
+        }
+        _mcpFormTimeoutSeconds = existing.CallTimeoutSeconds;
         _mcpAddOpen = true;
+    }
+
+    private void ResetMcpFormFields()
+    {
+        _mcpFormCommand = string.Empty;
+        _mcpFormArgs = string.Empty;
+        _mcpFormCwd = string.Empty;
+        _mcpFormEnv.Clear();
+        _mcpFormUrl = string.Empty;
+        _mcpFormHeaders.Clear();
+        _mcpFormTimeoutSeconds = null;
     }
 
     private async Task ConfirmMcpDialog()
     {
+        string json = _mcpAddType switch
+        {
+            McpAddType.Command => BuildCommandJson(),
+            McpAddType.Url => BuildUrlJson(),
+            _ => _mcpAddJson,
+        };
+
         McpConfigParseResult result;
         if (_mcpEditOriginalId is { } original)
         {
-            result = await McpStore.ReplaceAsync(original, _mcpAddId, _mcpAddJson);
+            result = await McpStore.ReplaceAsync(original, _mcpAddId, json);
         }
         else
         {
-            result = await McpStore.AddAsync(_mcpAddId, _mcpAddJson);
+            result = await McpStore.AddAsync(_mcpAddId, json);
         }
         if (result.Config is null)
         {
@@ -871,6 +1065,63 @@ else
         _mcpEditOriginalId = null;
         Snackbar.Add($"MCP server '{result.Config.Id}' {verb}.", Severity.Success);
     }
+
+    private string BuildCommandJson()
+    {
+        var config = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["command"] = (_mcpFormCommand ?? string.Empty).Trim(),
+        };
+
+        var args = (_mcpFormArgs ?? string.Empty)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(a => a.TrimEnd('\r').Trim())
+            .Where(a => a.Length > 0)
+            .ToList();
+        if (args.Count > 0) config["args"] = args;
+
+        var env = _mcpFormEnv
+            .Where(r => !string.IsNullOrWhiteSpace(r.Key))
+            .ToDictionary(r => r.Key.Trim(), r => r.Value ?? string.Empty, StringComparer.Ordinal);
+        if (env.Count > 0) config["env"] = env;
+
+        if (!string.IsNullOrWhiteSpace(_mcpFormCwd)) config["cwd"] = _mcpFormCwd.Trim();
+        if (_mcpFormTimeoutSeconds is { } t) config["timeoutSeconds"] = t;
+
+        var wrapper = new Dictionary<string, object?>(StringComparer.Ordinal) { ["config"] = config };
+        return JsonSerializer.Serialize(wrapper, s_mcpFormJsonOptions);
+    }
+
+    private string BuildUrlJson()
+    {
+        var config = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["url"] = (_mcpFormUrl ?? string.Empty).Trim(),
+        };
+
+        var headers = _mcpFormHeaders
+            .Where(r => !string.IsNullOrWhiteSpace(r.Key))
+            .ToDictionary(r => r.Key.Trim(), r => r.Value ?? string.Empty, StringComparer.Ordinal);
+        if (headers.Count > 0) config["headers"] = headers;
+
+        if (_mcpFormTimeoutSeconds is { } t) config["timeoutSeconds"] = t;
+
+        var wrapper = new Dictionary<string, object?>(StringComparer.Ordinal) { ["config"] = config };
+        return JsonSerializer.Serialize(wrapper, s_mcpFormJsonOptions);
+    }
+
+    private bool CanSubmitMcpDialog() => _mcpAddType switch
+    {
+        McpAddType.Command => !string.IsNullOrWhiteSpace(_mcpFormCommand),
+        McpAddType.Url => !string.IsNullOrWhiteSpace(_mcpFormUrl),
+        McpAddType.Json => !string.IsNullOrWhiteSpace(_mcpAddJson),
+        _ => false,
+    };
+
+    private void AddMcpEnvRow() => _mcpFormEnv.Add(new KvRow());
+    private void RemoveMcpEnvRow(KvRow row) => _mcpFormEnv.Remove(row);
+    private void AddMcpHeaderRow() => _mcpFormHeaders.Add(new KvRow());
+    private void RemoveMcpHeaderRow(KvRow row) => _mcpFormHeaders.Remove(row);
 
     private async Task RemoveMcpServer(string id)
     {
