@@ -23,6 +23,7 @@ public sealed class ChatViewModel : IDisposable
     private readonly IHttpClientFactory _httpFactory;
     private readonly EndpointHealthService _endpointHealth;
     private readonly LoadedToolSet _loadedTools;
+    private readonly ContextCompactor _compactor;
 
     private AgentLoop? _loop;
     private CancellationTokenSource? _runCts;
@@ -42,7 +43,8 @@ public sealed class ChatViewModel : IDisposable
         InstructionFilesLoader instructionLoader,
         IHttpClientFactory httpFactory,
         EndpointHealthService endpointHealth,
-        LoadedToolSet loadedTools)
+        LoadedToolSet loadedTools,
+        ContextCompactor compactor)
     {
         Id = id;
         _workspace = workspace;
@@ -55,6 +57,7 @@ public sealed class ChatViewModel : IDisposable
         _httpFactory = httpFactory;
         _endpointHealth = endpointHealth;
         _loadedTools = loadedTools;
+        _compactor = compactor;
     }
 
     public int Id { get; }
@@ -110,6 +113,11 @@ public sealed class ChatViewModel : IDisposable
     public bool IsRunning { get; private set; }
     public string? Error { get; private set; }
 
+    /// <summary>True while either an agent turn is running or a (manual or
+    /// auto) compaction is in flight. UI uses this to gate the composer so the
+    /// user can't start a second concurrent operation against the session.</summary>
+    public bool IsBusy => IsRunning || IsCompacting;
+
     /// <summary>Best-available count of input tokens currently in the conversation.
     /// Prefers the server-reported <c>prompt_tokens</c> from the last streaming
     /// usage chunk (accurate, but lags new messages until the next response).
@@ -137,6 +145,25 @@ public sealed class ChatViewModel : IDisposable
 
     /// <summary>Short label for the source of <see cref="MaxContextTokens"/>, for tooltips.</summary>
     public string? MaxContextSource { get; private set; }
+
+    /// <summary>True while a summarization round-trip is in flight. The chat panel
+    /// uses this to surface a snackbar so the user knows the next turn is delayed
+    /// for a reason.</summary>
+    public bool IsCompacting { get; private set; }
+
+    /// <summary>Set when the most recent compaction failed; cleared on the next
+    /// successful compaction or chat clear.</summary>
+    public string? CompactionError { get; private set; }
+
+    /// <summary>UI turn index above which an "earlier turns summarized" divider
+    /// should be drawn. Updated after each successful compaction.</summary>
+    public int? CompactionBoundaryUiTurnIndex { get; private set; }
+
+    /// <summary>Text of the most recent compaction summary. The divider in the
+    /// chat panel is clickable to surface this so the user can verify what was
+    /// preserved (and what was lost) across the boundary. Replaced on each new
+    /// compaction; cleared on chat reset.</summary>
+    public string? LastCompactionSummary { get; private set; }
 
     /// <summary>Fired on any state mutation. The Blazor page hooks this and calls
     /// <c>InvokeAsync(StateHasChanged)</c> to re-render on the renderer dispatcher.</summary>
@@ -166,6 +193,8 @@ public sealed class ChatViewModel : IDisposable
                 Apply(turn, ev);
                 Raise();
             }
+
+            await MaybeCompactAsync(ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -232,7 +261,96 @@ public sealed class ChatViewModel : IDisposable
         _lastReportedPromptTokens = null;
         _lastReportedCompletionTokens = null;
         Error = null;
+        IsCompacting = false;
+        CompactionError = null;
+        CompactionBoundaryUiTurnIndex = null;
+        LastCompactionSummary = null;
         Raise();
+    }
+
+    private async Task MaybeCompactAsync(CancellationToken ct)
+    {
+        if (!_settings.AutoCompactionEnabled) return;
+        if (MaxContextTokens is not > 0) return;
+        if (_loop is null || LockedEndpoint is null) return;
+
+        var used = CurrentContextTokens;
+        var ratio = (double)used / MaxContextTokens.Value;
+        if (ratio < _settings.AutoCompactionThresholdPercent / 100.0) return;
+
+        var keepTurns = _settings.AutoCompactionKeepRecentTurns;
+        var keepFrom = _loop.Session.FindKeepFromIndexForRecentTurns(keepTurns);
+        if (keepFrom < 0) return; // not enough turns yet
+
+        // Inside SendAsync's try{} so OperationCanceledException bubbles to its
+        // existing cancel handler and any other exception lands in CompactionError.
+        await RunCompactionAsync(keepTurns, keepFrom, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Manual compaction triggered from the composer. Returns <c>null</c> on
+    /// success (or after a recoverable no-op), or a human-readable reason when the
+    /// request couldn't even start. Failures during the LLM round-trip surface via
+    /// <see cref="CompactionError"/> and the existing snackbar wiring.</summary>
+    public async Task<string?> CompactNowAsync(int keepRecentTurns)
+    {
+        if (IsBusy) return "Chat is busy — wait for the current turn to finish.";
+        if (_loop is null || LockedEndpoint is null) return "Send a message first — there's nothing to compact yet.";
+
+        if (keepRecentTurns < 1) keepRecentTurns = 1;
+
+        var keepFrom = _loop.Session.FindKeepFromIndexForRecentTurns(keepRecentTurns);
+        if (keepFrom < 0)
+            return $"Not enough earlier turns to summarize — need more than {keepRecentTurns} user message(s) in history.";
+
+        _runCts = new CancellationTokenSource();
+        var ct = _runCts.Token;
+        try
+        {
+            await RunCompactionAsync(keepRecentTurns, keepFrom, ct).ConfigureAwait(false);
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            return null; // Cancellation already snackbar'd via CompactionError or treated as quiet stop.
+        }
+        finally
+        {
+            _runCts?.Dispose();
+            _runCts = null;
+        }
+    }
+
+    private async Task RunCompactionAsync(int keepTurns, int keepFromMessageIndex, CancellationToken ct)
+    {
+        IsCompacting = true;
+        CompactionError = null;
+        Raise();
+        try
+        {
+            var summary = await _compactor
+                .SummarizeAsync(_loop!.Session, LockedEndpoint!, keepFromMessageIndex, ct)
+                .ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(summary))
+            {
+                _loop.Session.Compact(summary, keepFromMessageIndex);
+                _lastReportedPromptTokens = null;
+                CompactionBoundaryUiTurnIndex = Math.Max(0, Turns.Count - keepTurns);
+                LastCompactionSummary = summary;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            CompactionError = ex.Message;
+        }
+        finally
+        {
+            IsCompacting = false;
+            Raise();
+        }
     }
 
     private void EnsureStarted()

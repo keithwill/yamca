@@ -24,7 +24,7 @@
             <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
                           Lines="3" Variant="Variant.Text" Immediate="true"
                           Class="yamca-composer-input"
-                          OnKeyDown="OnKeyDown" Disabled="Chat.IsRunning" />
+                          OnKeyDown="OnKeyDown" Disabled="Chat.IsBusy" />
             <div class="yamca-composer-toolbar">
                 <div class="yamca-composer-left">
                     <MudFileUpload T="IReadOnlyList<IBrowserFile>"
@@ -34,7 +34,7 @@
                             <MudIconButton Icon="@Icons.Material.Filled.AttachFile"
                                            Color="Color.Default" Variant="Variant.Text"
                                            Size="Size.Small"
-                                           Disabled="Chat.IsRunning"
+                                           Disabled="Chat.IsBusy"
                                            OnClick="@(() => fileUpload.OpenFilePickerAsync())"
                                            aria-label="Attach file" />
                         </CustomContent>
@@ -47,7 +47,7 @@
                                 <MudIconButton Icon="@Icons.Material.Filled.Cloud"
                                                Color="Color.Default" Variant="Variant.Text"
                                                Size="Size.Small"
-                                               Disabled="@(Chat.IsRunning || Chat.IsEndpointLocked)"
+                                               Disabled="@(Chat.IsBusy || Chat.IsEndpointLocked)"
                                                OnClick="OnEndpointPickerClicked"
                                                aria-label="Select endpoint" />
                             </span>
@@ -58,9 +58,19 @@
                             <MudIconButton Icon="@Icons.Material.Filled.CallSplit"
                                            Color="Color.Default" Variant="Variant.Text"
                                            Size="Size.Small"
-                                           Disabled="@(Chat.IsRunning || Chat.IsGitRepository != true)"
+                                           Disabled="@(Chat.IsBusy || Chat.IsGitRepository != true)"
                                            OnClick="OnBranchClicked"
                                            aria-label="Branch Code" />
+                        </span>
+                    </MudTooltip>
+                    <MudTooltip Text="Compact context now…">
+                        <span>
+                            <MudIconButton Icon="@Icons.Material.Filled.UnfoldLess"
+                                           Color="Color.Default" Variant="Variant.Text"
+                                           Size="Size.Small"
+                                           Disabled="@(Chat.IsBusy || Chat.Turns.Count == 0)"
+                                           OnClick="OpenCompactDialog"
+                                           aria-label="Compact context" />
                         </span>
                     </MudTooltip>
                     @if (Chat.WorktreeInfo is not null)
@@ -99,12 +109,13 @@
                             @ContextBadgeText()
                         </div>
                     }
-                    @if (Chat.IsRunning)
+                    @if (Chat.IsBusy)
                     {
                         <MudIconButton Variant="Variant.Filled" Color="Color.Error"
                                        Size="Size.Small"
                                        Icon="@Icons.Material.Filled.Stop"
-                                       OnClick="OnCancel" aria-label="Stop" />
+                                       OnClick="OnCancel"
+                                       aria-label="@(Chat.IsCompacting ? "Cancel compaction" : "Stop")" />
                     }
                     else
                     {
@@ -124,11 +135,59 @@
         </div>
     </div>
 
+    <MudDialog @bind-Visible="_compactDialogOpen"
+               Options="@(new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true })">
+        <TitleContent>Compact context now</TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.body2" Class="mb-3">
+                Summarize earlier turns into the system message and keep only the most recent N user turns verbatim. The summary replaces the original messages in what is sent to the model — your visible chat log is unchanged.
+            </MudText>
+            <MudNumericField T="int" @bind-Value="_compactKeepTurns"
+                             Label="Keep recent turns"
+                             Min="1" Max="50" Step="1"
+                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _compactDialogOpen = false)">Cancel</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ConfirmCompactNow">
+                Compact
+            </MudButton>
+        </DialogActions>
+    </MudDialog>
+
+    <MudDialog @bind-Visible="_summaryDialogOpen"
+               Options="@(new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true })">
+        <TitleContent>Compaction summary</TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.caption" Class="mb-2" Style="color:var(--mud-palette-text-secondary)">
+                Model-generated summary of the turns above this divider. This text replaced the original messages in the conversation history that is sent to the model on subsequent turns.
+            </MudText>
+            <pre style="white-space: pre-wrap; word-break: break-word; font-family: var(--mud-typography-body2-family); margin: 0; max-height: 60vh; overflow: auto;">@Chat.LastCompactionSummary</pre>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _summaryDialogOpen = false)">Close</MudButton>
+        </DialogActions>
+    </MudDialog>
+
     <div class="yamca-scroll" @ref="_scrollContainer">
         <MudContainer MaxWidth="MaxWidth.Large" Class="pa-2">
-            @foreach (var turn in Chat.Turns)
+            @for (var i = 0; i < Chat.Turns.Count; i++)
             {
-                <ChatTurnView Turn="turn" />
+                if (Chat.CompactionBoundaryUiTurnIndex is int boundary && i == boundary && boundary > 0)
+                {
+                    <div class="d-flex align-center my-3" style="gap: 8px;">
+                        <span style="flex: 1 1 0; border-top: 1px solid var(--mud-palette-divider);"></span>
+                        <MudButton Variant="Variant.Text" Size="Size.Small"
+                                   Disabled="@(string.IsNullOrEmpty(Chat.LastCompactionSummary))"
+                                   StartIcon="@Icons.Material.Filled.UnfoldMore"
+                                   OnClick="OpenCompactionSummary"
+                                   Style="flex-shrink: 0;">
+                            Chat summarized
+                        </MudButton>
+                        <span style="flex: 1 1 0; border-top: 1px solid var(--mud-palette-divider);"></span>
+                    </div>
+                }
+                <ChatTurnView Turn="Chat.Turns[i]" />
             }
 
             @foreach (var approval in Chat.Approvals.ToList())
@@ -155,6 +214,8 @@
     [Inject] private IDialogService Dialogs { get; set; } = default!;
     [Inject] private NavigationManager Nav { get; set; } = default!;
     [Inject] private ISessionSettings Session { get; set; } = default!;
+    [Inject] private SessionSettings SessionConcrete { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     [Parameter, EditorRequired] public ChatViewModel Chat { get; set; } = default!;
     [Parameter] public bool ShowHeader { get; set; }
@@ -166,6 +227,11 @@
     private ElementReference _scrollContainer;
     private readonly List<Attachment> _attachments = new();
     private string? _attachError;
+    private bool _wasCompacting;
+    private Snackbar? _compactingSnackbar;
+    private bool _summaryDialogOpen;
+    private bool _compactDialogOpen;
+    private int _compactKeepTurns = 4;
 
     private const long MaxAttachmentBytes = 2 * 1024 * 1024; // 2 MB per file
     private const string AttachAccept =
@@ -312,7 +378,39 @@
         Nav.NavigateTo("/");
     }
 
-    private void OnChanged() => InvokeAsync(StateHasChanged);
+    private void OnChanged()
+    {
+        DetectCompactionTransition();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void DetectCompactionTransition()
+    {
+        var isNow = Chat.IsCompacting;
+        if (isNow == _wasCompacting) return;
+
+        if (isNow)
+        {
+            _compactingSnackbar = Snackbar.Add(
+                "Compacting context…",
+                Severity.Info,
+                config => config.RequireInteraction = true);
+        }
+        else
+        {
+            if (_compactingSnackbar is not null)
+            {
+                Snackbar.Remove(_compactingSnackbar);
+                _compactingSnackbar = null;
+            }
+
+            if (Chat.CompactionError is { } err)
+                Snackbar.Add($"Compaction failed: {err}", Severity.Warning);
+            else
+                Snackbar.Add("Earlier turns summarized.", Severity.Normal);
+        }
+        _wasCompacting = isNow;
+    }
 
     private async Task OnSend()
     {
@@ -383,6 +481,26 @@
     }
 
     private void OnCancel() => Chat.Cancel();
+
+    private void OpenCompactionSummary()
+    {
+        if (string.IsNullOrEmpty(Chat.LastCompactionSummary)) return;
+        _summaryDialogOpen = true;
+    }
+
+    private void OpenCompactDialog()
+    {
+        _compactKeepTurns = SessionConcrete.AutoCompactionKeepRecentTurns;
+        _compactDialogOpen = true;
+    }
+
+    private async Task ConfirmCompactNow()
+    {
+        _compactDialogOpen = false;
+        var reason = await Chat.CompactNowAsync(_compactKeepTurns);
+        if (reason is not null)
+            Snackbar.Add(reason, Severity.Warning);
+    }
 
     private Task OnCloseClicked() => OnClose.InvokeAsync();
 

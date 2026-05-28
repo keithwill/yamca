@@ -96,4 +96,67 @@ public sealed class ChatSession
         _messages.Add(new ChatMessage(ChatRole.Tool, content, ToolCallId: toolCallId));
         _estimatedChars += content.Length;
     }
+
+    private const string SummaryMarker = "\n\n[Summary of earlier conversation]: ";
+
+    /// <summary>Replace messages in the range [1, <paramref name="keepFromMessageIndex"/>)
+    /// with a model-generated summary appended to the system message. The system
+    /// message at index 0 grows to include (or have replaced) a marker section
+    /// containing <paramref name="summary"/>. Idempotent across re-compactions:
+    /// a prior summary block is stripped before the new one is appended so they
+    /// don't stack.</summary>
+    public void Compact(string summary, int keepFromMessageIndex)
+    {
+        ArgumentNullException.ThrowIfNull(summary);
+        if (keepFromMessageIndex < 1 || keepFromMessageIndex > _messages.Count)
+            throw new ArgumentOutOfRangeException(nameof(keepFromMessageIndex));
+
+        var originalSystem = _messages[0].Content;
+        var markerIdx = originalSystem.IndexOf(SummaryMarker, StringComparison.Ordinal);
+        var baseSystem = markerIdx >= 0 ? originalSystem[..markerIdx] : originalSystem;
+
+        var newSystemContent = baseSystem + SummaryMarker + summary;
+        _messages[0] = new ChatMessage(ChatRole.System, newSystemContent);
+
+        if (keepFromMessageIndex > 1)
+            _messages.RemoveRange(1, keepFromMessageIndex - 1);
+
+        RecomputeEstimatedChars();
+    }
+
+    /// <summary>Walks backward through the message log looking for the Nth-most-recent
+    /// user message and returns its index — that is the cutoff above which earlier
+    /// messages will be summarized. Returns <c>-1</c> when there is nothing to
+    /// summarize: either fewer than <paramref name="keepTurns"/> user turns exist,
+    /// or all existing user turns fall within the keep window (so the cutoff
+    /// would be the very first user message at index 1, with nothing earlier).
+    /// The result, when positive, is always <c>&gt;= 2</c>.</summary>
+    public int FindKeepFromIndexForRecentTurns(int keepTurns)
+    {
+        if (keepTurns < 1) keepTurns = 1;
+        var found = 0;
+        for (var i = _messages.Count - 1; i >= 1; i--)
+        {
+            if (_messages[i].Role != ChatRole.User) continue;
+            found++;
+            if (found == keepTurns)
+                return i >= 2 ? i : -1;
+        }
+        return -1;
+    }
+
+    private void RecomputeEstimatedChars()
+    {
+        var total = 0;
+        foreach (var m in _messages)
+        {
+            total += m.Content.Length;
+            if (m.ToolCalls is { Count: > 0 })
+            {
+                foreach (var tc in m.ToolCalls)
+                    total += tc.Name.Length + tc.ArgumentsJson.Length;
+            }
+        }
+        _estimatedChars = total;
+    }
 }

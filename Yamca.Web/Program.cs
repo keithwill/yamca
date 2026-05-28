@@ -123,6 +123,7 @@ builder.Services.AddScoped<IApprovalCoordinator, ApprovalCoordinator>();
 builder.Services.AddScoped<IPermissionStore, SessionSettingsPermissionStore>();
 
 builder.Services.AddScoped<EndpointHealthService>();
+builder.Services.AddTransient<ContextCompactor>();
 builder.Services.AddScoped<LocalStorage>();
 builder.Services.AddScoped<WorkspaceKey>();
 builder.Services.AddScoped<SettingsHydrator>();

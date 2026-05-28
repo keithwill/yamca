@@ -37,6 +37,30 @@ else
         <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
             How to display chain-of-thought emitted by reasoning models inside <code>&lt;think&gt;</code>, <code>&lt;thinking&gt;</code>, or <code>&lt;reasoning&gt;</code> tags (Qwen3, QwQ, DeepSeek-R1, etc.). Collapsed mode shows it live while streaming and auto-closes when the answer begins.
         </MudText>
+
+        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Context</MudText>
+        <MudSwitch T="bool" Value="Session.AutoCompactionEnabled"
+                   ValueChanged="@((bool v) => Session.SetAutoCompactionEnabled(v))"
+                   Color="Color.Primary"
+                   Label="Auto-compaction" />
+        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+            When the chat exceeds the threshold percentage of the endpoint's context window, summarize older turns into the system message and keep only the most recent N turns verbatim. Requires the backend to report its context size.
+        </MudText>
+
+        <div class="d-flex mt-2" style="gap: 12px;">
+            <MudNumericField T="int" Value="Session.AutoCompactionThresholdPercent"
+                             ValueChanged="@((int v) => Session.SetAutoCompactionThresholdPercent(v))"
+                             Label="Trigger at (%)"
+                             Min="1" Max="95" Step="5"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             Disabled="@(!Session.AutoCompactionEnabled)" />
+            <MudNumericField T="int" Value="Session.AutoCompactionKeepRecentTurns"
+                             ValueChanged="@((int v) => Session.SetAutoCompactionKeepRecentTurns(v))"
+                             Label="Keep recent turns"
+                             Min="1" Max="50" Step="1"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             Disabled="@(!Session.AutoCompactionEnabled)" />
+        </div>
     </MudPaper>
 
     <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">

@@ -25,6 +25,10 @@ public sealed class SessionSettings : ISessionSettings
     public bool MarkdownEnabled { get; private set; } = true;
     public ReasoningDisplay ReasoningDisplay { get; private set; } = ReasoningDisplay.Collapsed;
 
+    public bool AutoCompactionEnabled { get; private set; } = false;
+    public int AutoCompactionThresholdPercent { get; private set; } = 75;
+    public int AutoCompactionKeepRecentTurns { get; private set; } = 4;
+
     public IReadOnlyList<string> GlobalInstructionFiles { get; private set; } = DefaultGlobalInstructionFiles;
     public IReadOnlyList<string> ProjectInstructionFiles { get; private set; } = Array.Empty<string>();
     public bool ProjectInheritsGlobalInstructions { get; private set; } = true;
@@ -104,6 +108,29 @@ public sealed class SessionSettings : ISessionSettings
     {
         if (ReasoningDisplay == display) return;
         ReasoningDisplay = display;
+        Changed?.Invoke(SettingsTier.Global);
+    }
+
+    public void SetAutoCompactionEnabled(bool enabled)
+    {
+        if (AutoCompactionEnabled == enabled) return;
+        AutoCompactionEnabled = enabled;
+        Changed?.Invoke(SettingsTier.Global);
+    }
+
+    public void SetAutoCompactionThresholdPercent(int percent)
+    {
+        var clamped = Math.Clamp(percent, 1, 95);
+        if (AutoCompactionThresholdPercent == clamped) return;
+        AutoCompactionThresholdPercent = clamped;
+        Changed?.Invoke(SettingsTier.Global);
+    }
+
+    public void SetAutoCompactionKeepRecentTurns(int turns)
+    {
+        var clamped = Math.Clamp(turns, 1, 50);
+        if (AutoCompactionKeepRecentTurns == clamped) return;
+        AutoCompactionKeepRecentTurns = clamped;
         Changed?.Invoke(SettingsTier.Global);
     }
 
@@ -189,6 +216,11 @@ public sealed class SessionSettings : ISessionSettings
         SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
         MarkdownEnabled = blob.MarkdownEnabled ?? true;
         ReasoningDisplay = blob.ReasoningDisplay ?? ReasoningDisplay.Collapsed;
+        AutoCompactionEnabled = blob.AutoCompactionEnabled ?? false;
+        AutoCompactionThresholdPercent = blob.AutoCompactionThresholdPercent is int p
+            ? Math.Clamp(p, 1, 95) : 75;
+        AutoCompactionKeepRecentTurns = blob.AutoCompactionKeepRecentTurns is int k
+            ? Math.Clamp(k, 1, 50) : 4;
         Global = firstRun ? DefaultGlobalToolSettings() : MapFromDto(blob.Tools);
         GlobalInstructionFiles = firstRun
             ? DefaultGlobalInstructionFiles
@@ -234,6 +266,9 @@ public sealed class SessionSettings : ISessionSettings
             SystemPrompt = SystemPrompt,
             MarkdownEnabled = MarkdownEnabled,
             ReasoningDisplay = ReasoningDisplay,
+            AutoCompactionEnabled = AutoCompactionEnabled,
+            AutoCompactionThresholdPercent = AutoCompactionThresholdPercent,
+            AutoCompactionKeepRecentTurns = AutoCompactionKeepRecentTurns,
             Tools = MapToDto(Global),
             InstructionFiles = NonEmpty(GlobalInstructionFiles),
             Scripts = ScriptsToDto(GlobalScripts),
@@ -267,6 +302,9 @@ public sealed class SessionSettings : ISessionSettings
                 SystemPrompt = SystemPrompt,
                 MarkdownEnabled = MarkdownEnabled,
                 ReasoningDisplay = ReasoningDisplay,
+                AutoCompactionEnabled = AutoCompactionEnabled,
+                AutoCompactionThresholdPercent = AutoCompactionThresholdPercent,
+                AutoCompactionKeepRecentTurns = AutoCompactionKeepRecentTurns,
                 Tools = MapToDto(Global),
                 InstructionFiles = NonEmpty(GlobalInstructionFiles),
                 Scripts = ScriptsToDto(GlobalScripts),
@@ -316,6 +354,11 @@ public sealed class SessionSettings : ISessionSettings
         SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
         MarkdownEnabled = blob.MarkdownEnabled ?? true;
         ReasoningDisplay = blob.ReasoningDisplay ?? ReasoningDisplay.Collapsed;
+        AutoCompactionEnabled = blob.AutoCompactionEnabled ?? false;
+        AutoCompactionThresholdPercent = blob.AutoCompactionThresholdPercent is int p
+            ? Math.Clamp(p, 1, 95) : 75;
+        AutoCompactionKeepRecentTurns = blob.AutoCompactionKeepRecentTurns is int k
+            ? Math.Clamp(k, 1, 50) : 4;
         Global = MapFromDto(blob.Tools);
         GlobalInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
         GlobalScripts = ScriptsFromDto(blob.Scripts);
@@ -384,6 +427,9 @@ public sealed class SessionSettings : ISessionSettings
         public string? SystemPrompt { get; set; }
         public bool? MarkdownEnabled { get; set; }
         public ReasoningDisplay? ReasoningDisplay { get; set; }
+        public bool? AutoCompactionEnabled { get; set; }
+        public int? AutoCompactionThresholdPercent { get; set; }
+        public int? AutoCompactionKeepRecentTurns { get; set; }
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
         public List<string>? InstructionFiles { get; set; }
         public ScriptsDto? Scripts { get; set; }
