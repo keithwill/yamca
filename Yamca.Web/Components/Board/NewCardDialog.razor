@@ -1,0 +1,41 @@
+@namespace Yamca.Web.Components.Board
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_title" T="string"
+                      Label="Card title"
+                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Immediate="true"
+                      HelperText="A short summary of the idea." />
+
+        <MudTextField @bind-Value="_body" T="string"
+                      Label="Details / plan (optional)"
+                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Lines="8" Class="mt-3"
+                      HelperText="Markdown. Add a '- [ ]' checklist for subtasks if you like." />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="Create" Disabled="@string.IsNullOrWhiteSpace(_title)">
+            Create card
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    private string _title = "";
+    private string _body = "";
+
+    public sealed record Result(string Title, string Body);
+
+    private void Cancel() => Dialog.Cancel();
+
+    private void Create()
+    {
+        if (string.IsNullOrWhiteSpace(_title)) return;
+        Dialog.Close(DialogResult.Ok(new Result(_title.Trim(), _body ?? "")));
+    }
+}

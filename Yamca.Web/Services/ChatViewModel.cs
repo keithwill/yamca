@@ -27,6 +27,7 @@ public sealed class ChatViewModel : IDisposable
     private readonly ContextCompactor _compactor;
 
     private AgentLoop? _loop;
+    private readonly List<string> _seedInstructions = new();
     private CancellationTokenSource? _runCts;
     private Task? _approvalConsumer;
     private CancellationTokenSource? _consumerCts;
@@ -86,6 +87,22 @@ public sealed class ChatViewModel : IDisposable
         SelectedEndpointId = id;
         Raise();
     }
+
+    /// <summary>Extra system instructions injected into the first turn's system message,
+    /// in addition to the configured instruction files. Used to seed a session launched for
+    /// a board step with that column's instructions.md. No-op once the session has started
+    /// (the system message is built lazily on first send).</summary>
+    public void AddSeedInstruction(string? text)
+    {
+        if (_loop is not null) return;
+        if (string.IsNullOrWhiteSpace(text)) return;
+        _seedInstructions.Add(text);
+    }
+
+    /// <summary>One-shot composer pre-fill consumed by <c>ChatSessionPanel</c> when it binds
+    /// this session. Lets a board step seed a prompt the user reviews before sending. Cleared
+    /// by the panel once read.</summary>
+    public string? DraftPrompt { get; set; }
 
     /// <summary>Set when this session is bound to a git worktree. Drives the
     /// Merge / Delete branch toolbar buttons and the tile-header branch label.</summary>
@@ -260,6 +277,7 @@ public sealed class ChatViewModel : IDisposable
         Turns.Clear();
         Approvals.Clear();
         _loop = null;     // forces a fresh ChatSession (system prompt re-rendered) on next send
+        _seedInstructions.Clear();
         LockedEndpoint = null;  // a cleared chat is a fresh chat — re-pick endpoint on next send
         _lastReportedPromptTokens = null;
         _lastReportedCompletionTokens = null;
@@ -392,6 +410,7 @@ public sealed class ChatViewModel : IDisposable
             if (!string.IsNullOrWhiteSpace(contribution))
                 instructions.Add(contribution);
         }
+        instructions.AddRange(_seedInstructions);
         var session = new ChatSession(_workspace, prompt, instructions);
 
         _loop = new AgentLoop(

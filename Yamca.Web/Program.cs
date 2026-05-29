@@ -3,12 +3,14 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using MudBlazor.Services;
+using Yamca.Agent.Board;
 using Yamca.Agent.Chat;
 using Yamca.Agent.Git;
 using Yamca.Agent.Mcp;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
+using Yamca.Agent.Tools.Board;
 using Yamca.Agent.Tools.CodeIntel;
 using Yamca.Agent.Tools.ScriptExecution;
 using Yamca.Agent.Tools.ShellExecution;
@@ -77,6 +79,7 @@ builder.Services.AddHttpClient();
 // entire session.
 builder.Services.AddSingleton<IWorkspace>(_ => new Workspace(workspaceRoot));
 builder.Services.AddSingleton<GitService>();
+builder.Services.AddSingleton<BoardService>();
 
 builder.Services.AddSingleton<ITool, ReadFileTool>();
 builder.Services.AddSingleton<ITool, WriteFileTool>();
@@ -128,6 +131,14 @@ builder.Services.AddSingleton<ITool, CodeSearchTool>();
 builder.Services.AddSingleton<ITool, CodeEditSymbolTool>();
 builder.Services.AddScoped<ITool, LoadToolTool>();
 
+// Dev board tools. Reads default to Allow; the mutating move/update tools default to Ask
+// (like write_file/edit_file). The board lives at .yamca/board in the session's workspace.
+builder.Services.AddSingleton<ITool, BoardListTool>();
+builder.Services.AddSingleton<ITool, BoardGetCardTool>();
+builder.Services.AddSingleton<ITool, BoardGetStepInstructionsTool>();
+builder.Services.AddSingleton<ITool, BoardMoveCardTool>();
+builder.Services.AddSingleton<ITool, BoardUpdateCardTool>();
+
 // Script-tool collaborators. InterpreterResolver / ScriptRunner are stateless apart
 // from a PATH-resolution cache, so they live as singletons. ScriptRegistryLookup
 // reads scoped session settings.
@@ -172,6 +183,7 @@ builder.Services.AddScoped<SettingsHydrator>();
 builder.Services.AddScoped<InstructionFilesLoader>();
 builder.Services.AddScoped<WorkspaceBrowser>();
 builder.Services.AddScoped<ChatSessionManager>();
+builder.Services.AddScoped<BoardStepLauncher>();
 builder.Services.AddScoped<McpConfigStore>();
 
 var app = builder.Build();

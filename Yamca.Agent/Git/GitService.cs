@@ -21,6 +21,9 @@ public sealed record WorktreeInfo(
     string WorktreePath,
     string BasePath);
 
+/// <summary>One entry from <c>git log</c> for a file: commit hash, author date, subject.</summary>
+public sealed record GitFileLogEntry(string Sha, DateTimeOffset Date, string Subject);
+
 /// <summary>Thin wrapper around the <c>git</c> CLI. All methods return a
 /// <see cref="GitResult"/> rather than throwing on non-zero exit so callers can
 /// surface stderr to the user.</summary>
@@ -142,6 +145,58 @@ public sealed class GitService
         if (string.IsNullOrWhiteSpace(branch)) return false;
         var r = await RunAsync(null, ["check-ref-format", "--branch", branch], ct).ConfigureAwait(false);
         return r.Ok;
+    }
+
+    /// <summary>Stage a rename/move (<c>git mv</c>). Leaves the move staged but uncommitted so
+    /// the caller (typically an LLM completing a step) can bundle it into a later commit.</summary>
+    public Task<GitResult> MoveAsync(string repoPath, string from, string to, CancellationToken ct)
+        => RunAsync(repoPath, ["mv", from, to], ct);
+
+    /// <summary>Stage a path (<c>git add</c>). Used as a fallback when moving a not-yet-tracked
+    /// card file, so the relocation still rides along with the next commit.</summary>
+    public Task<GitResult> AddAsync(string repoPath, string pathspec, CancellationToken ct)
+        => RunAsync(repoPath, ["add", "--", pathspec], ct);
+
+    /// <summary>Author date of the commit that first added <paramref name="filePath"/>
+    /// (following renames), or null when the file has never been committed.</summary>
+    public async Task<DateTimeOffset?> GetFileCreatedAtAsync(string repoPath, string filePath, CancellationToken ct)
+    {
+        var r = await RunAsync(repoPath, ["log", "--follow", "--diff-filter=A", "--format=%aI", "--", filePath], ct).ConfigureAwait(false);
+        if (!r.Ok) return null;
+        // Multiple add commits are possible (delete + re-add); the oldest is the last line.
+        var lines = r.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (lines.Length == 0) return null;
+        return DateTimeOffset.TryParse(lines[^1], out var dt) ? dt : null;
+    }
+
+    /// <summary>Author date of the most recent commit touching <paramref name="filePath"/>
+    /// (following renames), or null when uncommitted.</summary>
+    public async Task<DateTimeOffset?> GetFileLastModifiedAtAsync(string repoPath, string filePath, CancellationToken ct)
+    {
+        var r = await RunAsync(repoPath, ["log", "--follow", "-1", "--format=%aI", "--", filePath], ct).ConfigureAwait(false);
+        if (!r.Ok) return null;
+        var line = r.Stdout.Trim();
+        return DateTimeOffset.TryParse(line, out var dt) ? dt : null;
+    }
+
+    /// <summary>Commit history for a file (newest first, following renames).</summary>
+    public async Task<IReadOnlyList<GitFileLogEntry>> GetFileHistoryAsync(string repoPath, string filePath, CancellationToken ct)
+    {
+        const char sep = '\x1f';
+        var r = await RunAsync(repoPath, ["log", "--follow", $"--format=%H{sep}%aI{sep}%s", "--", filePath], ct).ConfigureAwait(false);
+        if (!r.Ok) return Array.Empty<GitFileLogEntry>();
+
+        var entries = new List<GitFileLogEntry>();
+        foreach (var raw in r.Stdout.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            if (line.Length == 0) continue;
+            var parts = line.Split(sep);
+            if (parts.Length < 3) continue;
+            if (!DateTimeOffset.TryParse(parts[1], out var dt)) continue;
+            entries.Add(new GitFileLogEntry(parts[0], dt, parts[2]));
+        }
+        return entries;
     }
 
     private static async Task<GitResult> RunAsync(string? workingDir, IReadOnlyList<string> args, CancellationToken ct)

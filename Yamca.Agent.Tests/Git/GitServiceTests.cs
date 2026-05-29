@@ -74,7 +74,63 @@ public class GitServiceTests
         Assert.That(await _svc.CheckRefFormatAsync("..bad", CancellationToken.None), Is.False);
     }
 
-    private async Task RunGit(params string[] args)
+    [Test]
+    public async Task MoveAsync_StagesRename()
+    {
+        await CommitFile("card.md", "hello\n");
+
+        var move = await _svc.MoveAsync(_root, "card.md", "moved.md", CancellationToken.None);
+        Assert.That(move.Ok, Is.True, move.Stderr);
+        Assert.That(File.Exists(Path.Combine(_root, "moved.md")), Is.True);
+        Assert.That(File.Exists(Path.Combine(_root, "card.md")), Is.False);
+
+        var status = await RunGitCapture("status", "--porcelain");
+        Assert.That(status.Trim(), Does.StartWith("R"));   // staged rename, not committed
+    }
+
+    [Test]
+    public async Task GetFileCreatedAt_And_LastModified_ReturnDates()
+    {
+        await CommitFile("card.md", "v1\n");
+
+        var created = await _svc.GetFileCreatedAtAsync(_root, "card.md", CancellationToken.None);
+        var modified = await _svc.GetFileLastModifiedAtAsync(_root, "card.md", CancellationToken.None);
+
+        Assert.That(created, Is.Not.Null);
+        Assert.That(modified, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task GetFileCreatedAt_UncommittedFile_IsNull()
+    {
+        File.WriteAllText(Path.Combine(_root, "loose.md"), "x");
+        Assert.That(await _svc.GetFileCreatedAtAsync(_root, "loose.md", CancellationToken.None), Is.Null);
+    }
+
+    [Test]
+    public async Task GetFileHistory_FollowsRename()
+    {
+        await CommitFile("card.md", "v1\n");
+        await RunGit("mv", "card.md", "renamed.md");
+        await RunGit("commit", "-m", "rename card");
+
+        var history = await _svc.GetFileHistoryAsync(_root, "renamed.md", CancellationToken.None);
+
+        Assert.That(history.Count, Is.GreaterThanOrEqualTo(2));
+        Assert.That(history[0].Subject, Is.EqualTo("rename card"));
+        Assert.That(history[0].Sha, Is.Not.Empty);
+    }
+
+    private async Task CommitFile(string relative, string content)
+    {
+        File.WriteAllText(Path.Combine(_root, relative), content);
+        await RunGit("add", relative);
+        await RunGit("commit", "-m", $"add {relative}");
+    }
+
+    private async Task RunGit(params string[] args) => await RunGitCapture(args);
+
+    private async Task<string> RunGitCapture(params string[] args)
     {
         var psi = new System.Diagnostics.ProcessStartInfo
         {
@@ -87,8 +143,11 @@ public class GitServiceTests
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = System.Diagnostics.Process.Start(psi)!;
+        var stdout = await p.StandardOutput.ReadToEndAsync();
+        var stderr = await p.StandardError.ReadToEndAsync();
         await p.WaitForExitAsync();
         if (p.ExitCode != 0)
-            throw new InvalidOperationException($"git {string.Join(' ', args)} failed: {await p.StandardError.ReadToEndAsync()}");
+            throw new InvalidOperationException($"git {string.Join(' ', args)} failed: {stderr}");
+        return stdout;
     }
 }

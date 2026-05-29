@@ -1,0 +1,100 @@
+@namespace Yamca.Web.Components.Board
+@using Yamca.Agent.Board
+@using Yamca.Agent.Git
+@using Yamca.Web.Services
+@inject GitService Git
+
+<MudDialog>
+    <DialogContent>
+        <div class="d-flex align-center" style="gap: 8px;">
+            <MudText Typo="Typo.h6">@Card.Title</MudText>
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">#@Card.Id</MudChip>
+            @if (!string.IsNullOrWhiteSpace(Card.Branch))
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
+                         Icon="@Icons.Material.Filled.AccountTree">@Card.Branch</MudChip>
+            }
+        </div>
+
+        <MudDivider Class="my-2" />
+
+        <div class="yamca-markdown">
+            @((MarkupString)MarkdownRenderer.ToHtml(string.IsNullOrWhiteSpace(Card.Body) ? "_(empty card)_" : Card.Body))
+        </div>
+
+        <MudDivider Class="my-2" />
+
+        <MudText Typo="Typo.subtitle2" Class="mb-1">Git history</MudText>
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+        }
+        else if (_history.Count == 0)
+        {
+            <MudText Typo="Typo.caption" Style="opacity:0.6">Uncommitted — no git history yet.</MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Style="opacity:0.7">
+                Created @Fmt(_created) · last modified @Fmt(_lastModified)
+            </MudText>
+            <MudList T="string" Dense="true" Class="mt-1">
+                @foreach (var e in _history.Take(20))
+                {
+                    <MudListItem T="string">
+                        <MudText Typo="Typo.caption">
+                            <code>@e.Sha[..Math.Min(7, e.Sha.Length)]</code>
+                            · @e.Date.LocalDateTime.ToString("yyyy-MM-dd") · @e.Subject
+                        </MudText>
+                    </MudListItem>
+                }
+            </MudList>
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (CanRunStep)
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.PlayArrow"
+                       OnClick="RunStep">
+                Run "@ColumnDisplayName" step
+            </MudButton>
+        }
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public BoardCard Card { get; set; } = default!;
+    [Parameter, EditorRequired] public string WorkspaceRoot { get; set; } = default!;
+    [Parameter] public string ColumnDisplayName { get; set; } = "";
+    [Parameter] public bool CanRunStep { get; set; }
+
+    private bool _loading = true;
+    private DateTimeOffset? _created;
+    private DateTimeOffset? _lastModified;
+    private IReadOnlyList<GitFileLogEntry> _history = Array.Empty<GitFileLogEntry>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ct = CancellationToken.None;
+        try
+        {
+            _history = await Git.GetFileHistoryAsync(WorkspaceRoot, Card.AbsolutePath, ct);
+            _created = await Git.GetFileCreatedAtAsync(WorkspaceRoot, Card.AbsolutePath, ct);
+            _lastModified = await Git.GetFileLastModifiedAtAsync(WorkspaceRoot, Card.AbsolutePath, ct);
+        }
+        catch { /* history is best-effort */ }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string Fmt(DateTimeOffset? d) => d?.LocalDateTime.ToString("yyyy-MM-dd") ?? "—";
+
+    private void RunStep() => Dialog.Close(DialogResult.Ok(true));
+    private void Close() => Dialog.Cancel();
+}

@@ -1,0 +1,285 @@
+@page "/board"
+@rendermode InteractiveServer
+@implements IDisposable
+@using Yamca.Agent.Board
+@using Yamca.Agent.Git
+@using Yamca.Agent.Workspace
+@using Yamca.Web.Components.Board
+@using Yamca.Web.Components.Branching
+@using Yamca.Web.Components.Chat
+@using Yamca.Web.Services
+@inject IWorkspace Workspace
+@inject BoardService BoardSvc
+@inject GitService Git
+@inject IDialogService Dialogs
+@inject ChatSessionManager Manager
+@inject BoardStepLauncher Launcher
+@inject ISessionSettings Session
+@inject SettingsHydrator Hydrator
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Yamca - Dev Board</PageTitle>
+
+@if (!_hydrated)
+{
+    <MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+        <MudProgressCircular Indeterminate="true" />
+        <MudText Class="ml-2 d-inline" Typo="Typo.body2">Loading…</MudText>
+    </MudContainer>
+}
+else if (_snapshot.Columns.Count == 0)
+{
+    <MudContainer MaxWidth="MaxWidth.Small" Class="pa-8">
+        <MudText Typo="Typo.h6" GutterBottom="true">No dev board yet</MudText>
+        <MudText Typo="Typo.body2" Class="mb-4">
+            Create a <code>.yamca/board</code> directory with numeric-prefixed column folders
+            (each holding an <code>instructions.md</code>). Initialize it with the default
+            idea → analyze → implement → verify → done columns?
+        </MudText>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   StartIcon="@Icons.Material.Filled.ViewKanban" OnClick="InitializeBoardAsync">
+            Initialize board
+        </MudButton>
+    </MudContainer>
+}
+else
+{
+    <div class="yamca-board">
+        @foreach (var column in _snapshot.Columns)
+        {
+            <div class="yamca-board-lane">
+                <div class="yamca-board-lane-header">
+                    <span class="flex-grow-1">@column.DisplayName (@column.Cards.Count)</span>
+                    @if (column.Order == _snapshot.Columns[0].Order)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Add" Size="Size.Small"
+                                       OnClick="@(() => AddCardAsync(column))" aria-label="New card" />
+                    }
+                </div>
+                <div class="yamca-board-lane-cards">
+                    @if (column.Cards.Count == 0)
+                    {
+                        <div class="yamca-board-empty">No cards</div>
+                    }
+                    else
+                    {
+                        @foreach (var card in column.Cards)
+                        {
+                            var c = card;
+                            var done = c.Subtasks.Count(s => s.Done);
+                            var total = c.Subtasks.Count;
+                            <MudPaper Class="yamca-board-card" Elevation="1" @onclick="@(() => OpenCardAsync(c, column))">
+                                <div class="yamca-board-card-title">@c.Title</div>
+                                <div class="yamca-board-card-meta">
+                                    <span>#@c.Id</span>
+                                    @if (total > 0)
+                                    {
+                                        <span>@done/@total subtasks</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(c.Branch))
+                                    {
+                                        <span>⎇ @c.Branch</span>
+                                    }
+                                </div>
+                            </MudPaper>
+                        }
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private bool _hydrated;
+    private BoardSnapshot _snapshot = BoardSnapshot.Empty;
+
+    protected override void OnInitialized() => Manager.Changed += OnSessionsChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Hydrator.HydrateAsync();   // load endpoints/settings for the step-run modal
+            Refresh();
+            _hydrated = true;
+            StateHasChanged();
+        }
+    }
+
+    private void OnSessionsChanged() => InvokeAsync(StateHasChanged);
+
+    private void Refresh() => _snapshot = BoardSvc.Read(Workspace.RootPath);
+
+    private static DialogOptions Small() => new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    private async Task InitializeBoardAsync()
+    {
+        var boardDir = BoardService.BoardDirectory(Workspace.RootPath);
+        foreach (var (dir, instr) in DefaultColumns)
+        {
+            try
+            {
+                var d = Path.Combine(boardDir, dir);
+                Directory.CreateDirectory(d);
+                var instrPath = Path.Combine(d, BoardService.InstructionsFileName);
+                if (!File.Exists(instrPath)) await File.WriteAllTextAsync(instrPath, instr);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Could not initialize board: {ex.Message}", Severity.Error);
+                return;
+            }
+        }
+        Refresh();
+        Snackbar.Add("Board initialized under .yamca/board.", Severity.Success);
+    }
+
+    private async Task AddCardAsync(BoardColumn column)
+    {
+        var dialog = await Dialogs.ShowAsync<NewCardDialog>("New card", Small());
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not NewCardDialog.Result data) return;
+
+        var id = BoardSvc.NextCardId(Workspace.RootPath);
+        var path = Path.Combine(column.AbsolutePath, BoardService.CardFileName(id, data.Title));
+        var content = $"---\nid: {id}\ntitle: \"{data.Title.Replace("\"", "'")}\"\n---\n\n{data.Body}\n";
+        try
+        {
+            await File.WriteAllTextAsync(path, content);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not create card: {ex.Message}", Severity.Error);
+            return;
+        }
+        Refresh();
+        StateHasChanged();
+    }
+
+    private async Task OpenCardAsync(BoardCard card, BoardColumn column)
+    {
+        var parameters = new DialogParameters
+        {
+            ["Card"] = card,
+            ["WorkspaceRoot"] = Workspace.RootPath,
+            ["ColumnDisplayName"] = column.DisplayName,
+            ["CanRunStep"] = Manager.CanCreate,
+        };
+        var dialog = await Dialogs.ShowAsync<CardDetailDialog>($"#{card.Id} {card.Title}", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is not null && !result.Canceled && result.Data is true)
+            await RunStepAsync(card, column);
+    }
+
+    private async Task RunStepAsync(BoardCard card, BoardColumn column)
+    {
+        if (!Manager.CanCreate)
+        {
+            Snackbar.Add("All 4 chat slots are in use — close one to run a step.", Severity.Warning);
+            return;
+        }
+
+        // 1. Endpoint for this run (per-run, never bound to the card).
+        var epParams = new DialogParameters
+        {
+            ["Endpoints"] = Session.Endpoints.Items,
+            ["DefaultId"] = Session.Endpoints.DefaultId,
+            ["InitiallySelectedId"] = Session.Endpoints.DefaultId,
+        };
+        var epDialog = await Dialogs.ShowAsync<EndpointPickerDialog>("Select endpoint", epParams, Small());
+        var epResult = await epDialog.Result;
+        if (epResult is null || epResult.Canceled || epResult.Data is not Guid endpointId) return;
+
+        // 2. Branch binding — reuse the existing branch, else let the user create/pick one.
+        WorktreeInfo? worktree;
+        if (!string.IsNullOrWhiteSpace(card.Branch))
+        {
+            worktree = await ResolveWorktreeForBranchAsync(card.Branch!);
+            if (worktree is null) return; // error already surfaced
+        }
+        else
+        {
+            var brDialog = await Dialogs.ShowAsync<BranchCreateDialog>("Bind a branch",
+                new DialogParameters { ["BaseWorkspace"] = Workspace }, Small());
+            var brResult = await brDialog.Result;
+            if (brResult is null || brResult.Canceled || brResult.Data is not WorktreeInfo info) return;
+            worktree = info;
+            await PersistBranchAsync(card, info.Branch);
+            card = card with { Branch = info.Branch };
+        }
+
+        // 3. Column instructions + next column.
+        var instructions = BoardSvc.ReadInstructions(Workspace.RootPath, column.DirectoryName);
+        var next = _snapshot.NextColumn(column);
+
+        // 4. Provision the seeded session and navigate to it (composer pre-filled, not sent).
+        try
+        {
+            var vm = Launcher.ProvisionStepSession(
+                new StepRunRequest(card, column, next, endpointId, worktree, instructions));
+            Nav.NavigateTo($"chat/{vm.Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not start step: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task<WorktreeInfo?> ResolveWorktreeForBranchAsync(string branch)
+    {
+        var ct = CancellationToken.None;
+        var baseBranch = await Git.GetCurrentBranchAsync(Workspace.RootPath, ct) ?? "";
+        var worktrees = await Git.ListWorktreesAsync(Workspace.RootPath, ct);
+        var match = worktrees.FirstOrDefault(w => string.Equals(w.Branch, branch, StringComparison.Ordinal));
+
+        string path;
+        if (match.Path is not null)
+        {
+            path = match.Path;
+        }
+        else
+        {
+            path = Path.Combine(Workspace.RootPath, ".yamca", "worktrees", Sanitize(branch));
+            if (!Directory.Exists(path))
+            {
+                var r = await Git.CreateWorktreeAsync(Workspace.RootPath, path, branch, isNewBranch: false, ct);
+                if (!r.Ok)
+                {
+                    Snackbar.Add($"Could not open worktree for '{branch}': {r.Stderr.Trim()}", Severity.Error);
+                    return null;
+                }
+            }
+        }
+        return new WorktreeInfo(branch, baseBranch, path, Workspace.RootPath);
+    }
+
+    private async Task PersistBranchAsync(BoardCard card, string branch)
+    {
+        try
+        {
+            var raw = await File.ReadAllTextAsync(card.AbsolutePath);
+            await File.WriteAllTextAsync(card.AbsolutePath, BoardService.WithBranch(raw, branch));
+            Refresh();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Bound branch '{branch}', but could not update the card file: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private static string Sanitize(string branch) => branch.Replace('/', '-').Replace('\\', '-');
+
+    public void Dispose() => Manager.Changed -= OnSessionsChanged;
+
+    private static readonly (string Dir, string Instr)[] DefaultColumns =
+    {
+        ("10-idea", "# Idea\n\nCapture the raw idea or feature request. Clarify the intent and the desired outcome. Keep it short; detailed planning happens in the next step.\n"),
+        ("20-analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan into the card. Break the work into a `- [ ]` subtask checklist where useful.\n"),
+        ("30-implement", "# Implement\n\nDo the work described in the card. Tick subtasks as you complete them. When the implementation is done, stage your code changes together with the card move (and ticked subtasks) into a single commit.\n"),
+        ("40-verify", "# Verify\n\nBuild, run tests, and confirm the change works end to end. Fix anything that fails. Note verification results on the card before moving it on.\n"),
+        ("50-done", "# Done\n\nCompleted and verified work. Nothing further to do.\n"),
+    };
+}

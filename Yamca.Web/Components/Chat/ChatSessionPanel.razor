@@ -284,6 +284,14 @@
         _prompt = "";
         _attachments.Clear();
         _attachError = null;
+
+        // Consume a one-shot seed prompt (e.g. from a board step launch) into the composer
+        // so the user can review it before sending. Only for a fresh, unsent session.
+        if (!string.IsNullOrEmpty(Chat.DraftPrompt) && Chat.Turns.Count == 0)
+        {
+            _prompt = Chat.DraftPrompt;
+            Chat.DraftPrompt = null;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
