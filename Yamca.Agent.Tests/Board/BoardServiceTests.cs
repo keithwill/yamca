@@ -142,6 +142,14 @@ public class BoardServiceTests
     }
 
     [Test]
+    public void PresumptiveBranch_IsIdPrefixedSlug()
+    {
+        Assert.That(BoardService.PresumptiveBranch("0001", "Test Card"), Is.EqualTo("0001-test-card"));
+        Assert.That(BoardService.PresumptiveBranch("0008", "Add OAuth Login!"), Is.EqualTo("0008-add-oauth-login"));
+        Assert.That(BoardService.PresumptiveBranch("0008", "   "), Is.EqualTo("0008"));
+    }
+
+    [Test]
     public void ReadInstructions_ReturnsContentOrNull()
     {
         _ws.WriteFile(Board("10-idea/instructions.md"), "plan it");

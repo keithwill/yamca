@@ -1,6 +1,7 @@
 @namespace Yamca.Web.Components.Board
 @using Yamca.Agent.Board
 @using Yamca.Agent.Git
+@using Yamca.Agent.Settings
 @using Yamca.Web.Services
 @inject GitService Git
 
@@ -9,7 +10,7 @@
         <div class="d-flex align-center" style="gap: 8px;">
             <MudText Typo="Typo.h6">@Card.Title</MudText>
             <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">#@Card.Id</MudChip>
-            @if (!string.IsNullOrWhiteSpace(Card.Branch))
+            @if (IsBranchBound)
             {
                 <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
                          Icon="@Icons.Material.Filled.AccountTree">@Card.Branch</MudChip>
@@ -50,12 +51,56 @@
                 }
             </MudList>
         }
+
+        @if (CanRunStep && !IsBranchBound)
+        {
+            <MudDivider Class="my-2" />
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Branch</MudText>
+            <MudAutocomplete T="string" @bind-Value="_branch"
+                             Label="Branch for this card"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             SearchFunc="SearchBranches"
+                             CoerceText="true" CoerceValue="true" Clearable="true"
+                             MaxItems="null"
+                             HelperText="Pick an existing branch or type a new one. Validated with git check-ref-format." />
+            @if (BranchExists)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Info" Class="mt-1">
+                    Work will continue on the existing branch <code>@_branch?.Trim()</code>.
+                </MudText>
+            }
+        }
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_error</MudAlert>
+        }
     </DialogContent>
     <DialogActions>
         @if (CanRunStep)
         {
+            @if (Endpoints.Count == 0)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Warning" Class="mr-2">
+                    No endpoints configured — add one on the Endpoints page.
+                </MudText>
+            }
+            else
+            {
+                <MudSelect T="Guid" @bind-Value="_endpointId" Dense="true"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Style="min-width: 200px;" Class="mr-2" Label="Endpoint">
+                    @foreach (var ep in Endpoints)
+                    {
+                        <MudSelectItem T="Guid" Value="@ep.Id">
+                            @(string.IsNullOrWhiteSpace(ep.Name) ? ep.DisplayLabel : ep.Name)@(ep.Id == DefaultEndpointId ? " (default)" : "")
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+            }
             <MudButton Color="Color.Primary" Variant="Variant.Filled"
                        StartIcon="@Icons.Material.Filled.PlayArrow"
+                       Disabled="@(_busy || Endpoints.Count == 0)"
                        OnClick="RunStep">
                 Run "@ColumnDisplayName" step
             </MudButton>
@@ -71,11 +116,35 @@
     [Parameter, EditorRequired] public string WorkspaceRoot { get; set; } = default!;
     [Parameter] public string ColumnDisplayName { get; set; } = "";
     [Parameter] public bool CanRunStep { get; set; }
+    [Parameter] public IReadOnlyList<EndpointSettings> Endpoints { get; set; } = Array.Empty<EndpointSettings>();
+    [Parameter] public Guid DefaultEndpointId { get; set; }
+    [Parameter] public IReadOnlyList<string> ExistingBranches { get; set; } = Array.Empty<string>();
+    [Parameter] public string PresumptiveBranch { get; set; } = "";
+
+    /// <summary>What the dialog hands back to the page when the user runs a step. The page
+    /// re-checks branch/worktree existence at run time, so the chosen branch is all it needs.</summary>
+    public sealed record Result(Guid EndpointId, string Branch);
 
     private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string? _branch;
+    private Guid _endpointId;
     private DateTimeOffset? _created;
     private DateTimeOffset? _lastModified;
     private IReadOnlyList<GitFileLogEntry> _history = Array.Empty<GitFileLogEntry>();
+
+    private bool IsBranchBound => !string.IsNullOrWhiteSpace(Card.Branch);
+
+    private bool BranchExists =>
+        !string.IsNullOrWhiteSpace(_branch) &&
+        ExistingBranches.Any(b => string.Equals(b, _branch!.Trim(), StringComparison.Ordinal));
+
+    protected override void OnInitialized()
+    {
+        _branch = PresumptiveBranch;
+        _endpointId = DefaultEndpointId;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -93,8 +162,50 @@
         }
     }
 
+    private Task<IEnumerable<string>> SearchBranches(string? value, CancellationToken ct)
+    {
+        IEnumerable<string> matches = string.IsNullOrWhiteSpace(value)
+            ? ExistingBranches
+            : ExistingBranches.Where(b => b.Contains(value.Trim(), StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(matches);
+    }
+
     private static string Fmt(DateTimeOffset? d) => d?.LocalDateTime.ToString("yyyy-MM-dd") ?? "—";
 
-    private void RunStep() => Dialog.Close(DialogResult.Ok(true));
+    private async Task RunStep()
+    {
+        _error = null;
+
+        // A bound card always reuses its branch; an unbound card uses the (editable) field.
+        var branch = IsBranchBound ? Card.Branch! : _branch?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(branch))
+        {
+            _error = "A branch name is required to run a step.";
+            return;
+        }
+
+        var exists = ExistingBranches.Any(b => string.Equals(b, branch, StringComparison.Ordinal));
+
+        // Only new branches need ref-format validation; existing names are already valid.
+        if (!exists && !IsBranchBound)
+        {
+            _busy = true;
+            try
+            {
+                if (!await Git.CheckRefFormatAsync(branch, CancellationToken.None))
+                {
+                    _error = $"\"{branch}\" is not a valid git branch name.";
+                    return;
+                }
+            }
+            finally
+            {
+                _busy = false;
+            }
+        }
+
+        Dialog.Close(DialogResult.Ok(new Result(_endpointId, branch)));
+    }
+
     private void Close() => Dialog.Cancel();
 }

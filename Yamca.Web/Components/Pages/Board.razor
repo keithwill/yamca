@@ -160,21 +160,28 @@ else
 
     private async Task OpenCardAsync(BoardCard card, BoardColumn column)
     {
+        // Branch field defaults / existing branches are gathered up front so the dialog can
+        // offer them inline (combobox + endpoint dropdown) instead of chaining more modals.
+        var existingBranches = await Git.ListBranchesAsync(Workspace.RootPath, CancellationToken.None);
         var parameters = new DialogParameters
         {
             ["Card"] = card,
             ["WorkspaceRoot"] = Workspace.RootPath,
             ["ColumnDisplayName"] = column.DisplayName,
             ["CanRunStep"] = Manager.CanCreate,
+            ["Endpoints"] = Session.Endpoints.Items,
+            ["DefaultEndpointId"] = Session.Endpoints.DefaultId,
+            ["ExistingBranches"] = existingBranches,
+            ["PresumptiveBranch"] = BoardService.PresumptiveBranch(card.Id, card.Title),
         };
         var dialog = await Dialogs.ShowAsync<CardDetailDialog>($"#{card.Id} {card.Title}", parameters,
             new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
         var result = await dialog.Result;
-        if (result is not null && !result.Canceled && result.Data is true)
-            await RunStepAsync(card, column);
+        if (result is not null && !result.Canceled && result.Data is CardDetailDialog.Result run)
+            await RunStepAsync(card, column, run);
     }
 
-    private async Task RunStepAsync(BoardCard card, BoardColumn column)
+    private async Task RunStepAsync(BoardCard card, BoardColumn column, CardDetailDialog.Result run)
     {
         if (!Manager.CanCreate)
         {
@@ -182,44 +189,28 @@ else
             return;
         }
 
-        // 1. Endpoint for this run (per-run, never bound to the card).
-        var epParams = new DialogParameters
-        {
-            ["Endpoints"] = Session.Endpoints.Items,
-            ["DefaultId"] = Session.Endpoints.DefaultId,
-            ["InitiallySelectedId"] = Session.Endpoints.DefaultId,
-        };
-        var epDialog = await Dialogs.ShowAsync<EndpointPickerDialog>("Select endpoint", epParams, Small());
-        var epResult = await epDialog.Result;
-        if (epResult is null || epResult.Canceled || epResult.Data is not Guid endpointId) return;
+        // 1. Resolve (or create) the branch worktree. This covers a fresh branch for an
+        //    unbound card, and a bound card whose branch/worktree was since deleted or merged
+        //    (e.g. from the chat merge/delete buttons) — both are recreated as needed.
+        var worktree = await ResolveWorktreeForBranchAsync(run.Branch);
+        if (worktree is null) return; // error already surfaced
 
-        // 2. Branch binding — reuse the existing branch, else let the user create/pick one.
-        WorktreeInfo? worktree;
-        if (!string.IsNullOrWhiteSpace(card.Branch))
+        // Bind the card to its branch on first use.
+        if (string.IsNullOrWhiteSpace(card.Branch))
         {
-            worktree = await ResolveWorktreeForBranchAsync(card.Branch!);
-            if (worktree is null) return; // error already surfaced
-        }
-        else
-        {
-            var brDialog = await Dialogs.ShowAsync<BranchCreateDialog>("Bind a branch",
-                new DialogParameters { ["BaseWorkspace"] = Workspace }, Small());
-            var brResult = await brDialog.Result;
-            if (brResult is null || brResult.Canceled || brResult.Data is not WorktreeInfo info) return;
-            worktree = info;
-            await PersistBranchAsync(card, info.Branch);
-            card = card with { Branch = info.Branch };
+            await PersistBranchAsync(card, run.Branch);
+            card = card with { Branch = run.Branch };
         }
 
-        // 3. Column instructions + next column.
+        // 2. Column instructions + next column.
         var instructions = BoardSvc.ReadInstructions(Workspace.RootPath, column.DirectoryName);
         var next = _snapshot.NextColumn(column);
 
-        // 4. Provision the seeded session and navigate to it (composer pre-filled, not sent).
+        // 3. Provision the seeded session and navigate to it (composer pre-filled, not sent).
         try
         {
             var vm = Launcher.ProvisionStepSession(
-                new StepRunRequest(card, column, next, endpointId, worktree, instructions));
+                new StepRunRequest(card, column, next, run.EndpointId, worktree, instructions));
             Nav.NavigateTo($"chat/{vm.Id}");
         }
         catch (Exception ex)
@@ -228,29 +219,30 @@ else
         }
     }
 
+    // Resolve a usable worktree for a branch, creating whatever is missing:
+    //   • a live worktree already checked out on the branch → reuse it;
+    //   • the branch exists but has no worktree → add one;
+    //   • neither exists (deleted/merged, or a brand-new card branch) → create the branch + worktree.
     private async Task<WorktreeInfo?> ResolveWorktreeForBranchAsync(string branch)
     {
         var ct = CancellationToken.None;
         var baseBranch = await Git.GetCurrentBranchAsync(Workspace.RootPath, ct) ?? "";
+
         var worktrees = await Git.ListWorktreesAsync(Workspace.RootPath, ct);
         var match = worktrees.FirstOrDefault(w => string.Equals(w.Branch, branch, StringComparison.Ordinal));
-
-        string path;
         if (match.Path is not null)
+            return new WorktreeInfo(branch, baseBranch, match.Path, Workspace.RootPath);
+
+        var path = Path.Combine(Workspace.RootPath, ".yamca", "worktrees", Sanitize(branch));
+        if (!Directory.Exists(path))
         {
-            path = match.Path;
-        }
-        else
-        {
-            path = Path.Combine(Workspace.RootPath, ".yamca", "worktrees", Sanitize(branch));
-            if (!Directory.Exists(path))
+            var branches = await Git.ListBranchesAsync(Workspace.RootPath, ct);
+            var branchExists = branches.Any(b => string.Equals(b, branch, StringComparison.Ordinal));
+            var r = await Git.CreateWorktreeAsync(Workspace.RootPath, path, branch, isNewBranch: !branchExists, ct);
+            if (!r.Ok)
             {
-                var r = await Git.CreateWorktreeAsync(Workspace.RootPath, path, branch, isNewBranch: false, ct);
-                if (!r.Ok)
-                {
-                    Snackbar.Add($"Could not open worktree for '{branch}': {r.Stderr.Trim()}", Severity.Error);
-                    return null;
-                }
+                Snackbar.Add($"Could not open worktree for '{branch}': {r.Stderr.Trim()}", Severity.Error);
+                return null;
             }
         }
         return new WorktreeInfo(branch, baseBranch, path, Workspace.RootPath);

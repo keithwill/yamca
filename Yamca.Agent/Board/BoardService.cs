@@ -175,6 +175,16 @@ public sealed partial class BoardService
         return slug.Length == 0 ? $"{id}.md" : $"{id}-{slug}.md";
     }
 
+    /// <summary>The default git branch name for a card: an id-prefixed slug of its title
+    /// (e.g. <c>0001-test-card</c>), mirroring <see cref="CardFileName"/>. Falls back to the
+    /// bare id when the title slugs to nothing. Used to pre-fill the branch field before a
+    /// card is bound to a branch.</summary>
+    public static string PresumptiveBranch(string id, string title)
+    {
+        var slug = Slugify(title);
+        return slug.Length == 0 ? id : $"{id}-{slug}";
+    }
+
     private static IReadOnlyList<SubtaskItem> ParseSubtasks(string body)
     {
         var items = new List<SubtaskItem>();
