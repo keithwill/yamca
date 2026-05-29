@@ -54,19 +54,81 @@ public sealed partial class BoardService
                 cards.Add(ParseCard(dirName, file, text));
             }
 
-            cards.Sort(static (a, b) =>
-            {
-                var an = LeadingInt(a.Id);
-                var bn = LeadingInt(b.Id);
-                if (an.HasValue && bn.HasValue && an != bn) return an.Value.CompareTo(bn.Value);
-                return string.Compare(a.FileName, b.FileName, StringComparison.OrdinalIgnoreCase);
-            });
+            cards.Sort(CompareCards);
 
             columns.Add(new BoardColumn(dirName, order, displayName, dir, cards));
         }
 
         columns.Sort(static (a, b) => a.Order.CompareTo(b.Order));
         return new BoardSnapshot(columns);
+    }
+
+    /// <summary>Read the board for display, overlaying each branch-bound card with its copy from
+    /// that branch's worktree when one exists. A card bound to a branch moves through columns and
+    /// ticks subtasks inside its worktree's board, not in the repo-root board; without this overlay
+    /// such a card would appear frozen in its original column on the root board until the branch is
+    /// merged back. <paramref name="branchWorktrees"/> maps branch name → worktree root path (from
+    /// <c>git worktree list</c>). When a bound card's branch has no live worktree (never started, or
+    /// merged/deleted) or the worktree no longer contains the card, the root copy is used as-is — so
+    /// the status stays accurate after a merge collapses the branch back into the root board.
+    /// The column structure always comes from the root board; a worktree card is placed into the
+    /// root column whose directory name matches its column there, falling back to its root column
+    /// when there is no such match.</summary>
+    public BoardSnapshot ReadForDisplay(string repoRoot, IReadOnlyDictionary<string, string> branchWorktrees)
+    {
+        var root = Read(repoRoot);
+        if (root.Columns.Count == 0 || branchWorktrees.Count == 0) return root;
+
+        // One snapshot per worktree path; multiple cards on the same branch reuse the read.
+        var worktreeSnapshots = new Dictionary<string, BoardSnapshot>(StringComparer.OrdinalIgnoreCase);
+        BoardSnapshot WorktreeSnapshot(string path)
+        {
+            if (!worktreeSnapshots.TryGetValue(path, out var snap))
+                worktreeSnapshots[path] = snap = Read(path);
+            return snap;
+        }
+
+        // Re-bucket effective cards by their target column directory, keyed on the root columns so
+        // the column metadata (order, display name, path) and structure stay canonical.
+        var buckets = root.Columns.ToDictionary(c => c.DirectoryName, _ => new List<BoardCard>(), StringComparer.Ordinal);
+
+        foreach (var column in root.Columns)
+        foreach (var rootCard in column.Cards)
+        {
+            var effective = rootCard;
+            var targetDir = column.DirectoryName;
+
+            if (!string.IsNullOrWhiteSpace(rootCard.Branch)
+                && branchWorktrees.TryGetValue(rootCard.Branch!, out var worktreePath)
+                && WorktreeSnapshot(worktreePath).FindCard(rootCard.Id) is { } wtCard
+                && buckets.ContainsKey(wtCard.ColumnDirectory))
+            {
+                // Overlay the worktree's status/details, but keep the root file path so the card's
+                // git history (queried against the repo root) still resolves to the outer branch.
+                effective = wtCard with { AbsolutePath = rootCard.AbsolutePath, FileName = rootCard.FileName };
+                targetDir = wtCard.ColumnDirectory;
+            }
+
+            buckets[targetDir].Add(effective);
+        }
+
+        var columns = new List<BoardColumn>(root.Columns.Count);
+        foreach (var column in root.Columns)
+        {
+            var cards = buckets[column.DirectoryName];
+            cards.Sort(CompareCards);
+            columns.Add(column with { Cards = cards });
+        }
+        return new BoardSnapshot(columns);
+    }
+
+    // Card order within a column: by leading numeric id, then file name (both case-insensitive).
+    private static int CompareCards(BoardCard a, BoardCard b)
+    {
+        var an = LeadingInt(a.Id);
+        var bn = LeadingInt(b.Id);
+        if (an.HasValue && bn.HasValue && an != bn) return an.Value.CompareTo(bn.Value);
+        return string.Compare(a.FileName, b.FileName, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Parse a column directory name of the form <c>NN-display-name</c>.</summary>

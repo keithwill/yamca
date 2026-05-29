@@ -102,7 +102,7 @@ else
         if (firstRender)
         {
             await Hydrator.HydrateAsync();   // load endpoints/settings for the step-run modal
-            Refresh();
+            await RefreshAsync();
             _hydrated = true;
             StateHasChanged();
         }
@@ -110,7 +110,19 @@ else
 
     private void OnSessionsChanged() => InvokeAsync(StateHasChanged);
 
-    private void Refresh() => _snapshot = BoardSvc.Read(Workspace.RepositoryRoot);
+    // A branch-bound card lives and moves inside its branch's worktree board, so overlay each such
+    // card with its worktree copy; the status falls back to the root board once the branch (and its
+    // worktree) is merged away. Worktrees are repo-scoped, so we enumerate them from the repo root.
+    private async Task RefreshAsync()
+    {
+        var repoRoot = Workspace.RepositoryRoot;
+        var worktrees = await Git.ListWorktreesAsync(repoRoot, CancellationToken.None);
+        var branchWorktrees = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (path, branch) in worktrees)
+            if (!string.IsNullOrEmpty(branch))
+                branchWorktrees[branch!] = path;
+        _snapshot = BoardSvc.ReadForDisplay(repoRoot, branchWorktrees);
+    }
 
     private static DialogOptions Small() => new() { MaxWidth = MaxWidth.Small, FullWidth = true };
 
@@ -132,7 +144,7 @@ else
                 return;
             }
         }
-        Refresh();
+        await RefreshAsync();
         Snackbar.Add("Board initialized under .yamca/board.", Severity.Success);
     }
 
@@ -154,7 +166,7 @@ else
             Snackbar.Add($"Could not create card: {ex.Message}", Severity.Error);
             return;
         }
-        Refresh();
+        await RefreshAsync();
         StateHasChanged();
     }
 
@@ -289,7 +301,7 @@ else
             Snackbar.Add($"Committed card #{card.Id} to '{outerBranch}' before starting branch '{branch}'.", Severity.Info);
         }
 
-        Refresh();
+        await RefreshAsync();
         return true;
     }
 
