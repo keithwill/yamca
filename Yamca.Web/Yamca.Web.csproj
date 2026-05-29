@@ -11,7 +11,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>yamca</ToolCommandName>
     <PackageId>Yamca</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>Keith Williams</Authors>
     <Description>Yamca — a local-first Blazor agent / chat UI that runs as a .NET global tool. Launch with `yamca` from any directory to chat against a workspace.</Description>
     <PackageTags>blazor;ai;agent;chat;cli;dotnet-tool</PackageTags>
