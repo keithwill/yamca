@@ -9,7 +9,13 @@ public sealed class Workspace : IWorkspace
 
     public string RootPath { get; }
 
-    public Workspace(string rootPath)
+    public string RepositoryRoot { get; }
+
+    /// <param name="rootPath">The sandbox root — the directory the session was opened to.</param>
+    /// <param name="repositoryRoot">The git repository top-level. When null (or not inside a repo),
+    /// defaults to <paramref name="rootPath"/>. Canonicalized but not required to contain
+    /// <paramref name="rootPath"/> — it normally sits at or above it.</param>
+    public Workspace(string rootPath, string? repositoryRoot = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
 
@@ -18,6 +24,16 @@ public sealed class Workspace : IWorkspace
             throw new DirectoryNotFoundException($"Workspace root '{canonical}' does not exist.");
 
         RootPath = TrimTrailingSeparator(canonical);
+
+        if (string.IsNullOrWhiteSpace(repositoryRoot))
+        {
+            RepositoryRoot = RootPath;
+        }
+        else
+        {
+            var repo = ResolveSymlinks(Path.GetFullPath(repositoryRoot));
+            RepositoryRoot = Directory.Exists(repo) ? TrimTrailingSeparator(repo) : RootPath;
+        }
     }
 
     public string Resolve(string requestedPath)

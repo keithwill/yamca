@@ -46,6 +46,45 @@ public class WorkspaceTests
     }
 
     [Test]
+    public void RepositoryRoot_DefaultsToRootPath_WhenNotSupplied()
+    {
+        var ws = new WorkspaceImpl(_root);
+
+        Assert.That(ws.RepositoryRoot, Is.EqualTo(_root));
+    }
+
+    [Test]
+    public void RepositoryRoot_CanSitAboveRootPath()
+    {
+        // Open a subdirectory while the repository root is its parent — the case this feature fixes.
+        var sub = Path.Combine(_root, "src", "feature");
+        Directory.CreateDirectory(sub);
+
+        var ws = new WorkspaceImpl(sub, _root);
+
+        Assert.That(ws.RootPath, Is.EqualTo(sub));
+        Assert.That(ws.RepositoryRoot, Is.EqualTo(_root));
+    }
+
+    [Test]
+    public void RepositoryRoot_TrimsTrailingSeparator()
+    {
+        var ws = new WorkspaceImpl(_root, _outsideDir + Path.DirectorySeparatorChar);
+
+        Assert.That(ws.RepositoryRoot, Is.EqualTo(_outsideDir));
+    }
+
+    [Test]
+    public void RepositoryRoot_FallsBackToRootPath_WhenNonExistent()
+    {
+        var missing = Path.Combine(_outsideDir, "does-not-exist");
+
+        var ws = new WorkspaceImpl(_root, missing);
+
+        Assert.That(ws.RepositoryRoot, Is.EqualTo(_root));
+    }
+
+    [Test]
     public void Constructor_NonExistentRoot_Throws()
     {
         var missing = Path.Combine(_root, "does-not-exist");

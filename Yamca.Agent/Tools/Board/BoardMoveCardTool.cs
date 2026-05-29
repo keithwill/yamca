@@ -37,7 +37,9 @@ public sealed class BoardMoveCardTool : ITool
     }
     """;
 
-    public bool SupportsWorkspaceRestriction => true;
+    // The dev board lives at .yamca/board under the git repository root, which may sit above the
+    // session's sandbox root. Board tools are therefore never workspace-restricted.
+    public bool SupportsWorkspaceRestriction => false;
 
     public PermissionLevel DefaultPermission => PermissionLevel.Ask;
 
@@ -48,7 +50,7 @@ public sealed class BoardMoveCardTool : ITool
         if (!ToolArguments.TryGetString(arguments, "to_column", out var columnRef, out var colErr))
             return ToolResult.Error(colErr);
 
-        var root = context.Workspace.RootPath;
+        var root = context.Workspace.RepositoryRoot;
         var snapshot = _board.Read(root);
 
         var card = snapshot.FindCard(cardRef);
@@ -62,11 +64,11 @@ public sealed class BoardMoveCardTool : ITool
         if (string.Equals(card.ColumnDirectory, target.DirectoryName, StringComparison.OrdinalIgnoreCase))
             return ToolResult.Ok($"Card #{card.Id} is already in '{target.DisplayName}'.");
 
-        var dest = Path.Combine(target.AbsolutePath, card.FileName);
-        if (!ToolArguments.TryResolvePath(context, dest, out var resolvedDest, out var destErr))
-            return ToolResult.Error(destErr);
-        if (!ToolArguments.TryResolvePath(context, card.AbsolutePath, out var resolvedSrc, out var srcErr))
-            return ToolResult.Error(srcErr);
+        // Card/column paths come from BoardService's enumeration of the repository board directory,
+        // so they are already absolute and trusted. They are NOT clamped to the sandbox: the board
+        // lives at the repository root, which may sit above the session's workspace root.
+        var resolvedSrc = Path.GetFullPath(card.AbsolutePath);
+        var resolvedDest = Path.GetFullPath(Path.Combine(target.AbsolutePath, card.FileName));
 
         if (File.Exists(resolvedDest))
             return ToolResult.Error($"A card file named '{card.FileName}' already exists in '{target.DisplayName}'.");

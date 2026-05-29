@@ -35,6 +35,18 @@ public sealed class GitService
         return r.Ok && r.Stdout.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Absolute path to the top-level working directory of the repository containing
+    /// <paramref name="path"/> (<c>git rev-parse --show-toplevel</c>), or null when
+    /// <paramref name="path"/> is not inside a git work tree. For a linked worktree this returns
+    /// that worktree's own root, not the main repository's.</summary>
+    public async Task<string?> GetRepoRootAsync(string path, CancellationToken ct)
+    {
+        var r = await RunAsync(path, ["rev-parse", "--show-toplevel"], ct).ConfigureAwait(false);
+        if (!r.Ok) return null;
+        var top = r.Stdout.Trim();
+        return string.IsNullOrEmpty(top) ? null : top;
+    }
+
     public async Task<string?> GetCurrentBranchAsync(string path, CancellationToken ct)
     {
         var r = await RunAsync(path, ["symbolic-ref", "--short", "HEAD"], ct).ConfigureAwait(false);

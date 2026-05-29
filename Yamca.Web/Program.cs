@@ -47,6 +47,14 @@ if (cli.WorkspacePath is not null)
     workspaceRoot = Path.GetFullPath(cli.WorkspacePath);
 }
 
+// The repository top-level, discovered once at startup. Repo-scoped artifacts (the dev board
+// and worktrees) anchor here rather than at the sandbox root, so opening yamca in a subdirectory
+// still finds the board and roots worktrees at the repo root. Falls back to the workspace root
+// when not inside a git repository. The sandbox boundary stays at workspaceRoot regardless.
+var repositoryRoot = await new GitService()
+    .GetRepoRootAsync(workspaceRoot, CancellationToken.None)
+    .ConfigureAwait(false) ?? workspaceRoot;
+
 // Fixed default port so browser localStorage (keyed by origin) persists across
 // runs and explicit via --port if the user needs to move it.
 const int DefaultPort = 9001;
@@ -77,7 +85,7 @@ builder.Services.AddHttpClient();
 // first positional CLI argument or, if none was supplied, to the directory the
 // process was launched from. Per PLAN.md this is the sandbox root for the
 // entire session.
-builder.Services.AddSingleton<IWorkspace>(_ => new Workspace(workspaceRoot));
+builder.Services.AddSingleton<IWorkspace>(_ => new Workspace(workspaceRoot, repositoryRoot));
 builder.Services.AddSingleton<GitService>();
 builder.Services.AddSingleton<BoardService>();
 
@@ -202,6 +210,8 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 Console.WriteLine($"Yamca listening on {url}  (workspace: {workspaceRoot})");
+if (!string.Equals(repositoryRoot, workspaceRoot, StringComparison.OrdinalIgnoreCase))
+    Console.WriteLine($"  git repository root: {repositoryRoot}  (dev board and worktrees anchor here)");
 if (!cli.NoBrowser)
 {
     app.Lifetime.ApplicationStarted.Register(() => OpenBrowser(url));

@@ -29,13 +29,15 @@ public sealed class BoardListTool : ITool
     }
     """;
 
-    public bool SupportsWorkspaceRestriction => true;
+    // The dev board lives at .yamca/board under the git repository root, which may sit above the
+    // session's sandbox root. Board tools are therefore never workspace-restricted.
+    public bool SupportsWorkspaceRestriction => false;
 
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
     public Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
-        var snapshot = _board.Read(context.Workspace.RootPath);
+        var snapshot = _board.Read(context.Workspace.RepositoryRoot);
         if (snapshot.Columns.Count == 0)
             return Task.FromResult(ToolResult.Ok("The board is empty or not initialized (no .yamca/board directory with NN-name columns)."));
 

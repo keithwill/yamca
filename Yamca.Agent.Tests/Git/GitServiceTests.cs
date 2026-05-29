@@ -52,6 +52,45 @@ public class GitServiceTests
     }
 
     [Test]
+    public async Task GetRepoRootAsync_ReturnsToplevel_FromRepoRoot()
+    {
+        var root = await _svc.GetRepoRootAsync(_root, CancellationToken.None);
+        Assert.That(Norm(root), Is.EqualTo(Norm(_root)).IgnoreCase);
+    }
+
+    [Test]
+    public async Task GetRepoRootAsync_ReturnsRepoRoot_FromSubdirectory()
+    {
+        var sub = Path.Combine(_root, "src", "feature");
+        Directory.CreateDirectory(sub);
+
+        var root = await _svc.GetRepoRootAsync(sub, CancellationToken.None);
+
+        // The whole point of the fix: a subdirectory still resolves to the repository top-level.
+        Assert.That(Norm(root), Is.EqualTo(Norm(_root)).IgnoreCase);
+    }
+
+    [Test]
+    public async Task GetRepoRootAsync_ReturnsNull_OutsideRepo()
+    {
+        var outside = Path.Combine(Path.GetFullPath(Path.GetTempPath()), "yamca-tests", "norepo-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        try
+        {
+            Assert.That(await _svc.GetRepoRootAsync(outside, CancellationToken.None), Is.Null);
+        }
+        finally
+        {
+            try { Directory.Delete(outside, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    // git rev-parse --show-toplevel emits forward slashes (and may differ in drive-letter casing)
+    // on Windows; normalize both sides before comparing.
+    private static string? Norm(string? path) =>
+        path is null ? null : Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+    [Test]
     public async Task CreateWorktree_then_remove_works_for_new_branch()
     {
         var wtPath = Path.Combine(_root, ".yamca", "worktrees", "feature-x");

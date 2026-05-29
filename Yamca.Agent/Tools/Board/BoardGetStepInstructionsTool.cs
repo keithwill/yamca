@@ -28,7 +28,9 @@ public sealed class BoardGetStepInstructionsTool : ITool
     }
     """;
 
-    public bool SupportsWorkspaceRestriction => true;
+    // The dev board lives at .yamca/board under the git repository root, which may sit above the
+    // session's sandbox root. Board tools are therefore never workspace-restricted.
+    public bool SupportsWorkspaceRestriction => false;
 
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
@@ -37,12 +39,12 @@ public sealed class BoardGetStepInstructionsTool : ITool
         if (!ToolArguments.TryGetString(arguments, "column", out var columnRef, out var argError))
             return Task.FromResult(ToolResult.Error(argError));
 
-        var snapshot = _board.Read(context.Workspace.RootPath);
+        var snapshot = _board.Read(context.Workspace.RepositoryRoot);
         var column = snapshot.FindColumn(columnRef);
         if (column is null)
             return Task.FromResult(ToolResult.Error($"Unknown column '{columnRef}'. Valid columns: {string.Join(", ", snapshot.Columns.Select(c => c.DisplayName))}."));
 
-        var instructions = _board.ReadInstructions(context.Workspace.RootPath, column.DirectoryName);
+        var instructions = _board.ReadInstructions(context.Workspace.RepositoryRoot, column.DirectoryName);
         if (string.IsNullOrWhiteSpace(instructions))
             return Task.FromResult(ToolResult.Ok($"Column '{column.DisplayName}' has no instructions.md."));
 

@@ -110,13 +110,13 @@ else
 
     private void OnSessionsChanged() => InvokeAsync(StateHasChanged);
 
-    private void Refresh() => _snapshot = BoardSvc.Read(Workspace.RootPath);
+    private void Refresh() => _snapshot = BoardSvc.Read(Workspace.RepositoryRoot);
 
     private static DialogOptions Small() => new() { MaxWidth = MaxWidth.Small, FullWidth = true };
 
     private async Task InitializeBoardAsync()
     {
-        var boardDir = BoardService.BoardDirectory(Workspace.RootPath);
+        var boardDir = BoardService.BoardDirectory(Workspace.RepositoryRoot);
         foreach (var (dir, instr) in DefaultColumns)
         {
             try
@@ -142,7 +142,7 @@ else
         var result = await dialog.Result;
         if (result is null || result.Canceled || result.Data is not NewCardDialog.Result data) return;
 
-        var id = BoardSvc.NextCardId(Workspace.RootPath);
+        var id = BoardSvc.NextCardId(Workspace.RepositoryRoot);
         var path = Path.Combine(column.AbsolutePath, BoardService.CardFileName(id, data.Title));
         var content = $"---\nid: {id}\ntitle: \"{data.Title.Replace("\"", "'")}\"\n---\n\n{data.Body}\n";
         try
@@ -162,11 +162,11 @@ else
     {
         // Branch field defaults / existing branches are gathered up front so the dialog can
         // offer them inline (combobox + endpoint dropdown) instead of chaining more modals.
-        var existingBranches = await Git.ListBranchesAsync(Workspace.RootPath, CancellationToken.None);
+        var existingBranches = await Git.ListBranchesAsync(Workspace.RepositoryRoot, CancellationToken.None);
         var parameters = new DialogParameters
         {
             ["Card"] = card,
-            ["WorkspaceRoot"] = Workspace.RootPath,
+            ["WorkspaceRoot"] = Workspace.RepositoryRoot,
             ["ColumnDisplayName"] = column.DisplayName,
             ["CanRunStep"] = Manager.CanCreate,
             ["Endpoints"] = Session.Endpoints.Items,
@@ -206,7 +206,7 @@ else
         if (worktree is null) return; // error already surfaced
 
         // 3. Column instructions + next column.
-        var instructions = BoardSvc.ReadInstructions(Workspace.RootPath, column.DirectoryName);
+        var instructions = BoardSvc.ReadInstructions(Workspace.RepositoryRoot, column.DirectoryName);
         var next = _snapshot.NextColumn(column);
 
         // 4. Provision the seeded session and navigate to it (composer pre-filled, not sent).
@@ -229,19 +229,23 @@ else
     private async Task<WorktreeInfo?> ResolveWorktreeForBranchAsync(string branch)
     {
         var ct = CancellationToken.None;
-        var baseBranch = await Git.GetCurrentBranchAsync(Workspace.RootPath, ct) ?? "";
+        // Worktrees and git operations are repo-scoped, so they anchor at the repository root.
+        // BasePath, however, stays the session's sandbox root: it doubles as the key that ties a
+        // worktree back to the base chat session (see ChatSessionPanel.IsBranchOpBusy).
+        var repoRoot = Workspace.RepositoryRoot;
+        var baseBranch = await Git.GetCurrentBranchAsync(repoRoot, ct) ?? "";
 
-        var worktrees = await Git.ListWorktreesAsync(Workspace.RootPath, ct);
+        var worktrees = await Git.ListWorktreesAsync(repoRoot, ct);
         var match = worktrees.FirstOrDefault(w => string.Equals(w.Branch, branch, StringComparison.Ordinal));
         if (match.Path is not null)
             return new WorktreeInfo(branch, baseBranch, match.Path, Workspace.RootPath);
 
-        var path = Path.Combine(Workspace.RootPath, ".yamca", "worktrees", Sanitize(branch));
+        var path = Path.Combine(repoRoot, ".yamca", "worktrees", Sanitize(branch));
         if (!Directory.Exists(path))
         {
-            var branches = await Git.ListBranchesAsync(Workspace.RootPath, ct);
+            var branches = await Git.ListBranchesAsync(repoRoot, ct);
             var branchExists = branches.Any(b => string.Equals(b, branch, StringComparison.Ordinal));
-            var r = await Git.CreateWorktreeAsync(Workspace.RootPath, path, branch, isNewBranch: !branchExists, ct);
+            var r = await Git.CreateWorktreeAsync(repoRoot, path, branch, isNewBranch: !branchExists, ct);
             if (!r.Ok)
             {
                 Snackbar.Add($"Could not open worktree for '{branch}': {r.Stderr.Trim()}", Severity.Error);
@@ -270,12 +274,13 @@ else
             return false;
         }
 
-        var rel = Path.GetRelativePath(Workspace.RootPath, card.AbsolutePath);
-        if (await Git.HasUncommittedChangesAsync(Workspace.RootPath, rel, ct))
+        var repoRoot = Workspace.RepositoryRoot;
+        var rel = Path.GetRelativePath(repoRoot, card.AbsolutePath);
+        if (await Git.HasUncommittedChangesAsync(repoRoot, rel, ct))
         {
-            var outerBranch = await Git.GetCurrentBranchAsync(Workspace.RootPath, ct) ?? "the current branch";
+            var outerBranch = await Git.GetCurrentBranchAsync(repoRoot, ct) ?? "the current branch";
             var commit = await Git.CommitPathsAsync(
-                Workspace.RootPath, $"board: bind #{card.Id} to {branch}", new[] { rel }, ct);
+                repoRoot, $"board: bind #{card.Id} to {branch}", new[] { rel }, ct);
             if (!commit.Ok)
             {
                 Snackbar.Add($"Could not commit card #{card.Id} before branching: {commit.Stderr.Trim()}", Severity.Error);

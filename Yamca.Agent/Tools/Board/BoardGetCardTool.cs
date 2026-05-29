@@ -28,7 +28,9 @@ public sealed class BoardGetCardTool : ITool
     }
     """;
 
-    public bool SupportsWorkspaceRestriction => true;
+    // The dev board lives at .yamca/board under the git repository root, which may sit above the
+    // session's sandbox root. Board tools are therefore never workspace-restricted.
+    public bool SupportsWorkspaceRestriction => false;
 
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
@@ -37,7 +39,7 @@ public sealed class BoardGetCardTool : ITool
         if (!ToolArguments.TryGetString(arguments, "card", out var cardRef, out var argError))
             return ToolResult.Error(argError);
 
-        var snapshot = _board.Read(context.Workspace.RootPath);
+        var snapshot = _board.Read(context.Workspace.RepositoryRoot);
         var card = snapshot.FindCard(cardRef);
         if (card is null)
             return ToolResult.Error($"No card matching '{cardRef}' on the board.");
