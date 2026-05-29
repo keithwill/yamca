@@ -3,13 +3,16 @@ using TreeSitter;
 namespace Yamca.Agent.Tools.CodeIntel;
 
 /// <summary>
-/// Walks a C# syntax tree (tree-sitter-c-sharp grammar) and pulls out the namespaces,
-/// types and members an LLM would care about for orientation. Walks via named children
-/// rather than a tree-sitter query so depth tracking stays straightforward.
+/// Walks a Java syntax tree (tree-sitter-java grammar) and pulls out the package, types
+/// and members an LLM would care about for orientation. Walks via named children rather
+/// than a tree-sitter query so depth tracking stays straightforward. Mirrors
+/// <see cref="CSharpSymbolExtractor"/> — the two grammars share the same shape (a leading
+/// scope declaration, then nested type/member declarations with <c>name</c> and <c>body</c>
+/// fields), so this is the template the other JVM/C-family extractors should follow.
 /// </summary>
-public sealed class CSharpSymbolExtractor : ISymbolExtractor
+public sealed class JavaSymbolExtractor : ISymbolExtractor
 {
-    public string LanguageId => "c-sharp";
+    public string LanguageId => "java";
 
     public IEnumerable<Symbol> Extract(Node root, string source)
     {
@@ -20,16 +23,17 @@ public sealed class CSharpSymbolExtractor : ISymbolExtractor
 
     private static void Walk(Node node, int depth, List<Symbol> sink, string source)
     {
-        // File-scoped namespaces (`namespace X;`) have no body field — instead, every
-        // sibling that follows them in the compilation_unit is logically nested inside
-        // the namespace. Track that by bumping currentDepth for the rest of this scope.
+        // A `package x.y.z;` declaration has no body — everything that follows it in the
+        // file is logically inside that package. Mirror the C# file-scoped-namespace
+        // handling: emit it, then bump currentDepth for the rest of this scope.
         var currentDepth = depth;
 
         foreach (var child in node.NamedChildren)
         {
-            if (child.Type == "file_scoped_namespace_declaration")
+            if (child.Type == "package_declaration")
             {
-                sink.Add(Symbol.From("namespace", $"namespace {NameOrAnonymous(child)}", BareName(child), child, currentDepth));
+                var pkg = PackageName(child);
+                sink.Add(Symbol.From("package", $"package {pkg}", pkg, child, currentDepth));
                 if (currentDepth < SymbolDepth.MaxContainerDepth) currentDepth++;
                 continue;
             }
@@ -53,8 +57,9 @@ public sealed class CSharpSymbolExtractor : ISymbolExtractor
                 continue;
             }
 
-            // Descend through structural wrappers (compilation_unit, top-level statements,
-            // declaration_list under namespaces / types) without affecting depth.
+            // Descend through structural wrappers (the program root, type bodies, and the
+            // enum_body_declarations block that holds an enum's methods) without affecting
+            // depth — the container that owns the body already bumped it.
             if (IsStructuralWrapper(child.Type))
                 Walk(child, currentDepth, sink, source);
         }
@@ -64,20 +69,16 @@ public sealed class CSharpSymbolExtractor : ISymbolExtractor
     {
         switch (node.Type)
         {
-            case "namespace_declaration":
-            case "file_scoped_namespace_declaration":
-                kind = "namespace"; return true;
             case "class_declaration":
                 kind = "class"; return true;
-            case "struct_declaration":
-                kind = "struct"; return true;
             case "interface_declaration":
                 kind = "interface"; return true;
             case "enum_declaration":
                 kind = "enum"; return true;
             case "record_declaration":
-            case "record_struct_declaration":
                 kind = "record"; return true;
+            case "annotation_type_declaration":
+                kind = "@interface"; return true;
             default:
                 kind = string.Empty; return false;
         }
@@ -87,27 +88,24 @@ public sealed class CSharpSymbolExtractor : ISymbolExtractor
     {
         switch (node.Type)
         {
-            case "method_declaration":           kind = "method"; return true;
-            case "constructor_declaration":      kind = "ctor"; return true;
-            case "destructor_declaration":       kind = "dtor"; return true;
-            case "property_declaration":         kind = "property"; return true;
-            case "indexer_declaration":          kind = "indexer"; return true;
-            case "field_declaration":            kind = "field"; return true;
-            case "event_declaration":            kind = "event"; return true;
-            case "event_field_declaration":      kind = "event"; return true;
-            case "delegate_declaration":         kind = "delegate"; return true;
-            case "operator_declaration":         kind = "operator"; return true;
-            case "conversion_operator_declaration": kind = "operator"; return true;
-            case "enum_member_declaration":      kind = "enum_value"; return true;
-            default:                              kind = string.Empty; return false;
+            case "method_declaration":      kind = "method"; return true;
+            case "constructor_declaration": kind = "ctor"; return true;
+            case "field_declaration":       kind = "field"; return true;
+            case "enum_constant":           kind = "enum_value"; return true;
+            // Annotation members read as a `name()` element with an optional default.
+            case "annotation_type_element_declaration": kind = "element"; return true;
+            default:                        kind = string.Empty; return false;
         }
     }
 
     private static bool IsStructuralWrapper(string type) => type switch
     {
-        "compilation_unit" => true,
-        "declaration_list" => true,
-        "global_statement" => true,
+        "program" => true,
+        "class_body" => true,
+        "interface_body" => true,
+        "enum_body" => true,
+        "enum_body_declarations" => true,
+        "annotation_type_body" => true,
         _ => false,
     };
 
@@ -120,14 +118,26 @@ public sealed class CSharpSymbolExtractor : ISymbolExtractor
     /// <summary>Bare leaf name for lookup (empty when the node has no <c>name</c> field).</summary>
     private static string BareName(Node node) => node.GetChildForField("name")?.Text ?? string.Empty;
 
+    /// <summary>
+    /// A package declaration carries its name as a child <c>identifier</c> /
+    /// <c>scoped_identifier</c> rather than a <c>name</c> field. Take the first such child.
+    /// </summary>
+    private static string PackageName(Node node)
+    {
+        foreach (var child in node.NamedChildren)
+            if (child.Type is "identifier" or "scoped_identifier")
+                return child.Text ?? "<anonymous>";
+        return "<anonymous>";
+    }
+
     private static string MemberName(string kind, Node node)
     {
         var name = node.GetChildForField("name");
         if (name is not null) return name.Text ?? string.Empty;
 
-        // Fields and field-style events declare their name on a nested variable_declarator
-        // (`public int Foo, Bar;`) rather than a `name` field. Take the first declarator.
-        if (kind is "field" or "event")
+        // Fields declare their name on a nested variable_declarator (`int foo, bar;`)
+        // rather than a `name` field. Take the first declarator.
+        if (kind == "field")
         {
             var declarator = FirstDescendant(node, "variable_declarator");
             return declarator?.GetChildForField("name")?.Text
@@ -150,8 +160,9 @@ public sealed class CSharpSymbolExtractor : ISymbolExtractor
 
     private static string BuildMemberDisplay(string kind, Node node, string source)
     {
+        // Methods/constructors slice up to the block body; fields have no body so the
+        // whole declaration (sans initializer trivia, collapsed) becomes the signature.
         var body = node.GetChildForField("body")
-                ?? node.GetChildForField("accessors")
                 ?? node.GetChildForField("value");
         var header = SignatureFormatter.SliceHeader(node, body, source);
         return $"{kind} {header}";

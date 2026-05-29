@@ -138,6 +138,183 @@ public sealed class TsxNodeProfile : GenericNodeProfile { public override string
 public sealed class RustNodeProfile : GenericNodeProfile { public override string LanguageId => "rust"; }
 public sealed class GoNodeProfile : GenericNodeProfile { public override string LanguageId => "go"; }
 
+/// <summary>Java names its call node <c>method_invocation</c>, not <c>*_call</c>.</summary>
+public sealed class JavaNodeProfile : GenericNodeProfile
+{
+    public override string LanguageId => "java";
+
+    public override bool TryGetCall(Node node, out string calleeName)
+    {
+        calleeName = string.Empty;
+        if (node.Type != "method_invocation") return false;
+        // method_invocation exposes the called method's leaf via the `name` field
+        // (the optional `object` field is the receiver, which we ignore).
+        var id = node.GetChildForField("name")?.Text;
+        calleeName = id ?? string.Empty;
+        return calleeName.Length > 0;
+    }
+}
+
+/// <summary>
+/// C uses the generic <c>call_expression</c> convention, but its declarations carry no
+/// <c>name</c> field — the identifier is buried in a declarator chain — so the generic
+/// <c>TryGetDefinition</c> misses functions and aggregates entirely.
+/// </summary>
+public sealed class CNodeProfile : GenericNodeProfile
+{
+    public override string LanguageId => "c";
+
+    public override bool TryGetDefinition(Node node, out string name, out string kind)
+    {
+        name = string.Empty;
+        kind = string.Empty;
+        switch (node.Type)
+        {
+            case "function_definition":
+                name = CSymbolExtractor.DeclaratorLeaf(node.GetChildForField("declarator"));
+                kind = "func";
+                return name.Length > 0;
+            case "type_definition":
+                name = CSymbolExtractor.TypedefName(node);
+                kind = "typedef";
+                return name.Length > 0;
+            case "struct_specifier":
+            case "union_specifier":
+            case "enum_specifier":
+                name = node.GetChildForField("name")?.Text ?? string.Empty;
+                kind = node.Type[..node.Type.IndexOf('_')];
+                return name.Length > 0;
+            default:
+                return false;
+        }
+    }
+}
+
+/// <summary>
+/// C++ uses the generic <c>call_expression</c> convention, but — like C — buries declaration
+/// names in declarator chains, so the generic <c>TryGetDefinition</c> misses functions,
+/// methods and aggregates. Reuses <see cref="CppSymbolExtractor.DeclaratorLeaf"/> so qualified
+/// (<c>Foo::bar</c>) and destructor names resolve.
+/// </summary>
+public sealed class CppNodeProfile : GenericNodeProfile
+{
+    public override string LanguageId => "cpp";
+
+    public override bool TryGetDefinition(Node node, out string name, out string kind)
+    {
+        name = string.Empty;
+        kind = string.Empty;
+        switch (node.Type)
+        {
+            case "function_definition":
+            case "declaration":
+            case "field_declaration":
+                name = CppSymbolExtractor.DeclaratorLeaf(node.GetChildForField("declarator"));
+                kind = "func";
+                return name.Length > 0;
+            case "namespace_definition":
+                name = node.GetChildForField("name")?.Text ?? string.Empty;
+                kind = "namespace";
+                return name.Length > 0;
+            case "class_specifier":
+            case "struct_specifier":
+            case "union_specifier":
+            case "enum_specifier":
+                name = node.GetChildForField("name")?.Text ?? string.Empty;
+                kind = node.Type[..node.Type.IndexOf('_')];
+                return name.Length > 0;
+            default:
+                return false;
+        }
+    }
+}
+
+/// <summary>
+/// Ruby's <c>call</c> node names the callee via a <c>method</c> field (not <c>function</c>),
+/// and its definitions (<c>method</c> / <c>class</c> / <c>module</c>) carry no <c>_declaration</c>
+/// suffix — so both generic heuristics miss it.
+/// </summary>
+public sealed class RubyNodeProfile : GenericNodeProfile
+{
+    public override string LanguageId => "ruby";
+
+    public override bool TryGetCall(Node node, out string calleeName)
+    {
+        calleeName = string.Empty;
+        if (node.Type != "call") return false;
+        calleeName = node.GetChildForField("method")?.Text ?? string.Empty;
+        return calleeName.Length > 0;
+    }
+
+    public override bool TryGetDefinition(Node node, out string name, out string kind)
+    {
+        name = string.Empty;
+        kind = string.Empty;
+        switch (node.Type)
+        {
+            case "method":
+            case "singleton_method":
+                kind = "method"; break;
+            case "class":
+                kind = "class"; break;
+            case "module":
+                kind = "module"; break;
+            default:
+                return false;
+        }
+        name = node.GetChildForField("name")?.Text ?? string.Empty;
+        return name.Length > 0;
+    }
+}
+
+/// <summary>
+/// PHP's definitions end in <c>_declaration</c>/<c>_definition</c> with a <c>name</c> field, so
+/// the generic <c>TryGetDefinition</c> handles them. Calls, however, are <c>*_call_expression</c>
+/// (not matched by the generic <c>*_call</c> rule), and PHP's identifier node is <c>name</c>
+/// rather than <c>identifier</c> — both need overriding.
+/// </summary>
+public sealed class PhpNodeProfile : GenericNodeProfile
+{
+    public override string LanguageId => "php";
+
+    public override bool IsIdentifier(string t) => t == "name" || base.IsIdentifier(t);
+
+    public override bool TryGetCall(Node node, out string calleeName)
+    {
+        calleeName = string.Empty;
+        switch (node.Type)
+        {
+            case "function_call_expression":
+                // The callee is the `function` field (a name / qualified_name); the leaf is
+                // its rightmost name segment. Fall back to the first child for safety.
+                var fn = node.GetChildForField("function") ?? node.NamedChildren.FirstOrDefault();
+                calleeName = fn is not null ? LastName(fn) ?? fn.Text ?? string.Empty : string.Empty;
+                break;
+            case "member_call_expression":
+            case "nullsafe_member_call_expression":
+            case "scoped_call_expression":
+                calleeName = node.GetChildForField("name")?.Text ?? string.Empty;
+                break;
+            default:
+                return false;
+        }
+        return calleeName.Length > 0;
+    }
+
+    /// <summary>Rightmost <c>name</c>-typed descendant (PHP's identifier), e.g. <c>foo</c> in <c>App\foo</c>.</summary>
+    private static string? LastName(Node node)
+    {
+        if (node.Type == "name") return node.Text;
+        string? found = null;
+        foreach (var c in node.NamedChildren)
+        {
+            var r = LastName(c);
+            if (r is not null) found = r;
+        }
+        return found;
+    }
+}
+
 /// <summary>
 /// Resolves a tree-sitter language id to its <see cref="ILanguageNodeProfile"/>, falling
 /// back to the generic profile for languages without a dedicated one.

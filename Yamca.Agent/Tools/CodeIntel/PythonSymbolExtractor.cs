@@ -28,7 +28,7 @@ public sealed class PythonSymbolExtractor : ISymbolExtractor
                     var classNameNode = target.GetChildForField("name");
                     var className = classNameNode?.Text ?? "<anonymous>";
                     sink.Add(Symbol.From("class", $"class {className}", classNameNode?.Text ?? string.Empty, target, depth));
-                    if (depth < 3)
+                    if (depth < SymbolDepth.MaxContainerDepth)
                     {
                         var body = target.GetChildForField("body");
                         if (body is not null) Walk(body, depth + 1, sink, source);

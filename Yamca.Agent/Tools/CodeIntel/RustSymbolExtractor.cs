@@ -22,7 +22,7 @@ public sealed class RustSymbolExtractor : ISymbolExtractor
                 case "mod_item":
                     var modName = child.GetChildForField("name")?.Text ?? "<anonymous>";
                     sink.Add(Symbol.From("mod", $"mod {modName}", child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
-                    if (depth < 3)
+                    if (depth < SymbolDepth.MaxContainerDepth)
                     {
                         var body = child.GetChildForField("body");
                         if (body is not null) Walk(body, depth + 1, sink, source);
@@ -34,7 +34,7 @@ public sealed class RustSymbolExtractor : ISymbolExtractor
                     var implTrait = child.GetChildForField("trait")?.Text;
                     var implLabel = implTrait is null ? $"impl {implType}" : $"impl {implTrait} for {implType}";
                     sink.Add(Symbol.From("impl", implLabel, child.GetChildForField("type")?.Text ?? string.Empty, child, depth));
-                    if (depth < 3)
+                    if (depth < SymbolDepth.MaxContainerDepth)
                     {
                         var body = child.GetChildForField("body");
                         if (body is not null) Walk(body, depth + 1, sink, source);
@@ -44,7 +44,7 @@ public sealed class RustSymbolExtractor : ISymbolExtractor
                 case "trait_item":
                     var traitName = child.GetChildForField("name")?.Text ?? "<anonymous>";
                     sink.Add(Symbol.From("trait", $"trait {traitName}", child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
-                    if (depth < 3)
+                    if (depth < SymbolDepth.MaxContainerDepth)
                     {
                         var body = child.GetChildForField("body");
                         if (body is not null) Walk(body, depth + 1, sink, source);

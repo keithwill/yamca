@@ -84,7 +84,7 @@ public sealed class TypeScriptSymbolExtractor : ISymbolExtractor
         var nameNode = node.GetChildForField("name");
         var name = nameNode?.Text ?? "<anonymous>";
         sink.Add(Symbol.From(kind, $"{kind} {name}", nameNode?.Text ?? string.Empty, node, depth));
-        if (depth < 3)
+        if (depth < SymbolDepth.MaxContainerDepth)
         {
             var body = node.GetChildForField("body");
             if (body is not null) Walk(body, depth + 1, sink, source);
