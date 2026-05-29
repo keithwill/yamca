@@ -189,24 +189,27 @@ else
             return;
         }
 
-        // 1. Resolve (or create) the branch worktree. This covers a fresh branch for an
-        //    unbound card, and a bound card whose branch/worktree was since deleted or merged
-        //    (e.g. from the chat merge/delete buttons) — both are recreated as needed.
-        var worktree = await ResolveWorktreeForBranchAsync(run.Branch);
-        if (worktree is null) return; // error already surfaced
-
-        // Bind the card to its branch on first use.
+        // 1. First run for this card: bind it to its branch and commit the card file (carrying the
+        //    binding) to the current outer branch in isolation, BEFORE forking the worktree. Without
+        //    this, `git worktree add -b` forks from a HEAD that lacks the not-yet-committed card and
+        //    the step's agent can't see the card it is meant to work.
         if (string.IsNullOrWhiteSpace(card.Branch))
         {
-            await PersistBranchAsync(card, run.Branch);
+            if (!await LockCardToBranchAsync(card, run.Branch)) return; // error already surfaced
             card = card with { Branch = run.Branch };
         }
 
-        // 2. Column instructions + next column.
+        // 2. Resolve (or create) the branch worktree. This covers a fresh branch for a just-bound
+        //    card, and a bound card whose branch/worktree was since deleted or merged (e.g. from the
+        //    chat merge/delete buttons) — both are recreated as needed.
+        var worktree = await ResolveWorktreeForBranchAsync(run.Branch);
+        if (worktree is null) return; // error already surfaced
+
+        // 3. Column instructions + next column.
         var instructions = BoardSvc.ReadInstructions(Workspace.RootPath, column.DirectoryName);
         var next = _snapshot.NextColumn(column);
 
-        // 3. Provision the seeded session and navigate to it (composer pre-filled, not sent).
+        // 4. Provision the seeded session and navigate to it (composer pre-filled, not sent).
         try
         {
             var vm = Launcher.ProvisionStepSession(
@@ -248,18 +251,41 @@ else
         return new WorktreeInfo(branch, baseBranch, path, Workspace.RootPath);
     }
 
-    private async Task PersistBranchAsync(BoardCard card, string branch)
+    // Bind a card to its branch (writing the `branch:` frontmatter) and commit just the card file
+    // to the current branch in isolation, so the worktree fork starts from a HEAD that already
+    // contains the card and its binding. The commit is scoped to the card's pathspec, so any other
+    // in-flight changes in the outer working tree are left untouched. Returns false (after surfacing
+    // an error) when the write or commit fails.
+    private async Task<bool> LockCardToBranchAsync(BoardCard card, string branch)
     {
+        var ct = CancellationToken.None;
         try
         {
             var raw = await File.ReadAllTextAsync(card.AbsolutePath);
             await File.WriteAllTextAsync(card.AbsolutePath, BoardService.WithBranch(raw, branch));
-            Refresh();
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Bound branch '{branch}', but could not update the card file: {ex.Message}", Severity.Warning);
+            Snackbar.Add($"Could not bind card to '{branch}': {ex.Message}", Severity.Error);
+            return false;
         }
+
+        var rel = Path.GetRelativePath(Workspace.RootPath, card.AbsolutePath);
+        if (await Git.HasUncommittedChangesAsync(Workspace.RootPath, rel, ct))
+        {
+            var outerBranch = await Git.GetCurrentBranchAsync(Workspace.RootPath, ct) ?? "the current branch";
+            var commit = await Git.CommitPathsAsync(
+                Workspace.RootPath, $"board: bind #{card.Id} to {branch}", new[] { rel }, ct);
+            if (!commit.Ok)
+            {
+                Snackbar.Add($"Could not commit card #{card.Id} before branching: {commit.Stderr.Trim()}", Severity.Error);
+                return false;
+            }
+            Snackbar.Add($"Committed card #{card.Id} to '{outerBranch}' before starting branch '{branch}'.", Severity.Info);
+        }
+
+        Refresh();
+        return true;
     }
 
     private static string Sanitize(string branch) => branch.Replace('/', '-').Replace('\\', '-');

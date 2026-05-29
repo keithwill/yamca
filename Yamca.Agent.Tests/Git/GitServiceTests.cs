@@ -121,6 +121,37 @@ public class GitServiceTests
         Assert.That(history[0].Sha, Is.Not.Empty);
     }
 
+    [Test]
+    public async Task HasUncommittedChanges_TrueForUntracked_FalseAfterCommit()
+    {
+        File.WriteAllText(Path.Combine(_root, "card.md"), "x\n");
+        Assert.That(await _svc.HasUncommittedChangesAsync(_root, "card.md", CancellationToken.None), Is.True);
+
+        await CommitFile("card.md", "x\n");
+        Assert.That(await _svc.HasUncommittedChangesAsync(_root, "card.md", CancellationToken.None), Is.False);
+    }
+
+    [Test]
+    public async Task CommitPaths_CommitsOnlyPathspec_LeavingOtherChangesStaged()
+    {
+        // An untracked card plus an unrelated staged change in the same tree.
+        File.WriteAllText(Path.Combine(_root, "card.md"), "card\n");
+        File.WriteAllText(Path.Combine(_root, "other.txt"), "other\n");
+        await RunGit("add", "other.txt");
+
+        var commit = await _svc.CommitPathsAsync(_root, "board: bind card", new[] { "card.md" }, CancellationToken.None);
+        Assert.That(commit.Ok, Is.True, commit.Stderr);
+
+        // The card is committed...
+        Assert.That(await _svc.HasUncommittedChangesAsync(_root, "card.md", CancellationToken.None), Is.False);
+        var subject = (await RunGitCapture("log", "-1", "--format=%s")).Trim();
+        Assert.That(subject, Is.EqualTo("board: bind card"));
+
+        // ...while the unrelated change is untouched (still staged, not swept into the commit).
+        var status = (await RunGitCapture("status", "--porcelain", "--", "other.txt")).Trim();
+        Assert.That(status, Is.EqualTo("A  other.txt"));
+    }
+
     private async Task CommitFile(string relative, string content)
     {
         File.WriteAllText(Path.Combine(_root, relative), content);

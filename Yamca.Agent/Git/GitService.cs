@@ -157,6 +157,32 @@ public sealed class GitService
     public Task<GitResult> AddAsync(string repoPath, string pathspec, CancellationToken ct)
         => RunAsync(repoPath, ["add", "--", pathspec], ct);
 
+    /// <summary>True when <paramref name="pathspec"/> has uncommitted changes (staged, unstaged,
+    /// or untracked) relative to HEAD. Lets a caller skip an isolated commit when there is nothing
+    /// to commit, avoiding a spurious "nothing to commit" failure.</summary>
+    public async Task<bool> HasUncommittedChangesAsync(string repoPath, string pathspec, CancellationToken ct)
+    {
+        var r = await RunAsync(repoPath, ["status", "--porcelain", "--", pathspec], ct).ConfigureAwait(false);
+        return r.Ok && !string.IsNullOrWhiteSpace(r.Stdout);
+    }
+
+    /// <summary>Stage and commit only <paramref name="pathspecs"/> in a single commit, leaving any
+    /// other staged or unstaged changes in the working tree untouched. The pathspec-scoped
+    /// <c>git commit -- …</c> performs a partial commit that ignores the rest of the index. Used to
+    /// commit a board card (with its branch binding) to the current branch before forking a worktree,
+    /// so the card is visible on the resulting branch without sweeping in unrelated in-flight work.</summary>
+    public async Task<GitResult> CommitPathsAsync(string repoPath, string message, IReadOnlyList<string> pathspecs, CancellationToken ct)
+    {
+        var addArgs = new List<string> { "add", "--" };
+        addArgs.AddRange(pathspecs);
+        var add = await RunAsync(repoPath, addArgs, ct).ConfigureAwait(false);
+        if (!add.Ok) return add;
+
+        var commitArgs = new List<string> { "commit", "-m", message, "--" };
+        commitArgs.AddRange(pathspecs);
+        return await RunAsync(repoPath, commitArgs, ct).ConfigureAwait(false);
+    }
+
     /// <summary>Author date of the commit that first added <paramref name="filePath"/>
     /// (following renames), or null when the file has never been committed.</summary>
     public async Task<DateTimeOffset?> GetFileCreatedAtAsync(string repoPath, string filePath, CancellationToken ct)
