@@ -1,0 +1,174 @@
+@namespace Yamca.Web.Components.Board
+@using Yamca.Agent.Board
+@using Yamca.Agent.Git
+@inject GitService Git
+@inject BoardService BoardSvc
+
+<MudDialog>
+    <DialogContent>
+        @if (_loading)
+        {
+            <div class="d-flex align-center" style="gap:8px;padding:16px 0">
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                <MudText Typo="Typo.body2">Searching git history…</MudText>
+            </div>
+        }
+        else if (_cards.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="py-2">No deleted cards found in git history.</MudText>
+        }
+        else
+        {
+            <div style="max-height:320px;overflow-y:auto">
+                @for (var i = 0; i < _cards.Count; i++)
+                {
+                    var idx = i;
+                    var card = _cards[i];
+                    <div class="yamca-restore-item @(_selectedIndex == idx ? "yamca-restore-item--selected" : "")"
+                         @onclick="() => OnCardSelected(idx)">
+                        <MudText Typo="Typo.body2">@($"#{card.Id} {card.Title}")</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            @($"{card.OriginalColumnDisplay} · Deleted {card.DeletedAt.LocalDateTime:MMM d, yyyy}")
+                        </MudText>
+                    </div>
+                }
+            </div>
+            @if (_selectedIndex >= 0 && _selectedIndex < _cards.Count)
+            {
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Restore to</MudText>
+                <MudRadioGroup T="string" @bind-Value="_targetColumn">
+                    @if (_showOriginalOption)
+                    {
+                        <MudRadio T="string" Value="@_cards[_selectedIndex].OriginalColumnDirectory">
+                            Original column (@_cards[_selectedIndex].OriginalColumnDisplay)
+                        </MudRadio>
+                    }
+                    <MudRadio T="string" Value="@_firstColumnDirectory">
+                        First column (@_firstColumnDisplay)
+                    </MudRadio>
+                </MudRadioGroup>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="Restore"
+                   Disabled="@(_selectedIndex < 0 || _loading)">
+            Restore
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public string BoardRoot { get; set; } = "";
+    [Parameter] public IReadOnlyList<BoardColumn> Columns { get; set; } = [];
+
+    private bool _loading = true;
+    private List<DeletedCardEntry> _cards = [];
+    private int _selectedIndex = -1;
+    private string _targetColumn = "";
+    private bool _showOriginalOption;
+    private string _firstColumnDirectory = "";
+    private string _firstColumnDisplay = "";
+
+    public sealed record DeletedCardEntry(
+        string RelativePath,
+        string FileName,
+        string OriginalColumnDirectory,
+        string OriginalColumnDisplay,
+        string CommitSha,
+        DateTimeOffset DeletedAt,
+        string Id,
+        string Title
+    );
+
+    public sealed record Result(DeletedCardEntry Card, string TargetColumnDirectory);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Columns.Count > 0)
+        {
+            _firstColumnDirectory = Columns[0].DirectoryName;
+            _firstColumnDisplay = Columns[0].DisplayName;
+        }
+        await LoadDeletedCardsAsync();
+    }
+
+    private async Task LoadDeletedCardsAsync()
+    {
+        var ct = CancellationToken.None;
+        try
+        {
+            var deletedFiles = await Git.GetDeletedFilesAsync(BoardRoot, ct);
+            var cards = new List<DeletedCardEntry>();
+
+            foreach (var file in deletedFiles)
+            {
+                var slash = file.RelativePath.LastIndexOf('/');
+                var fileName = slash >= 0 ? file.RelativePath[(slash + 1)..] : file.RelativePath;
+
+                if (!fileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(fileName, BoardService.InstructionsFileName, StringComparison.OrdinalIgnoreCase)) continue;
+
+                var firstSlash = file.RelativePath.IndexOf('/');
+                var columnDir = firstSlash > 0 ? file.RelativePath[..firstSlash] : "";
+                BoardService.TryParseColumnDir(columnDir, out _, out var colDisplay);
+                if (string.IsNullOrEmpty(colDisplay)) colDisplay = columnDir;
+
+                var content = await Git.ShowFileAtParentAsync(BoardRoot, file.CommitSha, file.RelativePath, ct);
+
+                string id, title;
+                if (content is not null)
+                {
+                    var parsed = BoardSvc.ParseCard(
+                        columnDir,
+                        Path.Combine(BoardRoot, columnDir, fileName),
+                        content);
+                    id = parsed.Id;
+                    title = parsed.Title;
+                }
+                else
+                {
+                    var stem = fileName[..^3];
+                    var dash = stem.IndexOf('-');
+                    id = dash > 0 ? stem[..dash] : stem;
+                    title = dash > 0 ? stem[(dash + 1)..].Replace('-', ' ') : stem;
+                }
+
+                cards.Add(new DeletedCardEntry(
+                    file.RelativePath, fileName, columnDir, colDisplay,
+                    file.CommitSha, file.DeletedAt, id, title));
+            }
+
+            _cards = cards;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnCardSelected(int idx)
+    {
+        _selectedIndex = idx;
+        if (idx < 0 || idx >= _cards.Count) return;
+        var card = _cards[idx];
+        var originalExists = Columns.Any(c =>
+            string.Equals(c.DirectoryName, card.OriginalColumnDirectory, StringComparison.OrdinalIgnoreCase));
+        _showOriginalOption = originalExists &&
+            !string.Equals(card.OriginalColumnDirectory, _firstColumnDirectory, StringComparison.OrdinalIgnoreCase);
+        _targetColumn = _showOriginalOption ? card.OriginalColumnDirectory : _firstColumnDirectory;
+    }
+
+    private void Cancel() => Dialog.Cancel();
+
+    private void Restore()
+    {
+        if (_selectedIndex < 0 || _selectedIndex >= _cards.Count) return;
+        Dialog.Close(DialogResult.Ok(new Result(_cards[_selectedIndex], _targetColumn)));
+    }
+}

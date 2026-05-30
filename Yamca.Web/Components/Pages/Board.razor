@@ -59,6 +59,12 @@ else
                                    OnClick="OpenSearchAsync"
                                    aria-label="Filter cards" />
                 </MudTooltip>
+                <MudTooltip Text="Restore deleted card" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.RestoreFromTrash"
+                                   Size="Size.Small"
+                                   OnClick="OpenRestoreCardAsync"
+                                   aria-label="Restore deleted card" />
+                </MudTooltip>
             </div>
             @if (HasFilter)
             {
@@ -570,6 +576,63 @@ else
         {
             await InvokeAsync(() => FinishMutationAsync(card.Id));
         }
+    }
+
+    private async Task OpenRestoreCardAsync()
+    {
+        var boardRoot = await BoardWorktree.EnsureAsync(CancellationToken.None);
+        var parameters = new DialogParameters
+        {
+            ["BoardRoot"] = boardRoot,
+            ["Columns"] = _snapshot.Columns,
+        };
+        var dialog = await Dialogs.ShowAsync<RestoreCardDialog>("Restore card", parameters, Small());
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not RestoreCardDialog.Result data) return;
+        await RestoreCardAsync(data);
+    }
+
+    private async Task RestoreCardAsync(RestoreCardDialog.Result data)
+    {
+        var card = data.Card;
+        var ct = CancellationToken.None;
+
+        await BoardWorktree.MutateAsync(async boardRoot =>
+        {
+            var content = await Git.ShowFileAtParentAsync(boardRoot, card.CommitSha, card.RelativePath, ct);
+            if (content is null)
+            {
+                await InvokeAsync(() => Snackbar.Add($"Could not retrieve #{card.Id} from git history.", Severity.Error));
+                return;
+            }
+
+            var destDir = Path.Combine(boardRoot, data.TargetColumnDirectory);
+            Directory.CreateDirectory(destDir);
+            var destPath = Path.Combine(destDir, card.FileName);
+
+            if (File.Exists(destPath))
+            {
+                await InvokeAsync(() => Snackbar.Add($"A card named '{card.FileName}' already exists in that column.", Severity.Error));
+                return;
+            }
+
+            try
+            {
+                await File.WriteAllTextAsync(destPath, content, ct);
+            }
+            catch (Exception ex)
+            {
+                await InvokeAsync(() => Snackbar.Add($"Could not restore card: {ex.Message}", Severity.Error));
+                return;
+            }
+
+            var commit = await Git.CommitAllAsync(boardRoot, $"board: restore #{card.Id} {card.Title}", ct);
+            if (!commit.Ok)
+                await InvokeAsync(() => Snackbar.Add($"Card restored but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning));
+        }, ct);
+
+        await RefreshAsync();
+        StateHasChanged();
     }
 
     // Remove the card from _busyCards and refresh once all in-flight mutations have settled.

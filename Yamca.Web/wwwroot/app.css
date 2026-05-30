@@ -382,6 +382,15 @@ h1:focus {
     padding: 0 0.8em;
     color: rgba(200, 200, 200, 0.85);
 }
+/* Restore Card dialog — selectable card rows */
+.yamca-restore-item {
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 4px;
+}
+.yamca-restore-item:hover { background: var(--mud-palette-action-hover); }
+.yamca-restore-item--selected { background: rgba(var(--mud-palette-primary-rgb), 0.12); }
+
 .yamca-markdown table { border-collapse: collapse; margin: 0.4em 0; }
 .yamca-markdown th, .yamca-markdown td {
     border: 1px solid rgba(127, 127, 127, 0.35);

@@ -24,6 +24,10 @@ public sealed record WorktreeInfo(
 /// <summary>One entry from <c>git log</c> for a file: commit hash, author date, subject.</summary>
 public sealed record GitFileLogEntry(string Sha, DateTimeOffset Date, string Subject);
 
+/// <summary>A file deleted in git history: path relative to the worktree root (POSIX separators),
+/// the commit that deleted it, the author date, and the commit subject.</summary>
+public sealed record DeletedFileEntry(string RelativePath, string CommitSha, DateTimeOffset DeletedAt, string Subject);
+
 /// <summary>Thin wrapper around the <c>git</c> CLI. All methods return a
 /// <see cref="GitResult"/> rather than throwing on non-zero exit so callers can
 /// surface stderr to the user.</summary>
@@ -326,6 +330,60 @@ public sealed class GitService
             entries.Add(new GitFileLogEntry(parts[0], dt, parts[2]));
         }
         return entries;
+    }
+
+    /// <summary>All files deleted in the git history of <paramref name="worktreePath"/>,
+    /// newest first. Files that still exist on disk are excluded (they were re-added after
+    /// deletion). Uses the unit-separator character to distinguish commit headers from file
+    /// paths in the <c>--name-only</c> output.</summary>
+    public async Task<IReadOnlyList<DeletedFileEntry>> GetDeletedFilesAsync(string worktreePath, CancellationToken ct)
+    {
+        const char sep = '\x1f';
+        var r = await RunAsync(worktreePath,
+            ["log", "--diff-filter=D", "--name-only", $"--format=%H{sep}%aI{sep}%s", "--", "*.md"],
+            ct).ConfigureAwait(false);
+        if (!r.Ok) return Array.Empty<DeletedFileEntry>();
+
+        var results = new List<DeletedFileEntry>();
+        string? sha = null;
+        DateTimeOffset deletedAt = default;
+        string subject = "";
+
+        foreach (var raw in r.Stdout.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            if (line.Length == 0) continue;
+
+            if (line.Contains(sep))
+            {
+                var parts = line.Split(sep);
+                if (parts.Length < 3) { sha = null; continue; }
+                sha = parts[0];
+                if (!DateTimeOffset.TryParse(parts[1], out deletedAt)) { sha = null; continue; }
+                subject = parts[2];
+            }
+            else if (sha is not null)
+            {
+                var absPath = Path.GetFullPath(
+                    Path.Combine(worktreePath, line.Replace('/', Path.DirectorySeparatorChar)));
+                if (File.Exists(absPath)) continue;
+                results.Add(new DeletedFileEntry(line, sha, deletedAt, subject));
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>Content of <paramref name="relativeFilePath"/> at the parent of
+    /// <paramref name="commitSha"/> — the state of the file just before it was deleted.
+    /// Returns <see langword="null"/> when the content cannot be retrieved.</summary>
+    public async Task<string?> ShowFileAtParentAsync(
+        string worktreePath, string commitSha, string relativeFilePath, CancellationToken ct)
+    {
+        var r = await RunAsync(worktreePath,
+            ["show", $"{commitSha}^:{relativeFilePath}"],
+            ct).ConfigureAwait(false);
+        return r.Ok ? r.Stdout : null;
     }
 
     private static async Task<GitResult> RunAsync(string? workingDir, IReadOnlyList<string> args, CancellationToken ct)
