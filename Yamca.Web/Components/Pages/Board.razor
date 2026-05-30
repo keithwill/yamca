@@ -54,12 +54,21 @@ else
         {
             <div class="yamca-board-lane">
                 <div class="yamca-board-lane-header">
+                    @if (_isWorkColumn.GetValueOrDefault(column.DirectoryName))
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Chat" Size="Size.Small"
+                                 Class="yamca-board-ai-indicator" Title="AI work step" />
+                    }
                     <span class="flex-grow-1">@column.DisplayName</span>
                     @if (column.Order == _snapshot.Columns[0].Order)
                     {
                         <MudIconButton Icon="@Icons.Material.Filled.Add" Size="Size.Small"
                                        OnClick="@(() => AddCardAsync(column))" aria-label="New card" />
                     }
+                    <MudIconButton Icon="@Icons.Material.Outlined.Settings" Size="Size.Small"
+                                   Class="yamca-board-column-edit"
+                                   OnClick="@(() => OpenColumnSettingsAsync(column))"
+                                   aria-label="Edit column" />
                 </div>
                 <div class="yamca-board-lane-cards @(_dragOverColumn == column.DirectoryName ? "yamca-board-lane-cards--dragover" : "")"
                      @ondragover:preventDefault="true"
@@ -106,6 +115,8 @@ else
 @code {
     private bool _hydrated;
     private BoardSnapshot _snapshot = BoardSnapshot.Empty;
+    private string _boardRoot = "";
+    private IReadOnlyDictionary<string, bool> _isWorkColumn = new Dictionary<string, bool>();
 
     // Code-branch name → worktree root path, from the last refresh's `git worktree list`. The board
     // no longer lives on these branches (it is its own worktree), so this only drives code-branch
@@ -152,7 +163,13 @@ else
                 branchWorktrees[branch!] = path;
         _branchWorktrees = branchWorktrees;
 
+        _boardRoot = boardRoot;
         _snapshot = BoardSvc.Read(boardRoot);
+
+        var workCols = new Dictionary<string, bool>(StringComparer.Ordinal);
+        foreach (var col in _snapshot.Columns)
+            workCols[col.DirectoryName] = BoardSvc.HasInstructions(boardRoot, col.DirectoryName);
+        _isWorkColumn = workCols;
     }
 
     private static DialogOptions Small() => new() { MaxWidth = MaxWidth.Small, FullWidth = true };
@@ -170,6 +187,48 @@ else
         }
         await RefreshAsync();
         Snackbar.Add("Board initialized on the yamca-board branch.", Severity.Success);
+    }
+
+    private async Task OpenColumnSettingsAsync(BoardColumn column)
+    {
+        var currentInstructions = BoardSvc.ReadInstructions(_boardRoot, column.DirectoryName);
+
+        var parameters = new DialogParameters { ["Instructions"] = currentInstructions };
+        var dialog = await Dialogs.ShowAsync<ColumnInstructionsDialog>(
+            $"Edit column: {column.DisplayName}", parameters, Small());
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not ColumnInstructionsDialog.Result data) return;
+
+        // Skip the mutation entirely when nothing actually changed.
+        var oldNorm = string.IsNullOrWhiteSpace(currentInstructions) ? null : currentInstructions.Trim();
+        var newNorm = string.IsNullOrWhiteSpace(data.Instructions) ? null : data.Instructions.Trim();
+        if (string.Equals(oldNorm, newNorm, StringComparison.Ordinal)) return;
+
+        var ct = CancellationToken.None;
+        await BoardWorktree.MutateAsync(async br =>
+        {
+            try
+            {
+                await BoardSvc.WriteInstructionsAsync(br, column.DirectoryName, data.Instructions);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Could not save instructions: {ex.Message}", Severity.Error);
+                return;
+            }
+
+            var msg = string.IsNullOrWhiteSpace(data.Instructions)
+                ? $"board: clear {column.DirectoryName} instructions"
+                : $"board: set {column.DirectoryName} instructions";
+            var commit = await Git.CommitAllAsync(br, msg, ct);
+            if (!commit.Ok)
+                Snackbar.Add($"Instructions saved but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning);
+            else
+                Snackbar.Add($"Column '{column.DisplayName}' updated.", Severity.Success);
+        }, ct);
+
+        await RefreshAsync();
+        StateHasChanged();
     }
 
     private async Task AddCardAsync(BoardColumn column)

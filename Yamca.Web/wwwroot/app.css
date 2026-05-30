@@ -178,6 +178,19 @@ h1:focus {
     font-weight: 600;
     text-transform: capitalize;
 }
+.yamca-board-ai-indicator {
+    opacity: 0.55;
+    color: var(--mud-palette-primary);
+    flex-shrink: 0;
+}
+.yamca-board-column-edit {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    flex-shrink: 0;
+}
+.yamca-board-lane-header:hover .yamca-board-column-edit {
+    opacity: 1;
+}
 .yamca-board-lane-cards {
     flex: 1 1 auto;
     min-height: 0;

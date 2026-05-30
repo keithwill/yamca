@@ -149,6 +149,15 @@ public sealed partial class BoardService
         catch (IOException) { return null; }
     }
 
+    /// <summary>Write <paramref name="instructions"/> to a column's <c>instructions.md</c>.
+    /// Pass null or empty to clear it (making the column a resting column).</summary>
+    public Task WriteInstructionsAsync(string boardRoot, string columnDirName, string? instructions)
+    {
+        var path = Path.Combine(BoardDirectory(boardRoot), columnDirName, InstructionsFileName);
+        var content = string.IsNullOrWhiteSpace(instructions) ? string.Empty : instructions;
+        return File.WriteAllTextAsync(path, content);
+    }
+
     /// <summary>True when a column has *non-blank* instructions, which is what makes it a *work*
     /// step (an agent runs it in chat). A column whose <c>instructions.md</c> is missing or blank is
     /// a *resting* column (idea scratchpad, done, blocked, …) whose cards are simply promoted to the

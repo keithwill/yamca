@@ -1,0 +1,65 @@
+@namespace Yamca.Web.Components.Board
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-4" Style="opacity: 0.8">
+            A <strong>work column</strong> runs an AI chat step when a card is promoted into it.
+            A <strong>resting column</strong> just holds cards — no AI step runs.
+        </MudText>
+
+        <MudSwitch @bind-Value="_isWorkStep" T="bool" Color="Color.Primary"
+                   Label="@(_isWorkStep ? "AI work step" : "Resting column")" />
+
+        @if (_isWorkStep)
+        {
+            <MudTextField @bind-Value="_instructions" T="string"
+                          Label="Step instructions"
+                          Variant="Variant.Outlined"
+                          Lines="10"
+                          Class="mt-3"
+                          Placeholder="Describe what the AI agent should do when working cards in this column…"
+                          HelperText="Injected as a system prompt when a card's step runs in chat." />
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-3" Dense="true">
+                Cards promoted into this column will not trigger an AI step.
+            </MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="Save"
+                   Disabled="@(_isWorkStep && string.IsNullOrWhiteSpace(_instructions))">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter] public string? Instructions { get; set; }
+
+    private bool _isWorkStep;
+    private string _instructions = "";
+
+    public sealed record Result(string? Instructions);
+
+    protected override void OnParametersSet()
+    {
+        _isWorkStep = !string.IsNullOrWhiteSpace(Instructions);
+        _instructions = Instructions ?? "";
+    }
+
+    private void Cancel() => Dialog.Cancel();
+
+    private void Save()
+    {
+        var instructions = _isWorkStep && !string.IsNullOrWhiteSpace(_instructions)
+            ? _instructions.Trim()
+            : null;
+        Dialog.Close(DialogResult.Ok(new Result(instructions)));
+    }
+}
