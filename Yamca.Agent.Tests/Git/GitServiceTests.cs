@@ -128,6 +128,26 @@ public class GitServiceTests
     }
 
     [Test]
+    public async Task CommitStagedPathsAsync_CommitsStagedRename_WithoutReAdding()
+    {
+        await CommitFile("card.md", "hello\n");
+
+        // git mv stages both sides of the rename and removes the source from the index. Committing
+        // the staged paths must then succeed WITHOUT re-running `git add` on the source — doing so
+        // (as CommitPathsAsync does) fatals with "pathspec did not match", which was the promote bug.
+        var move = await _svc.MoveAsync(_root, "card.md", "moved.md", CancellationToken.None);
+        Assert.That(move.Ok, Is.True, move.Stderr);
+
+        var commit = await _svc.CommitStagedPathsAsync(_root, "move card", new[] { "card.md", "moved.md" }, CancellationToken.None);
+        Assert.That(commit.Ok, Is.True, commit.Stderr);
+
+        var status = await RunGitCapture("status", "--porcelain");
+        Assert.That(status.Trim(), Is.Empty, "working tree should be clean after committing the rename");
+        Assert.That(File.Exists(Path.Combine(_root, "moved.md")), Is.True);
+        Assert.That(File.Exists(Path.Combine(_root, "card.md")), Is.False);
+    }
+
+    [Test]
     public async Task GetFileCreatedAt_And_LastModified_ReturnDates()
     {
         await CommitFile("card.md", "v1\n");

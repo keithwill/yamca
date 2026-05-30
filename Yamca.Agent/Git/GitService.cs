@@ -190,9 +190,19 @@ public sealed class GitService
         var add = await RunAsync(repoPath, addArgs, ct).ConfigureAwait(false);
         if (!add.Ok) return add;
 
+        return await CommitStagedPathsAsync(repoPath, message, pathspecs, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Commit already-staged changes for <paramref name="pathspecs"/> only, staging nothing
+    /// first. Like <see cref="CommitPathsAsync"/> this is a pathspec-scoped partial commit that
+    /// leaves the rest of the index untouched, but it must be used when the changes are already
+    /// staged and a fresh <c>git add</c> would fail — notably a <c>git mv</c> rename, whose source
+    /// path is gone from the index, so re-adding it fatals with "pathspec did not match".</summary>
+    public Task<GitResult> CommitStagedPathsAsync(string repoPath, string message, IReadOnlyList<string> pathspecs, CancellationToken ct)
+    {
         var commitArgs = new List<string> { "commit", "-m", message, "--" };
         commitArgs.AddRange(pathspecs);
-        return await RunAsync(repoPath, commitArgs, ct).ConfigureAwait(false);
+        return RunAsync(repoPath, commitArgs, ct);
     }
 
     /// <summary>Author date of the commit that first added <paramref name="filePath"/>
