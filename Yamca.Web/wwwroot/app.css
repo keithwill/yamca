@@ -188,8 +188,14 @@ h1:focus {
     flex-direction: column;
     gap: 0.5rem;
 }
+.yamca-board-lane-cards--dragover {
+    /* Inset ring + faint tint marks the lane the card will drop into. */
+    box-shadow: inset 0 0 0 2px var(--mud-palette-primary);
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 4px;
+}
 .yamca-board-card {
-    cursor: pointer;
+    cursor: grab;
     padding: 0.5rem 0.625rem;
     /* Lift the card off the lane: a lighter surface plus a hairline border read
        as more contrast than elevation shadow alone does on the dark theme. */

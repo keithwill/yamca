@@ -59,7 +59,11 @@ else
                                        OnClick="@(() => AddCardAsync(column))" aria-label="New card" />
                     }
                 </div>
-                <div class="yamca-board-lane-cards">
+                <div class="yamca-board-lane-cards @(_dragOverColumn == column.DirectoryName ? "yamca-board-lane-cards--dragover" : "")"
+                     @ondragover:preventDefault="true"
+                     @ondragenter="@(() => OnDragEnter(column))"
+                     @ondrop:preventDefault="true"
+                     @ondrop="@(() => OnDropAsync(column))">
                     @if (column.Cards.Count == 0)
                     {
                         <div class="yamca-board-empty">No cards</div>
@@ -71,7 +75,11 @@ else
                             var c = card;
                             var done = c.Subtasks.Count(s => s.Done);
                             var total = c.Subtasks.Count;
-                            <MudPaper Class="yamca-board-card" Elevation="3" @onclick="@(() => OpenCardAsync(c, column))">
+                            <MudPaper Class="yamca-board-card" Elevation="3"
+                                      draggable="true"
+                                      @ondragstart="@(() => OnDragStart(c, column))"
+                                      @ondragend="OnDragEnd"
+                                      @onclick="@(() => OpenCardAsync(c, column))">
                                 <div class="yamca-board-card-title">@c.Title</div>
                                 <div class="yamca-board-card-meta">
                                     <span>#@c.Id</span>
@@ -104,6 +112,13 @@ else
     // board — so its dialog offers promote/run-fresh, not merge/open-chat against a dead worktree.
     private IReadOnlyDictionary<string, string> _branchWorktrees =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    // In-flight drag state for moving a card between columns. The card and the column it was picked
+    // up from are captured on dragstart; _dragOverColumn drives the drop-target highlight and is keyed
+    // on DirectoryName (the same key MoveCardAsync compares to short-circuit a same-column drop).
+    private BoardCard? _draggedCard;
+    private BoardColumn? _draggedFromColumn;
+    private string? _dragOverColumn;
 
     protected override void OnInitialized() => Manager.Changed += OnSessionsChanged;
 
@@ -329,6 +344,40 @@ else
 
         await RefreshAsync();
         StateHasChanged();
+    }
+
+    private void OnDragStart(BoardCard card, BoardColumn from)
+    {
+        _draggedCard = card;
+        _draggedFromColumn = from;
+    }
+
+    // Clears drag state whether the drop landed on a lane or was abandoned outside the board, so a
+    // cancelled drag never leaves a stale highlight or a dangling captured card.
+    private void OnDragEnd()
+    {
+        _draggedCard = null;
+        _draggedFromColumn = null;
+        _dragOverColumn = null;
+    }
+
+    // Highlight the lane under the cursor. dragenter bubbles from child cards too, but re-setting the
+    // same column is idempotent, and moving to another lane simply switches the highlight — so no
+    // dragleave bookkeeping is needed; OnDragEnd/OnDropAsync clear it.
+    private void OnDragEnter(BoardColumn column) => _dragOverColumn = column.DirectoryName;
+
+    // Drop a dragged card onto a column. Snapshot and clear the drag state up front (the move triggers
+    // a refresh + re-render), then delegate to MoveCardAsync, which no-ops a same-column drop and
+    // handles both the root-board and live-bound-worktree cases.
+    private async Task OnDropAsync(BoardColumn target)
+    {
+        var card = _draggedCard;
+        var from = _draggedFromColumn;
+        _draggedCard = null;
+        _draggedFromColumn = null;
+        _dragOverColumn = null;
+        if (card is null || from is null) return;
+        await MoveCardAsync(card, from, target);
     }
 
     // Move a card to an arbitrary column from the UI, committing the relocation so the working tree is
