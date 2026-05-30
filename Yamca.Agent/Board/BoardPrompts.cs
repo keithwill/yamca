@@ -9,9 +9,9 @@ public static class BoardPrompts
     {
         var moveLine = next is null
             ? "This is the final column, so there is no further column to move the card to."
-            : $"When this step is complete: tick any finished subtasks with board_update_card, move the card to " +
-              $"\"{next.DisplayName}\" with board_move_card, and stage your code changes together with the card " +
-              $"move so they land in a single commit.";
+            : $"When this step is complete: tick any finished subtasks with board_update_card, commit your code " +
+              $"changes on this branch, then move the card to \"{next.DisplayName}\" with board_move_card (the board " +
+              $"is tracked separately; the move records your latest commit and is committed for you).";
 
         return
             $"Work the \"{current.DisplayName}\" step for board card #{card.Id} \"{card.Title}\".\n\n" +

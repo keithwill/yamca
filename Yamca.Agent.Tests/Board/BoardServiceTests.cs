@@ -20,7 +20,9 @@ public class BoardServiceTests
     [TearDown]
     public void TearDown() => _ws.Dispose();
 
-    private string Board(string relative) => $".yamca/board/{relative}";
+    // Under the orphan-branch layout the board worktree's root IS the columns directory, so tests
+    // treat the workspace root as the board root and write columns directly beneath it.
+    private string Board(string relative) => relative;
 
     [Test]
     public void Read_MissingBoardDir_ReturnsEmpty()
@@ -196,76 +198,18 @@ public class BoardServiceTests
     }
 
     [Test]
-    public void ReadForDisplay_OverlaysBoundCard_WithWorktreeColumnAndSubtasks()
+    public void WithCommit_AddsOrReplacesFrontmatterCommit()
     {
-        // Root board: card #1 is bound to feat/x and still sits in the first column.
-        _ws.WriteFile(Board("10-idea/.keep"), "");
-        _ws.WriteFile(Board("30-implement/.keep"), "");
-        _ws.WriteFile(Board("10-idea/0001-thing.md"),
-            "---\nid: 1\ntitle: Thing\nbranch: feat/x\n---\n\n# Thing\n- [ ] a\n- [ ] b");
+        var added = BoardService.WithCommit("# Title\nbody", "abc123");
+        Assert.That(added, Does.StartWith("---\ncommit: abc123\n---\n"));
+        Assert.That(added, Does.Contain("# Title\nbody"));
 
-        // Worktree board for feat/x: the same card has advanced to implement with progress.
-        var wt = Path.Combine(_ws.RootPath, "wt");
-        WriteWorktreeCard(wt, "30-implement/0001-thing.md",
-            "---\nid: 1\ntitle: Thing\nbranch: feat/x\n---\n\n# Thing\n- [x] a\n- [ ] b");
-
-        var snapshot = _svc.ReadForDisplay(_ws.RootPath, new Dictionary<string, string> { ["feat/x"] = wt });
-
-        Assert.That(snapshot.FindColumn("idea")!.Cards, Is.Empty);
-        var card = snapshot.FindColumn("implement")!.Cards.Single();
-        Assert.That(card.Id, Is.EqualTo("1"));
-        Assert.That(card.ColumnDirectory, Is.EqualTo("30-implement"));
-        Assert.That(BoardService.SubtaskProgress(card.Body), Is.EqualTo((1, 2)));
-        // The file path stays the root copy so git history still resolves against the repo root.
-        Assert.That(card.AbsolutePath, Does.Contain(Path.Combine(".yamca", "board", "10-idea")));
-    }
-
-    [Test]
-    public void ReadForDisplay_FallsBackToRoot_WhenBranchHasNoWorktree()
-    {
-        _ws.WriteFile(Board("10-idea/.keep"), "");
-        _ws.WriteFile(Board("30-implement/.keep"), "");
-        _ws.WriteFile(Board("10-idea/0001-thing.md"), "---\nid: 1\ntitle: Thing\nbranch: feat/x\n---\n# Thing");
-
-        // Empty map (e.g. branch merged and its worktree removed): the root copy stands.
-        var snapshot = _svc.ReadForDisplay(_ws.RootPath, new Dictionary<string, string>());
-
-        Assert.That(snapshot.FindColumn("idea")!.Cards.Single().Id, Is.EqualTo("1"));
-        Assert.That(snapshot.FindColumn("implement")!.Cards, Is.Empty);
-    }
-
-    [Test]
-    public void ReadForDisplay_FallsBackToRoot_WhenWorktreeLacksTheCard()
-    {
-        _ws.WriteFile(Board("10-idea/0001-thing.md"), "---\nid: 1\ntitle: Thing\nbranch: feat/x\n---\n# Thing");
-
-        var wt = Path.Combine(_ws.RootPath, "wt");
-        WriteWorktreeCard(wt, "10-idea/0002-other.md", "---\nid: 2\ntitle: Other\n---\n# Other");
-
-        var snapshot = _svc.ReadForDisplay(_ws.RootPath, new Dictionary<string, string> { ["feat/x"] = wt });
-
-        Assert.That(snapshot.FindColumn("idea")!.Cards.Single().Id, Is.EqualTo("1"));
-    }
-
-    [Test]
-    public void ReadForDisplay_LeavesUnboundCardsUntouched()
-    {
-        _ws.WriteFile(Board("10-idea/0001-thing.md"), "---\nid: 1\ntitle: Thing\n---\n# Thing");
-
-        var wt = Path.Combine(_ws.RootPath, "wt");
-        WriteWorktreeCard(wt, "30-implement/0001-thing.md", "---\nid: 1\ntitle: Thing\n---\n# Thing");
-
-        // No branch binding, so the worktree map is irrelevant for this card.
-        var snapshot = _svc.ReadForDisplay(_ws.RootPath, new Dictionary<string, string> { ["feat/x"] = wt });
-
-        Assert.That(snapshot.FindColumn("idea")!.Cards.Single().Id, Is.EqualTo("1"));
-    }
-
-    private static void WriteWorktreeCard(string worktreeRoot, string relativeToBoard, string content)
-    {
-        var full = Path.Combine(worktreeRoot, ".yamca", "board", relativeToBoard);
-        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-        File.WriteAllText(full, content);
+        var withFm = "---\nid: 7\ncommit: old\n---\n\nbody here";
+        var replaced = BoardService.WithCommit(withFm, "def456");
+        Assert.That(replaced.Split("commit:").Length, Is.EqualTo(2), "commit line not duplicated");
+        Assert.That(replaced, Does.Contain("commit: def456"));
+        Assert.That(replaced, Does.Contain("id: 7"));
+        Assert.That(replaced, Does.Contain("body here"));
     }
 
     [Test]

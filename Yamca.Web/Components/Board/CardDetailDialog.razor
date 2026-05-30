@@ -175,12 +175,11 @@
     [Parameter] public IReadOnlyList<string> ExistingBranches { get; set; } = Array.Empty<string>();
     [Parameter] public string PresumptiveBranch { get; set; } = "";
 
-    /// <summary>Whether the card's <c>branch:</c> attribute points at a branch that currently has a
-    /// live worktree. False when the card has no branch, or has one in intent only (never started,
-    /// merged, or deleted). A binding is only "live" when this is true: the card then lives and moves
-    /// inside its worktree board (offer merge/open-chat); otherwise it effectively lives on the parent
-    /// board and is treated as unbound (offer promote / run a fresh branch). This mirrors the test
-    /// <see cref="BoardService.ReadForDisplay"/> uses to decide whether to overlay the worktree.</summary>
+    /// <summary>Whether the card's <c>branch:</c> attribute points at a code branch that currently
+    /// has a live worktree. False when the card has no branch, or has one in intent only (never
+    /// started, merged, or deleted). When true the dialog offers merge / open-chat against that
+    /// worktree; otherwise it offers promote / run a fresh branch. The board itself lives on its own
+    /// worktree, so this only governs the code-branch affordances, not where the card is read from.</summary>
     [Parameter] public bool BranchWorktreeLive { get; set; }
 
     /// <summary>All board columns (in order), used to populate the "Move to…" picker. The card's

@@ -114,74 +114,73 @@ public class GitServiceTests
     }
 
     [Test]
-    public async Task MoveAsync_StagesRename()
+    public async Task AddOrphanWorktreeAsync_CreatesParentlessBranch_InWorktree()
     {
-        await CommitFile("card.md", "hello\n");
+        var wtPath = Path.Combine(_root, ".yamca", "board");
 
-        var move = await _svc.MoveAsync(_root, "card.md", "moved.md", CancellationToken.None);
-        Assert.That(move.Ok, Is.True, move.Stderr);
-        Assert.That(File.Exists(Path.Combine(_root, "moved.md")), Is.True);
-        Assert.That(File.Exists(Path.Combine(_root, "card.md")), Is.False);
+        var add = await _svc.AddOrphanWorktreeAsync(_root, wtPath, "yamca-board", CancellationToken.None);
+        Assert.That(add.Ok, Is.True, add.Stderr);
+        Assert.That(Directory.Exists(wtPath), Is.True);
 
-        var status = await RunGitCapture("status", "--porcelain");
-        Assert.That(status.Trim(), Does.StartWith("R"));   // staged rename, not committed
-    }
-
-    [Test]
-    public async Task CommitStagedPathsAsync_CommitsStagedRename_WithoutReAdding()
-    {
-        await CommitFile("card.md", "hello\n");
-
-        // git mv stages both sides of the rename and removes the source from the index. Committing
-        // the staged paths must then succeed WITHOUT re-running `git add` on the source — doing so
-        // (as CommitPathsAsync does) fatals with "pathspec did not match", which was the promote bug.
-        var move = await _svc.MoveAsync(_root, "card.md", "moved.md", CancellationToken.None);
-        Assert.That(move.Ok, Is.True, move.Stderr);
-
-        var commit = await _svc.CommitStagedPathsAsync(_root, "move card", new[] { "card.md", "moved.md" }, CancellationToken.None);
+        // Seed a file and commit it as the orphan's root commit.
+        File.WriteAllText(Path.Combine(wtPath, "card.md"), "hi\n");
+        var commit = await _svc.CommitAllAsync(wtPath, "seed", CancellationToken.None);
         Assert.That(commit.Ok, Is.True, commit.Stderr);
 
-        var status = await RunGitCapture("status", "--porcelain");
-        Assert.That(status.Trim(), Is.Empty, "working tree should be clean after committing the rename");
-        Assert.That(File.Exists(Path.Combine(_root, "moved.md")), Is.True);
-        Assert.That(File.Exists(Path.Combine(_root, "card.md")), Is.False);
+        // Exactly one commit, and it has no parent — a history disconnected from the code branches.
+        var count = (await RunGitCapture("rev-list", "--count", "yamca-board")).Trim();
+        Assert.That(count, Is.EqualTo("1"));
+        var parents = (await RunGitCapture("log", "yamca-board", "--format=%P")).Trim();
+        Assert.That(parents, Is.Empty, "the orphan root commit must have no parent");
     }
 
     [Test]
-    public async Task MoveWithUntrackedFallback_TrackedFile_UsesGitMv_StagesBothSides()
+    public async Task CommitAllAsync_Commits_AndIsNoOpWhenClean()
     {
-        await CommitFile("card.md", "hello\n");
+        var wtPath = Path.Combine(_root, ".yamca", "board");
+        await _svc.AddOrphanWorktreeAsync(_root, wtPath, "yamca-board", CancellationToken.None);
 
-        var moved = await _svc.MoveWithUntrackedFallbackAsync(
-            _root, Path.Combine(_root, "card.md"), Path.Combine(_root, "moved.md"), CancellationToken.None);
+        File.WriteAllText(Path.Combine(wtPath, "card.md"), "hi\n");
+        var first = await _svc.CommitAllAsync(wtPath, "add card", CancellationToken.None);
+        Assert.That(first.Ok, Is.True, first.Stderr);
 
-        Assert.That(moved.Ok, Is.True, moved.Error);
-        Assert.That(moved.Staged, Is.True);
-        Assert.That(moved.CommitPaths, Is.EquivalentTo(new[] { "card.md", "moved.md" }));
-        Assert.That(File.Exists(Path.Combine(_root, "moved.md")), Is.True);
-        Assert.That(File.Exists(Path.Combine(_root, "card.md")), Is.False);
-
-        var status = await RunGitCapture("status", "--porcelain");
-        Assert.That(status.Trim(), Does.StartWith("R"));   // staged rename
+        var before = (await RunGitCapture("rev-list", "--count", "yamca-board")).Trim();
+        var noop = await _svc.CommitAllAsync(wtPath, "nothing changed", CancellationToken.None);
+        Assert.That(noop.Ok, Is.True, "a clean tree is a benign no-op");
+        var after = (await RunGitCapture("rev-list", "--count", "yamca-board")).Trim();
+        Assert.That(after, Is.EqualTo(before), "a clean tree must not produce a new commit");
     }
 
     [Test]
-    public async Task MoveWithUntrackedFallback_UntrackedFile_FallsBackAndStagesDestinationOnly()
+    public async Task RevParseHeadAsync_ReturnsShaAndBranch()
     {
-        // A never-committed file: git mv fails, so the fallback filesystem-move + `git add` runs.
-        File.WriteAllText(Path.Combine(_root, "fresh.md"), "new\n");
+        var head = await _svc.RevParseHeadAsync(_root, CancellationToken.None);
+        Assert.That(head, Is.Not.Null);
+        Assert.That(head!.Value.Sha, Is.Not.Empty);
+        Assert.That(head.Value.Branch, Is.EqualTo("main"));
+    }
 
-        var moved = await _svc.MoveWithUntrackedFallbackAsync(
-            _root, Path.Combine(_root, "fresh.md"), Path.Combine(_root, "moved.md"), CancellationToken.None);
+    [Test]
+    public async Task RevParseHeadAsync_ReturnsNull_OnUnbornHead()
+    {
+        var empty = Path.Combine(Path.GetFullPath(Path.GetTempPath()), "yamca-tests", "empty-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(empty);
+        try
+        {
+            await RunGitInAsync(empty, "init", "-b", "main");
+            Assert.That(await _svc.RevParseHeadAsync(empty, CancellationToken.None), Is.Null);
+        }
+        finally
+        {
+            try { Directory.Delete(empty, recursive: true); } catch { /* best-effort */ }
+        }
+    }
 
-        Assert.That(moved.Ok, Is.True, moved.Error);
-        Assert.That(moved.Staged, Is.True);
-        Assert.That(moved.CommitPaths, Is.EquivalentTo(new[] { "moved.md" }));   // destination only — no source side
-        Assert.That(File.Exists(Path.Combine(_root, "moved.md")), Is.True);
-        Assert.That(File.Exists(Path.Combine(_root, "fresh.md")), Is.False);
-
-        var status = await RunGitCapture("status", "--porcelain");
-        Assert.That(status.Trim(), Does.StartWith("A"));   // staged addition of the new path
+    [Test]
+    public async Task BranchExistsAsync_TrueForExisting_FalseOtherwise()
+    {
+        Assert.That(await _svc.BranchExistsAsync(_root, "main", CancellationToken.None), Is.True);
+        Assert.That(await _svc.BranchExistsAsync(_root, "no-such-branch", CancellationToken.None), Is.False);
     }
 
     [Test]
@@ -227,27 +226,6 @@ public class GitServiceTests
         Assert.That(await _svc.HasUncommittedChangesAsync(_root, "card.md", CancellationToken.None), Is.False);
     }
 
-    [Test]
-    public async Task CommitPaths_CommitsOnlyPathspec_LeavingOtherChangesStaged()
-    {
-        // An untracked card plus an unrelated staged change in the same tree.
-        File.WriteAllText(Path.Combine(_root, "card.md"), "card\n");
-        File.WriteAllText(Path.Combine(_root, "other.txt"), "other\n");
-        await RunGit("add", "other.txt");
-
-        var commit = await _svc.CommitPathsAsync(_root, "board: bind card", new[] { "card.md" }, CancellationToken.None);
-        Assert.That(commit.Ok, Is.True, commit.Stderr);
-
-        // The card is committed...
-        Assert.That(await _svc.HasUncommittedChangesAsync(_root, "card.md", CancellationToken.None), Is.False);
-        var subject = (await RunGitCapture("log", "-1", "--format=%s")).Trim();
-        Assert.That(subject, Is.EqualTo("board: bind card"));
-
-        // ...while the unrelated change is untouched (still staged, not swept into the commit).
-        var status = (await RunGitCapture("status", "--porcelain", "--", "other.txt")).Trim();
-        Assert.That(status, Is.EqualTo("A  other.txt"));
-    }
-
     private async Task CommitFile(string relative, string content)
     {
         File.WriteAllText(Path.Combine(_root, relative), content);
@@ -256,6 +234,25 @@ public class GitServiceTests
     }
 
     private async Task RunGit(params string[] args) => await RunGitCapture(args);
+
+    // Runs git in an arbitrary directory (the other helpers are pinned to _root).
+    private static async Task RunGitInAsync(string dir, params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = dir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        await p.StandardOutput.ReadToEndAsync();
+        await p.StandardError.ReadToEndAsync();
+        await p.WaitForExitAsync();
+    }
 
     private async Task<string> RunGitCapture(params string[] args)
     {

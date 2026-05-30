@@ -21,7 +21,7 @@ public class BoardPromptsTests
         Assert.That(prompt, Does.Contain("#7 \"Add OAuth login\""));
         Assert.That(prompt, Does.Contain("board_move_card"));
         Assert.That(prompt, Does.Contain("\"analyze\""));
-        Assert.That(prompt, Does.Contain("single commit"));
+        Assert.That(prompt, Does.Contain("tracked separately"));
     }
 
     [Test]
