@@ -159,57 +159,75 @@ public sealed class GitService
         return r.Ok;
     }
 
-    /// <summary>Stage a rename/move (<c>git mv</c>). Leaves the move staged but uncommitted so
-    /// the caller (typically an LLM completing a step) can bundle it into a later commit.</summary>
-    public Task<GitResult> MoveAsync(string repoPath, string from, string to, CancellationToken ct)
-        => RunAsync(repoPath, ["mv", from, to], ct);
-
-    /// <summary>Outcome of <see cref="MoveWithUntrackedFallbackAsync"/>. <see cref="Ok"/> means the
-    /// file now lives at the destination; <see cref="Staged"/> says whether the relocation was
-    /// recorded in the index (false only when the fallback <c>git add</c> failed, e.g. outside a
-    /// repo); <see cref="CommitPaths"/> are the repo-relative paths to hand to
-    /// <see cref="CommitStagedPathsAsync"/> — both sides for a tracked rename, the destination only
-    /// for an untracked move.</summary>
-    public sealed record StagedMove(bool Ok, bool Staged, IReadOnlyList<string> CommitPaths, string Error);
-
-    /// <summary>Move a file with <c>git mv</c>, falling back to a filesystem move plus an explicit
-    /// stage of the destination when <c>git mv</c> fails (a never-committed/untracked file). Either
-    /// way the relocation is staged but NOT committed, so the caller chooses whether to bundle it
-    /// into a larger commit (the agent's step commit) or commit it in isolation via
-    /// <see cref="CommitStagedPathsAsync"/> (the board UI). Consolidates the move-with-fallback dance
-    /// shared by the board move tool and the UI's promote/move actions.</summary>
-    public async Task<StagedMove> MoveWithUntrackedFallbackAsync(string repoRoot, string srcAbs, string destAbs, CancellationToken ct)
+    /// <summary>Create an <em>orphan</em> branch in a fresh linked worktree at
+    /// <paramref name="worktreePath"/>: a branch whose first commit will have no parent, so its
+    /// history is disconnected from the code branches sharing the repository. Primary path uses
+    /// <c>git worktree add --orphan -b</c> (git ≥ 2.42); on older git that rejects the flag it falls
+    /// back to plumbing — a parentless empty root commit (<c>commit-tree</c> of the empty tree with
+    /// no <c>-p</c>) wired to the branch ref, then a plain <c>worktree add</c>. Either way the
+    /// worktree is left checked out on the (possibly unborn) branch for the caller to seed and commit.</summary>
+    public async Task<GitResult> AddOrphanWorktreeAsync(string repoRoot, string worktreePath, string branch, CancellationToken ct)
     {
-        var relSrc = Path.GetRelativePath(repoRoot, srcAbs);
-        var relDest = Path.GetRelativePath(repoRoot, destAbs);
+        var primary = await RunAsync(repoRoot, ["worktree", "add", "--orphan", "-b", branch, worktreePath], ct).ConfigureAwait(false);
+        if (primary.Ok) return primary;
 
-        // A tracked card moves with git mv, which stages both sides of the rename.
-        var mv = await MoveAsync(repoRoot, srcAbs, destAbs, ct).ConfigureAwait(false);
-        if (mv.Ok)
-            return new StagedMove(Ok: true, Staged: true, new[] { relSrc, relDest }, "");
+        // Fall back only when --orphan is unsupported, not for genuine failures (path exists, etc.).
+        var unsupported = primary.Stderr.Contains("--orphan", StringComparison.OrdinalIgnoreCase)
+            || primary.Stderr.Contains("unknown option", StringComparison.OrdinalIgnoreCase)
+            || primary.Stderr.Contains("usage:", StringComparison.OrdinalIgnoreCase);
+        if (!unsupported) return primary;
 
-        // git mv fails for a never-committed (untracked) file. Fall back to a filesystem move, then
-        // best-effort stage the new location so the relocation still rides along with a later commit.
-        try
-        {
-            File.Move(srcAbs, destAbs);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return new StagedMove(Ok: false, Staged: false, Array.Empty<string>(),
-                $"git mv failed ({mv.Stderr.Trim()}) and the fallback move failed: {ex.Message}");
-        }
+        // The empty tree is a well-known constant object; commit-tree with no -p yields a parentless
+        // root commit. Wire it to the branch ref, then check it out into a plain worktree.
+        const string emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+        var root = await RunAsync(repoRoot, ["commit-tree", emptyTree, "-m", "board: initialize board on orphan branch"], ct).ConfigureAwait(false);
+        if (!root.Ok) return root;
+        var sha = root.Stdout.Trim();
 
-        // The file is moved regardless; staging is best-effort (it fails outside a git repo), so a
-        // failed add still reports Ok with Staged=false rather than masking a completed move.
-        var add = await AddAsync(repoRoot, relDest, ct).ConfigureAwait(false);
-        return new StagedMove(Ok: true, Staged: add.Ok, new[] { relDest }, "");
+        var update = await RunAsync(repoRoot, ["update-ref", $"refs/heads/{branch}", sha], ct).ConfigureAwait(false);
+        if (!update.Ok) return update;
+
+        return await RunAsync(repoRoot, ["worktree", "add", worktreePath, branch], ct).ConfigureAwait(false);
     }
 
-    /// <summary>Stage a path (<c>git add</c>). Used as a fallback when moving a not-yet-tracked
-    /// card file, so the relocation still rides along with the next commit.</summary>
-    public Task<GitResult> AddAsync(string repoPath, string pathspec, CancellationToken ct)
-        => RunAsync(repoPath, ["add", "--", pathspec], ct);
+    /// <summary>Stage everything in a worktree and commit it (<c>git add -A</c> then
+    /// <c>git commit</c>). A clean tree is a benign no-op (returns an Ok result without committing).
+    /// Used only for the board worktree, whose contents are exclusively board files, so a blanket
+    /// add never sweeps in unrelated work.</summary>
+    public async Task<GitResult> CommitAllAsync(string worktreePath, string message, CancellationToken ct)
+    {
+        var add = await RunAsync(worktreePath, ["add", "-A"], ct).ConfigureAwait(false);
+        if (!add.Ok) return add;
+
+        var status = await RunAsync(worktreePath, ["status", "--porcelain"], ct).ConfigureAwait(false);
+        if (status.Ok && string.IsNullOrWhiteSpace(status.Stdout))
+            return new GitResult(0, "nothing to commit", "");
+
+        return await RunAsync(worktreePath, ["commit", "-m", message], ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Current HEAD of <paramref name="path"/> as (sha, branch). Branch is null on a
+    /// detached or unborn HEAD. Returns null when HEAD cannot be resolved (e.g. an empty repo).
+    /// Best-effort, for the board's code↔status association stamp.</summary>
+    public async Task<(string Sha, string? Branch)?> RevParseHeadAsync(string path, CancellationToken ct)
+    {
+        var sha = await RunAsync(path, ["rev-parse", "HEAD"], ct).ConfigureAwait(false);
+        if (!sha.Ok) return null;
+        var s = sha.Stdout.Trim();
+        if (string.IsNullOrEmpty(s)) return null;
+
+        var br = await RunAsync(path, ["rev-parse", "--abbrev-ref", "HEAD"], ct).ConfigureAwait(false);
+        var branch = br.Ok ? br.Stdout.Trim() : null;
+        if (string.IsNullOrEmpty(branch) || branch == "HEAD") branch = null;
+        return (s, branch);
+    }
+
+    /// <summary>True when <paramref name="branch"/> exists as a local head in the repository.</summary>
+    public async Task<bool> BranchExistsAsync(string repoRoot, string branch, CancellationToken ct)
+    {
+        var r = await RunAsync(repoRoot, ["rev-parse", "--verify", "--quiet", $"refs/heads/{branch}"], ct).ConfigureAwait(false);
+        return r.Ok && !string.IsNullOrWhiteSpace(r.Stdout);
+    }
 
     /// <summary>True when <paramref name="pathspec"/> has uncommitted changes (staged, unstaged,
     /// or untracked) relative to HEAD. Lets a caller skip an isolated commit when there is nothing
@@ -218,33 +236,6 @@ public sealed class GitService
     {
         var r = await RunAsync(repoPath, ["status", "--porcelain", "--", pathspec], ct).ConfigureAwait(false);
         return r.Ok && !string.IsNullOrWhiteSpace(r.Stdout);
-    }
-
-    /// <summary>Stage and commit only <paramref name="pathspecs"/> in a single commit, leaving any
-    /// other staged or unstaged changes in the working tree untouched. The pathspec-scoped
-    /// <c>git commit -- …</c> performs a partial commit that ignores the rest of the index. Used to
-    /// commit a board card (with its branch binding) to the current branch before forking a worktree,
-    /// so the card is visible on the resulting branch without sweeping in unrelated in-flight work.</summary>
-    public async Task<GitResult> CommitPathsAsync(string repoPath, string message, IReadOnlyList<string> pathspecs, CancellationToken ct)
-    {
-        var addArgs = new List<string> { "add", "--" };
-        addArgs.AddRange(pathspecs);
-        var add = await RunAsync(repoPath, addArgs, ct).ConfigureAwait(false);
-        if (!add.Ok) return add;
-
-        return await CommitStagedPathsAsync(repoPath, message, pathspecs, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>Commit already-staged changes for <paramref name="pathspecs"/> only, staging nothing
-    /// first. Like <see cref="CommitPathsAsync"/> this is a pathspec-scoped partial commit that
-    /// leaves the rest of the index untouched, but it must be used when the changes are already
-    /// staged and a fresh <c>git add</c> would fail — notably a <c>git mv</c> rename, whose source
-    /// path is gone from the index, so re-adding it fatals with "pathspec did not match".</summary>
-    public Task<GitResult> CommitStagedPathsAsync(string repoPath, string message, IReadOnlyList<string> pathspecs, CancellationToken ct)
-    {
-        var commitArgs = new List<string> { "commit", "-m", message, "--" };
-        commitArgs.AddRange(pathspecs);
-        return RunAsync(repoPath, commitArgs, ct);
     }
 
     /// <summary>Author date of the commit that first added <paramref name="filePath"/>

@@ -88,6 +88,11 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IWorkspace>(_ => new Workspace(workspaceRoot, repositoryRoot));
 builder.Services.AddSingleton<GitService>();
 builder.Services.AddSingleton<BoardService>();
+// The board lives on the yamca-board orphan branch, mounted as a worktree at <repo>/.yamca/board.
+// BoardWorktree owns that location and bootstrap, anchored at the root workspace's repository root
+// (not any per-session workspace), so every chat session and the board UI share one canonical board.
+// Created lazily on first board access (EnsureAsync), so an unused board costs nothing at startup.
+builder.Services.AddSingleton<BoardWorktree>();
 
 builder.Services.AddSingleton<ITool, ReadFileTool>();
 builder.Services.AddSingleton<ITool, WriteFileTool>();
@@ -140,7 +145,8 @@ builder.Services.AddSingleton<ITool, CodeEditSymbolTool>();
 builder.Services.AddScoped<ITool, LoadToolTool>();
 
 // Dev board tools. Reads default to Allow; the mutating move/update tools default to Ask
-// (like write_file/edit_file). The board lives at .yamca/board in the session's workspace.
+// (like write_file/edit_file). They resolve the board through BoardWorktree and commit mutations
+// to the yamca-board branch, independent of whichever code branch the session is on.
 builder.Services.AddSingleton<ITool, BoardListTool>();
 builder.Services.AddSingleton<ITool, BoardGetCardTool>();
 builder.Services.AddSingleton<ITool, BoardGetStepInstructionsTool>();

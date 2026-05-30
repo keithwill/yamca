@@ -9,8 +9,13 @@ namespace Yamca.Agent.Tools.Board;
 public sealed class BoardListTool : ITool
 {
     private readonly BoardService _board;
+    private readonly BoardWorktree _boardWorktree;
 
-    public BoardListTool(BoardService board) => _board = board;
+    public BoardListTool(BoardService board, BoardWorktree boardWorktree)
+    {
+        _board = board;
+        _boardWorktree = boardWorktree;
+    }
 
     public string Name => "board_list";
 
@@ -29,17 +34,18 @@ public sealed class BoardListTool : ITool
     }
     """;
 
-    // The dev board lives at .yamca/board under the git repository root, which may sit above the
-    // session's sandbox root. Board tools are therefore never workspace-restricted.
+    // The board is a worktree of the yamca-board orphan branch, resolved from the repository root
+    // (which may sit above the session's sandbox root). Board tools are never workspace-restricted.
     public bool SupportsWorkspaceRestriction => false;
 
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
-    public Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
+    public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
-        var snapshot = _board.Read(context.Workspace.RepositoryRoot);
+        var boardRoot = await _boardWorktree.EnsureAsync(cancellationToken);
+        var snapshot = _board.Read(boardRoot);
         if (snapshot.Columns.Count == 0)
-            return Task.FromResult(ToolResult.Ok("The board is empty or not initialized (no .yamca/board directory with NN-name columns)."));
+            return ToolResult.Ok("The board is empty or not initialized (no .yamca/board directory with NN-name columns).");
 
         string? only = null;
         if (arguments.ValueKind == JsonValueKind.Object
@@ -47,7 +53,7 @@ public sealed class BoardListTool : ITool
         {
             only = col.GetString();
             if (!string.IsNullOrWhiteSpace(only) && snapshot.FindColumn(only) is null)
-                return Task.FromResult(ToolResult.Error($"Unknown column '{only}'. Valid columns: {string.Join(", ", snapshot.Columns.Select(c => c.DisplayName))}."));
+                return ToolResult.Error($"Unknown column '{only}'. Valid columns: {string.Join(", ", snapshot.Columns.Select(c => c.DisplayName))}.");
         }
 
         var sb = new StringBuilder();
@@ -77,6 +83,6 @@ public sealed class BoardListTool : ITool
             sb.AppendLine();
         }
 
-        return Task.FromResult(ToolResult.Ok(sb.ToString().TrimEnd()));
+        return ToolResult.Ok(sb.ToString().TrimEnd());
     }
 }

@@ -16,6 +16,20 @@ public sealed partial class BoardService
     public const string BoardRelativePath = ".yamca/board";
     public const string InstructionsFileName = "instructions.md";
 
+    /// <summary>The default column layout used to seed a fresh board: numeric-prefixed directories,
+    /// each with an <c>instructions.md</c> (empty for resting columns). A column with non-blank
+    /// instructions is a work step run in chat; idea is a scratchpad and done is terminal, so both
+    /// rest. Shared by the orphan-branch bootstrap (<c>BoardWorktree</c>) and the UI initialize path
+    /// so there is a single definition of the starting board.</summary>
+    public static readonly IReadOnlyList<(string Dir, string? Instructions)> DefaultColumns = new (string, string?)[]
+    {
+        ("10-idea", null),
+        ("20-analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan into the card. Break the work into a `- [ ]` subtask checklist where useful.\n"),
+        ("30-implement", "# Implement\n\nDo the work described in the card. Tick subtasks as you complete them. When the implementation is done, commit your code changes on this branch, then move the card to the next column with board_move_card — the board is tracked separately and the move is committed for you.\n"),
+        ("40-verify", "# Verify\n\nBuild, run tests, and confirm the change works end to end. Fix anything that fails. Note verification results on the card before moving it on.\n"),
+        ("50-done", null),
+    };
+
     [GeneratedRegex(@"^(\d+)-(.+)$")]
     private static partial Regex ColumnDirRegex();
 
@@ -25,15 +39,16 @@ public sealed partial class BoardService
     [GeneratedRegex(@"^\s*#\s+(.+?)\s*$", RegexOptions.Multiline)]
     private static partial Regex HeadingRegex();
 
-    /// <summary>Absolute path to the board directory for a workspace root.</summary>
-    public static string BoardDirectory(string workspaceRoot)
-        => Path.Combine(workspaceRoot, ".yamca", "board");
+    /// <summary>Absolute path to the board directory. Under the orphan-branch layout the board
+    /// worktree's root <em>is</em> the columns directory, so callers pass the board worktree path
+    /// (from <c>BoardWorktree.EnsureAsync</c>) and this returns it unchanged.</summary>
+    public static string BoardDirectory(string boardRoot) => boardRoot;
 
     /// <summary>Read the whole board. Returns <see cref="BoardSnapshot.Empty"/> when the
     /// board directory does not exist. Never throws for malformed cards.</summary>
-    public BoardSnapshot Read(string workspaceRoot)
+    public BoardSnapshot Read(string boardRoot)
     {
-        var boardDir = BoardDirectory(workspaceRoot);
+        var boardDir = BoardDirectory(boardRoot);
         if (!Directory.Exists(boardDir)) return BoardSnapshot.Empty;
 
         var columns = new List<BoardColumn>();
@@ -60,65 +75,6 @@ public sealed partial class BoardService
         }
 
         columns.Sort(static (a, b) => a.Order.CompareTo(b.Order));
-        return new BoardSnapshot(columns);
-    }
-
-    /// <summary>Read the board for display, overlaying each branch-bound card with its copy from
-    /// that branch's worktree when one exists. A card bound to a branch moves through columns and
-    /// ticks subtasks inside its worktree's board, not in the repo-root board; without this overlay
-    /// such a card would appear frozen in its original column on the root board until the branch is
-    /// merged back. <paramref name="branchWorktrees"/> maps branch name → worktree root path (from
-    /// <c>git worktree list</c>). When a bound card's branch has no live worktree (never started, or
-    /// merged/deleted) or the worktree no longer contains the card, the root copy is used as-is — so
-    /// the status stays accurate after a merge collapses the branch back into the root board.
-    /// The column structure always comes from the root board; a worktree card is placed into the
-    /// root column whose directory name matches its column there, falling back to its root column
-    /// when there is no such match.</summary>
-    public BoardSnapshot ReadForDisplay(string repoRoot, IReadOnlyDictionary<string, string> branchWorktrees)
-    {
-        var root = Read(repoRoot);
-        if (root.Columns.Count == 0 || branchWorktrees.Count == 0) return root;
-
-        // One snapshot per worktree path; multiple cards on the same branch reuse the read.
-        var worktreeSnapshots = new Dictionary<string, BoardSnapshot>(StringComparer.OrdinalIgnoreCase);
-        BoardSnapshot WorktreeSnapshot(string path)
-        {
-            if (!worktreeSnapshots.TryGetValue(path, out var snap))
-                worktreeSnapshots[path] = snap = Read(path);
-            return snap;
-        }
-
-        // Re-bucket effective cards by their target column directory, keyed on the root columns so
-        // the column metadata (order, display name, path) and structure stay canonical.
-        var buckets = root.Columns.ToDictionary(c => c.DirectoryName, _ => new List<BoardCard>(), StringComparer.Ordinal);
-
-        foreach (var column in root.Columns)
-        foreach (var rootCard in column.Cards)
-        {
-            var effective = rootCard;
-            var targetDir = column.DirectoryName;
-
-            if (!string.IsNullOrWhiteSpace(rootCard.Branch)
-                && branchWorktrees.TryGetValue(rootCard.Branch!, out var worktreePath)
-                && WorktreeSnapshot(worktreePath).FindCard(rootCard.Id) is { } wtCard
-                && buckets.ContainsKey(wtCard.ColumnDirectory))
-            {
-                // Overlay the worktree's status/details, but keep the root file path so the card's
-                // git history (queried against the repo root) still resolves to the outer branch.
-                effective = wtCard with { AbsolutePath = rootCard.AbsolutePath, FileName = rootCard.FileName };
-                targetDir = wtCard.ColumnDirectory;
-            }
-
-            buckets[targetDir].Add(effective);
-        }
-
-        var columns = new List<BoardColumn>(root.Columns.Count);
-        foreach (var column in root.Columns)
-        {
-            var cards = buckets[column.DirectoryName];
-            cards.Sort(CompareCards);
-            columns.Add(column with { Cards = cards });
-        }
         return new BoardSnapshot(columns);
     }
 
@@ -215,6 +171,18 @@ public sealed partial class BoardService
     /// <paramref name="branch"/>, adding a frontmatter block if none exists. Used to bind a card
     /// to a git branch. Normalizes line endings to LF.</summary>
     public static string WithBranch(string rawText, string branch)
+        => WithFrontmatterField(rawText, "branch", branch);
+
+    /// <summary>Return <paramref name="rawText"/> with its frontmatter <c>commit:</c> set to
+    /// <paramref name="sha"/>: the last code commit associated with the card, stamped by a board
+    /// move so the status change stays linked to the code it corresponds to. Normalizes line
+    /// endings to LF.</summary>
+    public static string WithCommit(string rawText, string sha)
+        => WithFrontmatterField(rawText, "commit", sha);
+
+    // Sets a scalar frontmatter field, replacing an existing line for the key or appending one,
+    // and synthesizing a frontmatter block when the text has none. Backs WithBranch / WithCommit.
+    private static string WithFrontmatterField(string rawText, string key, string value)
     {
         var normalized = (rawText ?? string.Empty).Replace("\r\n", "\n");
 
@@ -225,9 +193,9 @@ public sealed partial class BoardService
             {
                 var block = normalized.Substring(4, end - 4);
                 var lines = block.Split('\n').ToList();
-                var idx = lines.FindIndex(l => l.TrimStart().StartsWith("branch:", StringComparison.OrdinalIgnoreCase));
-                if (idx >= 0) lines[idx] = $"branch: {branch}";
-                else lines.Add($"branch: {branch}");
+                var idx = lines.FindIndex(l => l.TrimStart().StartsWith($"{key}:", StringComparison.OrdinalIgnoreCase));
+                if (idx >= 0) lines[idx] = $"{key}: {value}";
+                else lines.Add($"{key}: {value}");
 
                 var afterFence = normalized.IndexOf('\n', end + "\n---".Length);
                 var body = afterFence < 0 ? string.Empty : normalized[(afterFence + 1)..];
@@ -235,7 +203,7 @@ public sealed partial class BoardService
             }
         }
 
-        return $"---\nbranch: {branch}\n---\n\n{normalized}";
+        return $"---\n{key}: {value}\n---\n\n{normalized}";
     }
 
     /// <summary>Build a card file name <c>NNNN-slug.md</c> from an id and title.</summary>

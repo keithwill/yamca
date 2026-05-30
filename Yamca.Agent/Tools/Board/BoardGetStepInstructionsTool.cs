@@ -8,8 +8,13 @@ namespace Yamca.Agent.Tools.Board;
 public sealed class BoardGetStepInstructionsTool : ITool
 {
     private readonly BoardService _board;
+    private readonly BoardWorktree _boardWorktree;
 
-    public BoardGetStepInstructionsTool(BoardService board) => _board = board;
+    public BoardGetStepInstructionsTool(BoardService board, BoardWorktree boardWorktree)
+    {
+        _board = board;
+        _boardWorktree = boardWorktree;
+    }
 
     public string Name => "board_get_step_instructions";
 
@@ -28,26 +33,27 @@ public sealed class BoardGetStepInstructionsTool : ITool
     }
     """;
 
-    // The dev board lives at .yamca/board under the git repository root, which may sit above the
-    // session's sandbox root. Board tools are therefore never workspace-restricted.
+    // The board is a worktree of the yamca-board orphan branch, resolved from the repository root
+    // (which may sit above the session's sandbox root). Board tools are never workspace-restricted.
     public bool SupportsWorkspaceRestriction => false;
 
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
-    public Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
+    public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
         if (!ToolArguments.TryGetString(arguments, "column", out var columnRef, out var argError))
-            return Task.FromResult(ToolResult.Error(argError));
+            return ToolResult.Error(argError);
 
-        var snapshot = _board.Read(context.Workspace.RepositoryRoot);
+        var boardRoot = await _boardWorktree.EnsureAsync(cancellationToken);
+        var snapshot = _board.Read(boardRoot);
         var column = snapshot.FindColumn(columnRef);
         if (column is null)
-            return Task.FromResult(ToolResult.Error($"Unknown column '{columnRef}'. Valid columns: {string.Join(", ", snapshot.Columns.Select(c => c.DisplayName))}."));
+            return ToolResult.Error($"Unknown column '{columnRef}'. Valid columns: {string.Join(", ", snapshot.Columns.Select(c => c.DisplayName))}.");
 
-        var instructions = _board.ReadInstructions(context.Workspace.RepositoryRoot, column.DirectoryName);
+        var instructions = _board.ReadInstructions(boardRoot, column.DirectoryName);
         if (string.IsNullOrWhiteSpace(instructions))
-            return Task.FromResult(ToolResult.Ok($"Column '{column.DisplayName}' has no instructions.md."));
+            return ToolResult.Ok($"Column '{column.DisplayName}' has no instructions.md.");
 
-        return Task.FromResult(ToolResult.Ok($"Instructions for '{column.DisplayName}':\n\n{instructions}"));
+        return ToolResult.Ok($"Instructions for '{column.DisplayName}':\n\n{instructions}");
     }
 }
