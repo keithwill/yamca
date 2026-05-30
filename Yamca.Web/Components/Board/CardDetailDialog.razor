@@ -77,6 +77,20 @@
         }
     </DialogContent>
     <DialogActions>
+        @if (IsBranchBound)
+        {
+            <MudButton StartIcon="@Icons.Material.Filled.Forum"
+                       Disabled="@_busy"
+                       OnClick="OpenChat">
+                Open chat on <code class="mx-1">@Card.Branch</code>
+            </MudButton>
+            <MudButton Color="Color.Success" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Merge"
+                       Disabled="@_busy"
+                       OnClick="Merge">
+                Merge branch
+            </MudButton>
+        }
         @if (IsWorkColumn && CanRunStep)
         {
             @if (Endpoints.Count == 0)
@@ -147,6 +161,15 @@
     /// <summary>Handed back when the user promotes a card out of a resting column. The page moves
     /// the card to the next column on disk; there is no chat run, branch, or endpoint involved.</summary>
     public sealed record Promotion;
+
+    /// <summary>Handed back when the user wants to merge a branch-bound card's branch back into the
+    /// base branch. The page resolves the branch's worktree and opens the shared merge dialog.</summary>
+    public sealed record MergeRequest;
+
+    /// <summary>Handed back when the user wants an interactive chat session on the card's branch
+    /// worktree (e.g. to resolve a merge conflict or do follow-up work). The page opens/creates the
+    /// worktree and navigates to a chat bound to it.</summary>
+    public sealed record OpenChatRequest;
 
     private bool _loading = true;
     private bool _busy;
@@ -235,6 +258,10 @@
     }
 
     private void Promote() => Dialog.Close(DialogResult.Ok(new Promotion()));
+
+    private void Merge() => Dialog.Close(DialogResult.Ok(new MergeRequest()));
+
+    private void OpenChat() => Dialog.Close(DialogResult.Ok(new OpenChatRequest()));
 
     private void Close() => Dialog.Cancel();
 }

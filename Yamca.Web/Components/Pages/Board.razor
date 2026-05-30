@@ -8,6 +8,7 @@
 @using Yamca.Web.Components.Branching
 @using Yamca.Web.Components.Chat
 @using Yamca.Web.Services
+@using WorkspaceImpl = Yamca.Agent.Workspace.Workspace
 @inject IWorkspace Workspace
 @inject BoardService BoardSvc
 @inject GitService Git
@@ -200,6 +201,66 @@ else
             await RunStepAsync(card, column, run);
         else if (result.Data is CardDetailDialog.Promotion && next is not null)
             await PromoteCardAsync(card, column, next);
+        else if (result.Data is CardDetailDialog.MergeRequest)
+            await MergeCardAsync(card);
+        else if (result.Data is CardDetailDialog.OpenChatRequest)
+            await OpenCardChatAsync(card);
+    }
+
+    // Merge a branch-bound card's branch back into the base branch by reusing the same merge dialog
+    // the chat panel uses. The merge itself runs against the repository's base checkout, so the
+    // WorktreeInfo anchors BasePath at the repository root (not the sandbox RootPath the chat flow
+    // uses as a session key). The branch's worktree path is only needed for the optional post-merge
+    // cleanup; if it has already been removed, fall back to its conventional path so the cleanup's
+    // worktree removal is a harmless no-op rather than a crash.
+    private async Task MergeCardAsync(BoardCard card)
+    {
+        if (string.IsNullOrWhiteSpace(card.Branch)) return;
+        var ct = CancellationToken.None;
+        var repoRoot = Workspace.RepositoryRoot;
+        var branch = card.Branch!;
+        var baseBranch = await Git.GetCurrentBranchAsync(repoRoot, ct) ?? "";
+
+        var worktrees = await Git.ListWorktreesAsync(repoRoot, ct);
+        var match = worktrees.FirstOrDefault(w => string.Equals(w.Branch, branch, StringComparison.Ordinal));
+        var worktreePath = match.Path ?? Path.Combine(repoRoot, ".yamca", "worktrees", Sanitize(branch));
+
+        var info = new WorktreeInfo(branch, baseBranch, worktreePath, repoRoot);
+        var dialog = await Dialogs.ShowAsync<BranchMergeDialog>("Merge branch",
+            new DialogParameters { ["Info"] = info }, Small());
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        // On a successful merge the worktree overlay is gone, so the card falls back to its
+        // root-board position (and loses its branch chip) on refresh.
+        await RefreshAsync();
+        StateHasChanged();
+    }
+
+    // Open an interactive chat session on the card's branch worktree (creating the worktree if it
+    // was deleted/merged away), for conflict resolution or follow-up work. This mirrors how a step
+    // session is bound, so BasePath stays the sandbox RootPath that keys the session back together.
+    private async Task OpenCardChatAsync(BoardCard card)
+    {
+        if (string.IsNullOrWhiteSpace(card.Branch)) return;
+        if (!Manager.CanCreate)
+        {
+            Snackbar.Add("All 4 chat slots are in use — close one to open a chat.", Severity.Warning);
+            return;
+        }
+
+        var worktree = await ResolveWorktreeForBranchAsync(card.Branch!);
+        if (worktree is null) return; // error already surfaced
+
+        try
+        {
+            var vm = Manager.CreateForWorktree(new WorkspaceImpl(worktree.WorktreePath), worktree);
+            Nav.NavigateTo($"chat/{vm.Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not open chat on '{card.Branch}': {ex.Message}", Severity.Error);
+        }
     }
 
     // Promote a card out of a resting column (one with no instructions.md, e.g. the idea scratchpad)
