@@ -97,6 +97,14 @@ else
     private bool _hydrated;
     private BoardSnapshot _snapshot = BoardSnapshot.Empty;
 
+    // Branch name → worktree root path, from the last refresh's `git worktree list`. This is the
+    // same signal ReadForDisplay uses to overlay a card's worktree board: a card whose branch is a
+    // key here has a *live* binding; a card with a `branch:` attribute but no entry here is bound in
+    // intent only (branch never started, merged, or deleted) and effectively lives on the parent
+    // board — so its dialog offers promote/run-fresh, not merge/open-chat against a dead worktree.
+    private IReadOnlyDictionary<string, string> _branchWorktrees =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
     protected override void OnInitialized() => Manager.Changed += OnSessionsChanged;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -123,6 +131,7 @@ else
         foreach (var (path, branch) in worktrees)
             if (!string.IsNullOrEmpty(branch))
                 branchWorktrees[branch!] = path;
+        _branchWorktrees = branchWorktrees;
         _snapshot = BoardSvc.ReadForDisplay(repoRoot, branchWorktrees);
     }
 
@@ -192,6 +201,10 @@ else
             ["DefaultEndpointId"] = Session.Endpoints.DefaultId,
             ["ExistingBranches"] = existingBranches,
             ["PresumptiveBranch"] = BoardService.PresumptiveBranch(card.Id, card.Title),
+            // A binding is live only when the card's branch has a worktree in this refresh's map —
+            // the same test ReadForDisplay uses to decide whether to overlay the worktree board.
+            ["BranchWorktreeLive"] = !string.IsNullOrWhiteSpace(card.Branch)
+                                     && _branchWorktrees.ContainsKey(card.Branch!),
         };
         var dialog = await Dialogs.ShowAsync<CardDetailDialog>($"#{card.Id} {card.Title}", parameters,
             new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
@@ -331,11 +344,14 @@ else
             return;
         }
 
-        // 1. First run for this card: bind it to its branch and commit the card file (carrying the
-        //    binding) to the current outer branch in isolation, BEFORE forking the worktree. Without
-        //    this, `git worktree add -b` forks from a HEAD that lacks the not-yet-committed card and
-        //    the step's agent can't see the card it is meant to work.
-        if (string.IsNullOrWhiteSpace(card.Branch))
+        // 1. Bind the card to its branch and commit the card file (carrying the binding) to the
+        //    current outer branch in isolation, BEFORE forking the worktree. Without this,
+        //    `git worktree add -b` forks from a HEAD that lacks the not-yet-committed card and the
+        //    step's agent can't see the card it is meant to work. We (re)bind both for a card that
+        //    has never had a branch and for one whose stale `branch:` attribute differs from the
+        //    branch chosen now (e.g. an idea reworked onto a fresh branch after the old one was
+        //    deleted) — so the frontmatter never lies about which branch the card lives on.
+        if (!string.Equals(card.Branch, run.Branch, StringComparison.Ordinal))
         {
             if (!await LockCardToBranchAsync(card, run.Branch)) return; // error already surfaced
             card = card with { Branch = run.Branch };

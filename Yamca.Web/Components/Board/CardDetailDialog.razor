@@ -15,6 +15,13 @@
                 <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
                          Icon="@Icons.Material.Filled.AccountTree">@Card.Branch</MudChip>
             }
+            else if (HasBranchAttribute)
+            {
+                <MudTooltip Text="Branch doesn't exist or isn't loaded into a worktree">
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined"
+                             Icon="@Icons.Material.Filled.AccountTree" Style="opacity:0.5;">@Card.Branch</MudChip>
+                </MudTooltip>
+            }
         </div>
     </TitleContent>
     <DialogContent>
@@ -158,6 +165,14 @@
     [Parameter] public IReadOnlyList<string> ExistingBranches { get; set; } = Array.Empty<string>();
     [Parameter] public string PresumptiveBranch { get; set; } = "";
 
+    /// <summary>Whether the card's <c>branch:</c> attribute points at a branch that currently has a
+    /// live worktree. False when the card has no branch, or has one in intent only (never started,
+    /// merged, or deleted). A binding is only "live" when this is true: the card then lives and moves
+    /// inside its worktree board (offer merge/open-chat); otherwise it effectively lives on the parent
+    /// board and is treated as unbound (offer promote / run a fresh branch). This mirrors the test
+    /// <see cref="BoardService.ReadForDisplay"/> uses to decide whether to overlay the worktree.</summary>
+    [Parameter] public bool BranchWorktreeLive { get; set; }
+
     /// <summary>What the dialog hands back to the page when the user runs a step. The page
     /// re-checks branch/worktree existence at run time, so the chosen branch is all it needs.</summary>
     public sealed record Result(Guid EndpointId, string Branch);
@@ -184,7 +199,13 @@
     private DateTimeOffset? _lastModified;
     private IReadOnlyList<GitFileLogEntry> _history = Array.Empty<GitFileLogEntry>();
 
-    private bool IsBranchBound => !string.IsNullOrWhiteSpace(Card.Branch);
+    // The card names an intended branch in its frontmatter…
+    private bool HasBranchAttribute => !string.IsNullOrWhiteSpace(Card.Branch);
+
+    // …but the binding is only *live* when that branch also has a worktree right now. A card with a
+    // branch attribute whose worktree is gone (never started, merged, or deleted) effectively lives
+    // on the parent board, so we treat it as unbound: promote / run-fresh, not merge/open-chat.
+    private bool IsBranchBound => HasBranchAttribute && BranchWorktreeLive;
 
     // A resting column promotes (rather than runs) — but only an unbound card: a branch-bound card
     // lives and moves inside its worktree board, which a plain root-board file move would not touch.
@@ -196,7 +217,10 @@
 
     protected override void OnInitialized()
     {
-        _branch = PresumptiveBranch;
+        // Default the (editable) branch field to the card's existing intended branch when it has one
+        // but isn't live — so reworking it re-runs on the same branch unless the user changes it —
+        // and otherwise to the presumptive name derived from the card id/title.
+        _branch = HasBranchAttribute ? Card.Branch : PresumptiveBranch;
         _endpointId = DefaultEndpointId;
     }
 
