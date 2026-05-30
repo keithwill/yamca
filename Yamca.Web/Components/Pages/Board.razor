@@ -112,7 +112,8 @@ else
                                 var c = card;
                                 var done = c.Subtasks.Count(s => s.Done);
                                 var total = c.Subtasks.Count;
-                                <MudPaper Class="yamca-board-card" Elevation="3"
+                                <MudPaper Class="@($"yamca-board-card{(_busyCards.Contains(c.Id) ? " yamca-board-card--busy" : "")}")"
+                                          Elevation="3"
                                           draggable="true"
                                           @ondragstart="@(() => OnDragStart(c, column))"
                                           @ondragend="OnDragEnd"
@@ -129,6 +130,12 @@ else
                                             <span>⎇ @c.Branch</span>
                                         }
                                     </div>
+                                    @if (_busyCards.Contains(c.Id))
+                                    {
+                                        <div class="yamca-board-card-busy-overlay">
+                                            <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                                        </div>
+                                    }
                                 </MudPaper>
                             }
                         }
@@ -143,6 +150,7 @@ else
     private bool _hydrated;
     private BoardSnapshot _snapshot = BoardSnapshot.Empty;
     private string _boardRoot = "";
+    private readonly HashSet<string> _busyCards = new(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, bool> _isWorkColumn = new Dictionary<string, bool>();
 
     // Code-branch name → worktree root path, from the last refresh's `git worktree list`. The board
@@ -374,6 +382,8 @@ else
             var target = _snapshot.FindColumn(move.ToColumnDirectory);
             if (target is not null) await MoveCardAsync(card, column, target);
         }
+        else if (result.Data is CardDetailDialog.DeleteRequest)
+            await DeleteCardAsync(card);
     }
 
     // Merge a branch-bound card's branch back into the base branch by reusing the same merge dialog
@@ -465,48 +475,128 @@ else
         await MoveCardAsync(card, from, target);
     }
 
-    // Move a card to an arbitrary column from the UI (drag-drop or the dialog's promote), committing
-    // the relocation to the board branch so the board's history stays clean and the worktree is never
-    // left dirty. One path now: the card always lives in the board worktree, so move its file and
-    // commit — serialized with every other board writer under BoardWorktree's lock.
-    private async Task MoveCardAsync(BoardCard card, BoardColumn from, BoardColumn target)
+    // Move a card to an arbitrary column. The snapshot is updated optimistically so the card appears
+    // in the target column immediately; the git commit + push run in the background under the board
+    // lock. The busy overlay stays on the card until the background work finishes. Refresh is deferred
+    // until all in-flight mutations drain so concurrent moves don't stomp each other's optimistic state.
+    private Task MoveCardAsync(BoardCard card, BoardColumn from, BoardColumn target)
     {
-        if (string.Equals(from.DirectoryName, target.DirectoryName, StringComparison.Ordinal)) return;
+        if (string.Equals(from.DirectoryName, target.DirectoryName, StringComparison.Ordinal))
+            return Task.CompletedTask;
+        _snapshot = WithCardMoved(_snapshot, card, from, target);
+        _busyCards.Add(card.Id);
+        _ = BackgroundMoveAsync(card, from, target);
+        return Task.CompletedTask;
+    }
 
+    private async Task BackgroundMoveAsync(BoardCard card, BoardColumn from, BoardColumn target)
+    {
         var ct = CancellationToken.None;
-        await BoardWorktree.MutateAsync(async boardRoot =>
+        try
         {
-            var src = Path.GetFullPath(card.AbsolutePath);
-            var destColumnDir = Path.Combine(boardRoot, target.DirectoryName);
-            var dest = Path.GetFullPath(Path.Combine(destColumnDir, card.FileName));
-
-            if (File.Exists(dest))
+            await BoardWorktree.MutateAsync(async boardRoot =>
             {
-                Snackbar.Add($"A card file named '{card.FileName}' already exists in '{target.DisplayName}'.", Severity.Error);
-                return;
-            }
+                var src = Path.GetFullPath(card.AbsolutePath);
+                var destColumnDir = Path.Combine(boardRoot, target.DirectoryName);
+                var dest = Path.GetFullPath(Path.Combine(destColumnDir, card.FileName));
 
-            try
+                if (File.Exists(dest))
+                {
+                    await InvokeAsync(() => Snackbar.Add($"A card named '{card.FileName}' already exists in '{target.DisplayName}'.", Severity.Error));
+                    return;
+                }
+
+                try
+                {
+                    Directory.CreateDirectory(destColumnDir);
+                    File.Move(src, dest);
+                }
+                catch (Exception ex)
+                {
+                    await InvokeAsync(() => Snackbar.Add($"Could not move card #{card.Id}: {ex.Message}", Severity.Error));
+                    return;
+                }
+
+                var commit = await Git.CommitAllAsync(boardRoot, $"board: move #{card.Id} to {target.DisplayName}", ct);
+                if (!commit.Ok)
+                    await InvokeAsync(() => Snackbar.Add($"Card #{card.Id} moved to '{target.DisplayName}', but the commit failed: {commit.Stderr.Trim()}", Severity.Warning));
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            await InvokeAsync(() => Snackbar.Add($"Move failed: {ex.Message}", Severity.Error));
+        }
+        finally
+        {
+            await InvokeAsync(() => FinishMutationAsync(card.Id));
+        }
+    }
+
+    private Task DeleteCardAsync(BoardCard card)
+    {
+        _snapshot = WithCardDeleted(_snapshot, card);
+        _busyCards.Add(card.Id); // keeps refresh deferred if a move is also in flight
+        _ = BackgroundDeleteAsync(card);
+        return Task.CompletedTask;
+    }
+
+    private async Task BackgroundDeleteAsync(BoardCard card)
+    {
+        var ct = CancellationToken.None;
+        try
+        {
+            await BoardWorktree.MutateAsync(async boardRoot =>
             {
-                Directory.CreateDirectory(destColumnDir);
-                File.Move(src, dest);
-            }
-            catch (Exception ex)
-            {
-                Snackbar.Add($"Could not move card #{card.Id}: {ex.Message}", Severity.Error);
-                return;
-            }
+                try
+                {
+                    File.Delete(card.AbsolutePath);
+                }
+                catch (Exception ex)
+                {
+                    await InvokeAsync(() => Snackbar.Add($"Could not delete card #{card.Id}: {ex.Message}", Severity.Error));
+                    return;
+                }
 
-            var commit = await Git.CommitAllAsync(boardRoot, $"board: move #{card.Id} to {target.DisplayName}", ct);
-            if (!commit.Ok)
-                Snackbar.Add($"Card #{card.Id} moved to '{target.DisplayName}', but the commit failed: {commit.Stderr.Trim()}", Severity.Warning);
-            else
-                Snackbar.Add($"Moved card #{card.Id} to '{target.DisplayName}'.", Severity.Success);
-        }, ct);
+                var commit = await Git.CommitAllAsync(boardRoot, $"board: delete #{card.Id} {card.Title}", ct);
+                if (!commit.Ok)
+                    await InvokeAsync(() => Snackbar.Add($"Card #{card.Id} deleted but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning));
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            await InvokeAsync(() => Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error));
+        }
+        finally
+        {
+            await InvokeAsync(() => FinishMutationAsync(card.Id));
+        }
+    }
 
-        await RefreshAsync();
+    // Remove the card from _busyCards and refresh once all in-flight mutations have settled.
+    // Deferring the refresh until the set drains prevents concurrent optimistic moves from
+    // briefly reverting each other while their commits are still queued under the board lock.
+    private async Task FinishMutationAsync(string cardId)
+    {
+        _busyCards.Remove(cardId);
+        if (_busyCards.Count == 0)
+            await RefreshAsync();
         StateHasChanged();
     }
+
+    private static BoardSnapshot WithCardMoved(BoardSnapshot snapshot, BoardCard card, BoardColumn from, BoardColumn to)
+    {
+        var moved = card with { ColumnDirectory = to.DirectoryName, AbsolutePath = Path.Combine(to.AbsolutePath, card.FileName) };
+        return new BoardSnapshot(snapshot.Columns.Select(col =>
+            col.DirectoryName == from.DirectoryName ? col with { Cards = col.Cards.Where(c => c.Id != card.Id).ToList() } :
+            col.DirectoryName == to.DirectoryName   ? col with { Cards = col.Cards.Append(moved).ToList() } :
+            col).ToList());
+    }
+
+    private static BoardSnapshot WithCardDeleted(BoardSnapshot snapshot, BoardCard card) =>
+        new BoardSnapshot(snapshot.Columns.Select(col =>
+            col.DirectoryName == card.ColumnDirectory
+                ? col with { Cards = col.Cards.Where(c => c.Id != card.Id).ToList() }
+                : col).ToList());
 
     private async Task RunStepAsync(BoardCard card, BoardColumn column, CardDetailDialog.Result run)
     {

@@ -259,6 +259,20 @@ h1:focus {
     background-color: rgba(255, 255, 255, 0.1);
     border-color: var(--mud-palette-primary);
 }
+.yamca-board-card--busy {
+    position: relative;
+    pointer-events: none;
+    opacity: 0.6;
+}
+.yamca-board-card-busy-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+}
 .yamca-board-card-title {
     font-size: 0.9rem;
     font-weight: 500;

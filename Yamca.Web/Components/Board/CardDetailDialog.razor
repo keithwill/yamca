@@ -4,6 +4,7 @@
 @using Yamca.Agent.Settings
 @using Yamca.Web.Services
 @inject GitService Git
+@inject IDialogService Dialogs
 
 <MudDialog>
     <TitleContent>
@@ -149,6 +150,12 @@
                                OnClick="Promote" />
             </MudTooltip>
         }
+        <MudTooltip Text="Delete Card">
+            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                           Color="Color.Error"
+                           Disabled="@_busy"
+                           OnClick="DeleteCard" />
+        </MudTooltip>
         <MudButton OnClick="Close">Close</MudButton>
     </DialogActions>
 </MudDialog>
@@ -213,6 +220,10 @@
     /// the card to <paramref name="ToColumnDirectory"/> — on the root board for an unbound card, or in
     /// the branch's worktree for a live-bound one — and commits the move.</summary>
     public sealed record MoveRequest(string ToColumnDirectory);
+
+    /// <summary>Handed back when the user confirms deletion of this card. The page deletes the card
+    /// file from the board worktree and commits the removal.</summary>
+    public sealed record DeleteRequest;
 
     private bool _loading = true;
     private bool _busy;
@@ -320,6 +331,20 @@
     private void Merge() => Dialog.Close(DialogResult.Ok(new MergeRequest()));
 
     private void OpenChat() => Dialog.Close(DialogResult.Ok(new OpenChatRequest()));
+
+    private async Task DeleteCard()
+    {
+        var parameters = new DialogParameters
+        {
+            ["Message"] = $"Delete card #{Card.Id} \"{Card.Title}\"?",
+            ["YesText"] = "Delete",
+            ["CancelText"] = "Cancel",
+        };
+        var dialog = await Dialogs.ShowAsync<MudMessageBox>("Delete card", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not true) return;
+        Dialog.Close(DialogResult.Ok(new DeleteRequest()));
+    }
 
     private void Close() => Dialog.Cancel();
 }
