@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Yamca.Agent.Board;
 using Yamca.Agent.Git;
@@ -32,7 +33,7 @@ public class BoardToolsTests
         await RunGit(_ws.RootPath, "config", "user.name", "Yamca Test");
         await RunGit(_ws.RootPath, "commit", "--allow-empty", "-m", "initial");
 
-        _boardWorktree = new BoardWorktree(_ws.Workspace, _git);
+        _boardWorktree = new BoardWorktree(_ws.Workspace, _git, NullLogger<BoardWorktree>.Instance);
         _boardPath = await _boardWorktree.EnsureAsync(CancellationToken.None);
     }
 

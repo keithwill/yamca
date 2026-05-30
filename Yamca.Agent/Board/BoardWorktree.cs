@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Yamca.Agent.Git;
 using Yamca.Agent.Workspace;
 
@@ -28,13 +29,17 @@ public sealed class BoardWorktree
 
     private readonly IWorkspace _workspace;
     private readonly GitService _git;
+    private readonly ILogger<BoardWorktree> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private string? _ensuredPath;
+    // Null = not yet discovered; empty string = no remote configured (skip sync).
+    private string? _cachedRemote;
 
-    public BoardWorktree(IWorkspace workspace, GitService git)
+    public BoardWorktree(IWorkspace workspace, GitService git, ILogger<BoardWorktree> logger)
     {
         _workspace = workspace;
         _git = git;
+        _logger = logger;
     }
 
     /// <summary>Resolve the board worktree path (<c>&lt;RepositoryRoot&gt;/.yamca/board</c>),
@@ -50,14 +55,21 @@ public sealed class BoardWorktree
 
     /// <summary>Run a board mutation under the process-wide write lock, ensuring the worktree first.
     /// <paramref name="action"/> receives the board worktree path; it is the only place board files
-    /// are written and committed.</summary>
+    /// are written and committed. When a remote is configured, the board branch is rebased onto the
+    /// latest remote state before the action runs, and pushed afterwards.</summary>
     public async Task<T> MutateAsync<T>(Func<string, Task<T>> action, CancellationToken ct)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             var path = await EnsureCoreAsync(ct).ConfigureAwait(false);
-            return await action(path).ConfigureAwait(false);
+            var remote = await GetCachedRemoteAsync(ct).ConfigureAwait(false);
+            if (remote is not null)
+                await TryPullRebaseAsync(path, remote, ct).ConfigureAwait(false);
+            var result = await action(path).ConfigureAwait(false);
+            if (remote is not null)
+                await TryPushAsync(path, remote, ct).ConfigureAwait(false);
+            return result;
         }
         finally { _gate.Release(); }
     }
@@ -88,6 +100,11 @@ public sealed class BoardWorktree
             var commit = await _git.CommitAllAsync(boardPath, "board: initialize board on orphan branch", ct).ConfigureAwait(false);
             if (!commit.Ok)
                 throw new InvalidOperationException($"Could not commit the initial board: {commit.Stderr.Trim()}");
+
+            // Share the seeded board immediately so other users can clone it.
+            var remote = await GetCachedRemoteAsync(ct).ConfigureAwait(false);
+            if (remote is not null)
+                await TryPushAsync(boardPath, remote, ct).ConfigureAwait(false);
         }
         else if (!await IsWorktreeRegisteredAsync(repoRoot, boardPath, ct).ConfigureAwait(false))
         {
@@ -100,6 +117,50 @@ public sealed class BoardWorktree
 
         _ensuredPath = boardPath;
         return boardPath;
+    }
+
+    // Returns the remote name to use for board sync, or null when no remote is configured.
+    // Result is cached after the first call — remotes do not change at runtime.
+    private async Task<string?> GetCachedRemoteAsync(CancellationToken ct)
+    {
+        if (_cachedRemote is not null) return _cachedRemote == "" ? null : _cachedRemote;
+        var remote = await _git.GetDefaultRemoteAsync(_workspace.RepositoryRoot, ct).ConfigureAwait(false);
+        _cachedRemote = remote ?? "";
+        return remote;
+    }
+
+    // Fetch the board branch from remote then rebase local onto it, so any subsequent push is
+    // guaranteed to be fast-forward. If rebase fails (genuine conflict), abort and throw so the
+    // mutation is not applied in a conflicted state.
+    private async Task TryPullRebaseAsync(string boardPath, string remote, CancellationToken ct)
+    {
+        var repoRoot = _workspace.RepositoryRoot;
+        await _git.FetchAsync(repoRoot, remote, BranchName, ct).ConfigureAwait(false);
+
+        if (!await _git.RemoteTrackingBranchExistsAsync(repoRoot, remote, BranchName, ct).ConfigureAwait(false))
+            return; // Remote branch not yet created — nothing to rebase onto.
+
+        var behind = await _git.CountCommitsAheadAsync(boardPath, "HEAD", $"{remote}/{BranchName}", ct).ConfigureAwait(false);
+        if (behind == 0) return;
+
+        var rebase = await _git.RebaseAsync(boardPath, $"{remote}/{BranchName}", ct).ConfigureAwait(false);
+        if (!rebase.Ok)
+        {
+            await _git.AbortRebaseAsync(boardPath, ct).ConfigureAwait(false);
+            throw new InvalidOperationException(
+                $"Board is out of sync — could not rebase before applying change. Try again. ({rebase.Stderr.Trim()})");
+        }
+    }
+
+    // Push the board branch to remote. Uses --set-upstream on the very first push.
+    // Push failures are logged as warnings but never thrown — the local commit always stands.
+    private async Task TryPushAsync(string boardPath, string remote, CancellationToken ct)
+    {
+        var repoRoot = _workspace.RepositoryRoot;
+        var setUpstream = !await _git.RemoteTrackingBranchExistsAsync(repoRoot, remote, BranchName, ct).ConfigureAwait(false);
+        var push = await _git.PushAsync(boardPath, remote, BranchName, setUpstream, ct).ConfigureAwait(false);
+        if (!push.Ok)
+            _logger.LogWarning("Board push to {Remote}/{Branch} failed: {Error}", remote, BranchName, push.Stderr.Trim());
     }
 
     private async Task<bool> IsWorktreeRegisteredAsync(string repoRoot, string boardPath, CancellationToken ct)

@@ -229,6 +229,54 @@ public sealed class GitService
         return r.Ok && !string.IsNullOrWhiteSpace(r.Stdout);
     }
 
+    /// <summary>Returns the name of the first configured remote (typically <c>origin</c>), or
+    /// <see langword="null"/> when no remotes are configured. Used to decide whether remote-sync
+    /// operations (fetch, push) should run at all.</summary>
+    public async Task<string?> GetDefaultRemoteAsync(string repoRoot, CancellationToken ct)
+    {
+        var r = await RunAsync(repoRoot, ["remote"], ct).ConfigureAwait(false);
+        if (!r.Ok) return null;
+        var name = r.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                            .FirstOrDefault();
+        return string.IsNullOrEmpty(name) ? null : name;
+    }
+
+    /// <summary>Fetch a single branch from a remote into its remote-tracking ref
+    /// (<c>refs/remotes/&lt;remote&gt;/&lt;branch&gt;</c>). Returns an Ok result even when the
+    /// branch does not yet exist on the remote — that is a benign no-op, not an error.</summary>
+    public Task<GitResult> FetchAsync(string repoRoot, string remoteName, string branch, CancellationToken ct)
+        => RunAsync(repoRoot, ["fetch", remoteName, branch], ct);
+
+    /// <summary>True when the remote-tracking ref
+    /// <c>refs/remotes/&lt;remote&gt;/&lt;branch&gt;</c> exists locally (i.e. the branch has been
+    /// fetched at least once).</summary>
+    public async Task<bool> RemoteTrackingBranchExistsAsync(string repoRoot, string remoteName, string branch, CancellationToken ct)
+    {
+        var r = await RunAsync(repoRoot, ["rev-parse", "--verify", "--quiet", $"refs/remotes/{remoteName}/{branch}"], ct).ConfigureAwait(false);
+        return r.Ok && !string.IsNullOrWhiteSpace(r.Stdout);
+    }
+
+    /// <summary>Push <paramref name="branch"/> to <paramref name="remoteName"/>. Pass
+    /// <paramref name="setUpstream"/> = <see langword="true"/> on the very first push to establish
+    /// the tracking relationship (<c>--set-upstream</c>).</summary>
+    public Task<GitResult> PushAsync(string worktreePath, string remoteName, string branch, bool setUpstream, CancellationToken ct)
+    {
+        return setUpstream
+            ? RunAsync(worktreePath, ["push", "--set-upstream", remoteName, branch], ct)
+            : RunAsync(worktreePath, ["push", remoteName, branch], ct);
+    }
+
+    /// <summary>Rebase the current branch in <paramref name="worktreePath"/> onto
+    /// <paramref name="upstreamRef"/>. Returns Ok both when there is nothing to rebase and after a
+    /// clean rebase. Call <see cref="AbortRebaseAsync"/> on failure before re-throwing.</summary>
+    public Task<GitResult> RebaseAsync(string worktreePath, string upstreamRef, CancellationToken ct)
+        => RunAsync(worktreePath, ["rebase", upstreamRef], ct);
+
+    /// <summary>Abort an in-progress rebase (<c>git rebase --abort</c>). Called in error paths to
+    /// restore the worktree to its pre-rebase state before surfacing the failure to the caller.</summary>
+    public Task<GitResult> AbortRebaseAsync(string worktreePath, CancellationToken ct)
+        => RunAsync(worktreePath, ["rebase", "--abort"], ct);
+
     /// <summary>True when <paramref name="pathspec"/> has uncommitted changes (staged, unstaged,
     /// or untracked) relative to HEAD. Lets a caller skip an isolated commit when there is nothing
     /// to commit, avoiding a spurious "nothing to commit" failure.</summary>
