@@ -77,3 +77,11 @@ public sealed record BoardSnapshot(IReadOnlyList<BoardColumn> Columns)
         return idx >= 0 && idx + 1 < Columns.Count ? Columns[idx + 1] : null;
     }
 }
+
+/// <summary>Summary of what <c>board reinit</c> changed.</summary>
+public sealed record ReinitResult(
+    int ColumnsCreated,
+    int InstructionsRestored,
+    int CardsPreserved,
+    int CardsMoved,
+    int CardsWiped);

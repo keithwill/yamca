@@ -51,9 +51,25 @@ if (cli.WorkspacePath is not null)
 // and worktrees) anchor here rather than at the sandbox root, so opening yamca in a subdirectory
 // still finds the board and roots worktrees at the repo root. Falls back to the workspace root
 // when not inside a git repository. The sandbox boundary stays at workspaceRoot regardless.
-var repositoryRoot = await new GitService()
+var gitService = new GitService();
+var repositoryRoot = await gitService
     .GetRepoRootAsync(workspaceRoot, CancellationToken.None)
     .ConfigureAwait(false) ?? workspaceRoot;
+
+if (cli.Mode == CliMode.BoardReinit)
+{
+    using var loggerFactory = LoggerFactory.Create(b => b.AddConsole());
+    var workspace = new Workspace(workspaceRoot, repositoryRoot);
+    var worktree = new BoardWorktree(workspace, gitService, loggerFactory.CreateLogger<BoardWorktree>());
+    var r = await worktree.ReinitAsync(cli.Wipe, CancellationToken.None).ConfigureAwait(false);
+    Console.WriteLine("Board reinitialized.");
+    Console.WriteLine($"  Columns created:       {r.ColumnsCreated}");
+    Console.WriteLine($"  Instructions restored: {r.InstructionsRestored}");
+    Console.WriteLine($"  Cards preserved:       {r.CardsPreserved}");
+    Console.WriteLine($"  Cards moved to idea:   {r.CardsMoved}");
+    if (r.CardsWiped > 0) Console.WriteLine($"  Cards wiped:           {r.CardsWiped}");
+    return 0;
+}
 
 // Fixed default port so browser localStorage (keyed by origin) persists across
 // runs and explicit via --port if the user needs to move it.
@@ -152,6 +168,7 @@ builder.Services.AddSingleton<ITool, BoardGetCardTool>();
 builder.Services.AddSingleton<ITool, BoardGetStepInstructionsTool>();
 builder.Services.AddSingleton<ITool, BoardMoveCardTool>();
 builder.Services.AddSingleton<ITool, BoardUpdateCardTool>();
+builder.Services.AddSingleton<ITool, BoardReinitTool>();
 
 // Script-tool collaborators. InterpreterResolver / ScriptRunner are stateless apart
 // from a PATH-resolution cache, so they live as singletons. ScriptRegistryLookup
@@ -268,6 +285,12 @@ static void PrintHelp(TextWriter? writer = null)
 {
     writer ??= Console.Out;
     writer.WriteLine("Usage: yamca [workspace-path] [options]");
+    writer.WriteLine("       yamca board reinit [workspace-path] [--wipe]");
+    writer.WriteLine();
+    writer.WriteLine("Commands:");
+    writer.WriteLine("  board reinit          Restore the default column structure of the dev board.");
+    writer.WriteLine("                        Cards in non-default columns are moved to idea.");
+    writer.WriteLine("                        Pass --wipe to delete all cards instead.");
     writer.WriteLine();
     writer.WriteLine("Arguments:");
     writer.WriteLine("  workspace-path        Directory to sandbox the agent to (default: current directory).");
@@ -275,26 +298,34 @@ static void PrintHelp(TextWriter? writer = null)
     writer.WriteLine("Options:");
     writer.WriteLine("  -p, --port <n>        Listen on a specific port (default: 9001).");
     writer.WriteLine("      --no-browser      Do not open the default browser on startup.");
+    writer.WriteLine("      --wipe            (board reinit) Delete all cards instead of moving to idea.");
     writer.WriteLine("  -h, --help            Show this help and exit.");
     writer.WriteLine("      --version         Print the tool version and exit.");
 }
 
+internal enum CliMode { Default, BoardReinit }
+
 internal sealed record CliOptions(
+    CliMode Mode,
     string? WorkspacePath,
     int? Port,
     bool NoBrowser,
+    bool Wipe,
     bool ShowHelp,
     bool ShowVersion,
     string? Error)
 {
     public static CliOptions Parse(string[] args)
     {
+        var mode = CliMode.Default;
         string? workspace = null;
         int? port = null;
         bool noBrowser = false;
+        bool wipe = false;
         bool help = false;
         bool version = false;
         string? error = null;
+        bool inBoardSubcommand = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -310,6 +341,9 @@ internal sealed record CliOptions(
                     break;
                 case "--no-browser":
                     noBrowser = true;
+                    break;
+                case "--wipe":
+                    wipe = true;
                     break;
                 case "-p":
                 case "--port":
@@ -330,6 +364,17 @@ internal sealed record CliOptions(
                     {
                         error = $"unknown option '{a}'";
                     }
+                    else if (!inBoardSubcommand && a == "board")
+                    {
+                        inBoardSubcommand = true;
+                    }
+                    else if (inBoardSubcommand && mode == CliMode.Default)
+                    {
+                        if (a == "reinit")
+                            mode = CliMode.BoardReinit;
+                        else
+                            error = $"unknown board subcommand '{a}'";
+                    }
                     else if (workspace is null)
                     {
                         workspace = a;
@@ -343,7 +388,7 @@ internal sealed record CliOptions(
             if (error is not null) break;
         }
 
-        return new CliOptions(workspace, port, noBrowser, help, version, error);
+        return new CliOptions(mode, workspace, port, noBrowser, wipe, help, version, error);
     }
 }
 

@@ -170,7 +170,100 @@ public sealed class BoardWorktree
         return worktrees.Any(w => string.Equals(Normalize(w.Path), target, PathComparison));
     }
 
-    private static async Task SeedDefaultColumnsAsync(string boardPath, CancellationToken ct)
+    /// <summary>Restore the board to the default column layout. Cards already in a default column
+    /// stay in place; cards in unknown columns move to the initial (idea) column. Pass
+    /// <paramref name="wipe"/> to delete all cards instead.</summary>
+    public Task<ReinitResult> ReinitAsync(bool wipe, CancellationToken ct)
+        => MutateAsync(async boardRoot =>
+        {
+            var result = await ReinitCoreAsync(boardRoot, wipe, ct).ConfigureAwait(false);
+            var msg = BuildReinitCommitMessage(result, wipe);
+            await _git.CommitAllAsync(boardRoot, msg, ct).ConfigureAwait(false);
+            return result;
+        }, ct);
+
+    private static async Task<ReinitResult> ReinitCoreAsync(string boardRoot, bool wipe, CancellationToken ct)
+    {
+        var snapshot = new BoardService().Read(boardRoot);
+
+        var defaultDirNames = BoardService.DefaultColumns.Select(c => c.Dir).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ideaDir = BoardService.DefaultColumns[0].Dir;
+
+        // Count what will change before seeding so the summary is accurate.
+        int columnsCreated = 0;
+        int instructionsRestored = 0;
+        foreach (var (dir, instructions) in BoardService.DefaultColumns)
+        {
+            var columnDir = Path.Combine(boardRoot, dir);
+            if (!Directory.Exists(columnDir))
+            {
+                columnsCreated++;
+            }
+            else
+            {
+                var instrPath = Path.Combine(columnDir, BoardService.InstructionsFileName);
+                var expected = instructions ?? "";
+                string current;
+                try { current = await File.ReadAllTextAsync(instrPath, ct).ConfigureAwait(false); }
+                catch (IOException) { current = ""; }
+                if (!string.Equals(current, expected, StringComparison.Ordinal))
+                    instructionsRestored++;
+            }
+        }
+
+        // Restore the column structure (idempotent — overwrites instructions.md unconditionally).
+        await SeedDefaultColumnsAsync(boardRoot, ct).ConfigureAwait(false);
+
+        // Relocate or delete cards.
+        int cardsPreserved = 0, cardsMoved = 0, cardsWiped = 0;
+        foreach (var card in snapshot.AllCards)
+        {
+            if (wipe)
+            {
+                File.Delete(card.AbsolutePath);
+                cardsWiped++;
+            }
+            else if (defaultDirNames.Contains(card.ColumnDirectory))
+            {
+                cardsPreserved++;
+            }
+            else
+            {
+                var dest = Path.Combine(boardRoot, ideaDir, card.FileName);
+                if (File.Exists(dest))
+                    dest = Path.Combine(boardRoot, ideaDir,
+                        Path.GetFileNameWithoutExtension(card.FileName) + "-moved.md");
+                File.Move(card.AbsolutePath, dest);
+                cardsMoved++;
+            }
+        }
+
+        // Clean up non-default column directories that are now empty (or instructions-only).
+        foreach (var dir in Directory.EnumerateDirectories(boardRoot))
+        {
+            var dirName = Path.GetFileName(dir);
+            if (!BoardService.TryParseColumnDir(dirName, out _, out _)) continue;
+            if (defaultDirNames.Contains(dirName)) continue;
+
+            var remaining = Directory.EnumerateFiles(dir)
+                .Where(f => !string.Equals(Path.GetFileName(f),
+                    BoardService.InstructionsFileName, StringComparison.OrdinalIgnoreCase))
+                .Any();
+            if (!remaining) Directory.Delete(dir, recursive: true);
+        }
+
+        return new ReinitResult(columnsCreated, instructionsRestored, cardsPreserved, cardsMoved, cardsWiped);
+    }
+
+    private static string BuildReinitCommitMessage(ReinitResult r, bool wipe)
+    {
+        var detail = $"Columns created: {r.ColumnsCreated}, instructions restored: {r.InstructionsRestored}, " +
+                     $"cards preserved: {r.CardsPreserved}, cards moved to idea: {r.CardsMoved}" +
+                     (wipe && r.CardsWiped > 0 ? $", cards wiped: {r.CardsWiped}" : "");
+        return $"board: reinit — restored default columns\n\n{detail}";
+    }
+
+    internal static async Task SeedDefaultColumnsAsync(string boardPath, CancellationToken ct)
     {
         foreach (var (dir, instructions) in BoardService.DefaultColumns)
         {
