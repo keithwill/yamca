@@ -52,7 +52,7 @@
             </MudList>
         }
 
-        @if (CanRunStep && !IsBranchBound)
+        @if (IsWorkColumn && CanRunStep && !IsBranchBound)
         {
             <MudDivider Class="my-2" />
             <MudText Typo="Typo.subtitle2" Class="mb-1">Branch</MudText>
@@ -77,7 +77,7 @@
         }
     </DialogContent>
     <DialogActions>
-        @if (CanRunStep)
+        @if (IsWorkColumn && CanRunStep)
         {
             @if (Endpoints.Count == 0)
             {
@@ -105,6 +105,15 @@
                 Run "@ColumnDisplayName" step
             </MudButton>
         }
+        else if (CanPromote)
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.ArrowForward"
+                       Disabled="@_busy"
+                       OnClick="Promote">
+                Move to "@NextColumnDisplayName"
+            </MudButton>
+        }
         <MudButton OnClick="Close">Close</MudButton>
     </DialogActions>
 </MudDialog>
@@ -115,6 +124,16 @@
     [Parameter, EditorRequired] public BoardCard Card { get; set; } = default!;
     [Parameter, EditorRequired] public string WorkspaceRoot { get; set; } = default!;
     [Parameter] public string ColumnDisplayName { get; set; } = "";
+
+    /// <summary>True when the card's column is a work step (has an <c>instructions.md</c>): the
+    /// dialog offers a chat-backed step run. When false the column is a resting column and the
+    /// dialog offers a plain promote to the next column instead (no chat).</summary>
+    [Parameter] public bool IsWorkColumn { get; set; }
+
+    /// <summary>Display name of the next column, used to label the promote action on a resting
+    /// column. Null when the card is already in the last column (nothing to promote to).</summary>
+    [Parameter] public string? NextColumnDisplayName { get; set; }
+
     [Parameter] public bool CanRunStep { get; set; }
     [Parameter] public IReadOnlyList<EndpointSettings> Endpoints { get; set; } = Array.Empty<EndpointSettings>();
     [Parameter] public Guid DefaultEndpointId { get; set; }
@@ -124,6 +143,10 @@
     /// <summary>What the dialog hands back to the page when the user runs a step. The page
     /// re-checks branch/worktree existence at run time, so the chosen branch is all it needs.</summary>
     public sealed record Result(Guid EndpointId, string Branch);
+
+    /// <summary>Handed back when the user promotes a card out of a resting column. The page moves
+    /// the card to the next column on disk; there is no chat run, branch, or endpoint involved.</summary>
+    public sealed record Promotion;
 
     private bool _loading = true;
     private bool _busy;
@@ -135,6 +158,10 @@
     private IReadOnlyList<GitFileLogEntry> _history = Array.Empty<GitFileLogEntry>();
 
     private bool IsBranchBound => !string.IsNullOrWhiteSpace(Card.Branch);
+
+    // A resting column promotes (rather than runs) — but only an unbound card: a branch-bound card
+    // lives and moves inside its worktree board, which a plain root-board file move would not touch.
+    private bool CanPromote => !IsWorkColumn && !IsBranchBound && NextColumnDisplayName is not null;
 
     private bool BranchExists =>
         !string.IsNullOrWhiteSpace(_branch) &&
@@ -206,6 +233,8 @@
 
         Dialog.Close(DialogResult.Ok(new Result(_endpointId, branch)));
     }
+
+    private void Promote() => Dialog.Close(DialogResult.Ok(new Promotion()));
 
     private void Close() => Dialog.Cancel();
 }

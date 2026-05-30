@@ -158,6 +158,14 @@ public class BoardServiceTests
     }
 
     [Test]
+    public void HasInstructions_ReflectsInstructionsFilePresence()
+    {
+        _ws.WriteFile(Board("20-analyze/instructions.md"), "analyze it");
+        Assert.That(_svc.HasInstructions(_ws.RootPath, "20-analyze"), Is.True);
+        Assert.That(_svc.HasInstructions(_ws.RootPath, "10-idea"), Is.False);
+    }
+
+    [Test]
     public void WithBranch_AddsOrReplacesFrontmatterBranch()
     {
         var added = BoardService.WithBranch("# Title\nbody", "feat/x");

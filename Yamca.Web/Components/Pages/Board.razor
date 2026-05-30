@@ -33,8 +33,9 @@ else if (_snapshot.Columns.Count == 0)
     <MudContainer MaxWidth="MaxWidth.Small" Class="pa-8">
         <MudText Typo="Typo.h6" GutterBottom="true">No dev board yet</MudText>
         <MudText Typo="Typo.body2" Class="mb-4">
-            Create a <code>.yamca/board</code> directory with numeric-prefixed column folders
-            (each holding an <code>instructions.md</code>). Initialize it with the default
+            Create a <code>.yamca/board</code> directory with numeric-prefixed column folders.
+            A folder with an <code>instructions.md</code> is a work step run in chat; one without
+            is a resting column whose cards are just promoted onward. Initialize it with the default
             idea → analyze → implement → verify → done columns?
         </MudText>
         <MudButton Color="Color.Primary" Variant="Variant.Filled"
@@ -135,6 +136,7 @@ else
             {
                 var d = Path.Combine(boardDir, dir);
                 Directory.CreateDirectory(d);
+                if (instr is null) continue; // resting column — no step instructions
                 var instrPath = Path.Combine(d, BoardService.InstructionsFileName);
                 if (!File.Exists(instrPath)) await File.WriteAllTextAsync(instrPath, instr);
             }
@@ -175,11 +177,14 @@ else
         // Branch field defaults / existing branches are gathered up front so the dialog can
         // offer them inline (combobox + endpoint dropdown) instead of chaining more modals.
         var existingBranches = await Git.ListBranchesAsync(Workspace.RepositoryRoot, CancellationToken.None);
+        var next = _snapshot.NextColumn(column);
         var parameters = new DialogParameters
         {
             ["Card"] = card,
             ["WorkspaceRoot"] = Workspace.RepositoryRoot,
             ["ColumnDisplayName"] = column.DisplayName,
+            ["IsWorkColumn"] = BoardSvc.HasInstructions(Workspace.RepositoryRoot, column.DirectoryName),
+            ["NextColumnDisplayName"] = next?.DisplayName,
             ["CanRunStep"] = Manager.CanCreate,
             ["Endpoints"] = Session.Endpoints.Items,
             ["DefaultEndpointId"] = Session.Endpoints.DefaultId,
@@ -189,8 +194,65 @@ else
         var dialog = await Dialogs.ShowAsync<CardDetailDialog>($"#{card.Id} {card.Title}", parameters,
             new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
         var result = await dialog.Result;
-        if (result is not null && !result.Canceled && result.Data is CardDetailDialog.Result run)
+        if (result is null || result.Canceled) return;
+        if (result.Data is CardDetailDialog.Result run)
             await RunStepAsync(card, column, run);
+        else if (result.Data is CardDetailDialog.Promotion && next is not null)
+            await PromoteCardAsync(card, column, next);
+    }
+
+    // Promote a card out of a resting column (one with no instructions.md, e.g. the idea scratchpad)
+    // into the next column, without a chat run. The card file is relocated and the move committed to
+    // the current branch in isolation — mirroring how LockCardToBranchAsync commits a single card
+    // pathspec — so the board's git history stays clean and the working tree isn't left dirty.
+    private async Task PromoteCardAsync(BoardCard card, BoardColumn from, BoardColumn to)
+    {
+        var ct = CancellationToken.None;
+        var repoRoot = Workspace.RepositoryRoot;
+        var src = Path.GetFullPath(card.AbsolutePath);
+        var dest = Path.GetFullPath(Path.Combine(to.AbsolutePath, card.FileName));
+
+        if (File.Exists(dest))
+        {
+            Snackbar.Add($"A card file named '{card.FileName}' already exists in '{to.DisplayName}'.", Severity.Error);
+            return;
+        }
+
+        try { Directory.CreateDirectory(to.AbsolutePath); }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not create column directory: {ex.Message}", Severity.Error);
+            return;
+        }
+
+        // git mv stages the rename for a tracked card; it fails for a never-committed (untracked)
+        // card, so fall back to a filesystem move. Track which paths to commit accordingly: a tracked
+        // card commits both old + new (the rename), an untracked card only the new location.
+        var relDest = Path.GetRelativePath(repoRoot, dest);
+        var pathspecs = new List<string> { relDest };
+        var mv = await Git.MoveAsync(repoRoot, src, dest, ct);
+        if (mv.Ok)
+        {
+            pathspecs.Insert(0, Path.GetRelativePath(repoRoot, src));
+        }
+        else
+        {
+            try { File.Move(src, dest); }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Could not move card #{card.Id}: {ex.Message}", Severity.Error);
+                return;
+            }
+        }
+
+        var commit = await Git.CommitPathsAsync(repoRoot, $"board: move #{card.Id} to {to.DisplayName}", pathspecs, ct);
+        if (!commit.Ok)
+            Snackbar.Add($"Card #{card.Id} moved to '{to.DisplayName}', but the commit failed: {commit.Stderr.Trim()}", Severity.Warning);
+        else
+            Snackbar.Add($"Moved card #{card.Id} to '{to.DisplayName}'.", Severity.Success);
+
+        await RefreshAsync();
+        StateHasChanged();
     }
 
     private async Task RunStepAsync(BoardCard card, BoardColumn column, CardDetailDialog.Result run)
@@ -309,12 +371,15 @@ else
 
     public void Dispose() => Manager.Changed -= OnSessionsChanged;
 
-    private static readonly (string Dir, string Instr)[] DefaultColumns =
+    // A column with instructions is a work step (run in chat); a column with null instructions is a
+    // resting column whose cards are simply promoted to the next column. Idea is a scratchpad and
+    // Done is terminal, so neither carries a step.
+    private static readonly (string Dir, string? Instr)[] DefaultColumns =
     {
-        ("10-idea", "# Idea\n\nCapture the raw idea or feature request. Clarify the intent and the desired outcome. Keep it short; detailed planning happens in the next step.\n"),
+        ("10-idea", null),
         ("20-analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan into the card. Break the work into a `- [ ]` subtask checklist where useful.\n"),
         ("30-implement", "# Implement\n\nDo the work described in the card. Tick subtasks as you complete them. When the implementation is done, stage your code changes together with the card move (and ticked subtasks) into a single commit.\n"),
         ("40-verify", "# Verify\n\nBuild, run tests, and confirm the change works end to end. Fix anything that fails. Note verification results on the card before moving it on.\n"),
-        ("50-done", "# Done\n\nCompleted and verified work. Nothing further to do.\n"),
+        ("50-done", null),
     };
 }

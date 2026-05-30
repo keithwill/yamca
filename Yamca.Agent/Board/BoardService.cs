@@ -193,6 +193,13 @@ public sealed partial class BoardService
         catch (IOException) { return null; }
     }
 
+    /// <summary>True when a column has an <c>instructions.md</c>. The presence of instructions is
+    /// what makes a column a *work* step (an agent runs it in chat); a column without them is a
+    /// *resting* column (idea scratchpad, done, blocked, …) whose cards are simply promoted to the
+    /// next column without a chat run.</summary>
+    public bool HasInstructions(string workspaceRoot, string columnDirName)
+        => File.Exists(Path.Combine(BoardDirectory(workspaceRoot), columnDirName, InstructionsFileName));
+
     /// <summary>Next free 4-digit card id (max existing numeric id across all columns + 1).</summary>
     public string NextCardId(string workspaceRoot)
     {
