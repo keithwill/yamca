@@ -226,15 +226,19 @@ else
             return;
         }
 
-        // git mv stages the rename for a tracked card; it fails for a never-committed (untracked)
-        // card, so fall back to a filesystem move. Track which paths to commit accordingly: a tracked
-        // card commits both old + new (the rename), an untracked card only the new location.
+        // git mv stages both sides of the rename for a tracked card; it fails for a never-committed
+        // (untracked) card, so fall back to a filesystem move plus an explicit stage of the new path.
+        // Either way the rename is already staged before we commit, so the commit must NOT re-run
+        // `git add`: the moved-away source is gone from the index and re-adding it would fatal with
+        // "pathspec did not match". Commit the staged paths directly instead — a tracked card commits
+        // both old + new (the rename), an untracked card only the new location.
+        var relSrc = Path.GetRelativePath(repoRoot, src);
         var relDest = Path.GetRelativePath(repoRoot, dest);
-        var pathspecs = new List<string> { relDest };
+        List<string> commitPaths;
         var mv = await Git.MoveAsync(repoRoot, src, dest, ct);
         if (mv.Ok)
         {
-            pathspecs.Insert(0, Path.GetRelativePath(repoRoot, src));
+            commitPaths = new() { relSrc, relDest };
         }
         else
         {
@@ -244,9 +248,11 @@ else
                 Snackbar.Add($"Could not move card #{card.Id}: {ex.Message}", Severity.Error);
                 return;
             }
+            await Git.AddAsync(repoRoot, relDest, ct);
+            commitPaths = new() { relDest };
         }
 
-        var commit = await Git.CommitPathsAsync(repoRoot, $"board: move #{card.Id} to {to.DisplayName}", pathspecs, ct);
+        var commit = await Git.CommitStagedPathsAsync(repoRoot, $"board: move #{card.Id} to {to.DisplayName}", commitPaths, ct);
         if (!commit.Ok)
             Snackbar.Add($"Card #{card.Id} moved to '{to.DisplayName}', but the commit failed: {commit.Stderr.Trim()}", Severity.Warning);
         else
