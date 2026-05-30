@@ -144,37 +144,45 @@ h1:focus {
 }
 
 /* Dev board (kanban) */
+/* Columns share the viewport width via flex (no horizontal scroll) and run full
+   height; only an overflowing column shows its (thin) scrollbar. Columns are
+   separated by a border rather than a gap. */
 .yamca-board {
     display: flex;
-    gap: 0.75rem;
-    align-items: flex-start;
-    padding: 0.75rem;
-    overflow-x: auto;
-    height: calc(100vh - 0px);
+    height: 100vh;
     box-sizing: border-box;
+    overflow: hidden;
 }
 .yamca-board-lane {
-    flex: 0 0 300px;
-    width: 300px;
+    flex: 1 1 0;
+    min-width: 0;
+    height: 100%;
     display: flex;
     flex-direction: column;
-    max-height: 100%;
     background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(127, 127, 127, 0.2);
-    border-radius: 6px;
+    border-right: 1px solid rgba(127, 127, 127, 0.2);
+}
+.yamca-board-lane:last-child {
+    border-right: none;
 }
 .yamca-board-lane-header {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+    /* Fixed height so the "add card" button in the first column doesn't make its
+       header taller than the plain-text headers in the other columns. */
+    min-height: 3rem;
+    box-sizing: border-box;
+    padding: 0.25rem 0.5rem 0.25rem 0.75rem;
     border-bottom: 1px solid rgba(127, 127, 127, 0.2);
     font-weight: 600;
     text-transform: capitalize;
 }
 .yamca-board-lane-cards {
     flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
+    scrollbar-width: thin;
     padding: 0.5rem;
     display: flex;
     flex-direction: column;
@@ -183,9 +191,14 @@ h1:focus {
 .yamca-board-card {
     cursor: pointer;
     padding: 0.5rem 0.625rem;
+    /* Lift the card off the lane: a lighter surface plus a hairline border read
+       as more contrast than elevation shadow alone does on the dark theme. */
+    background-color: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 .yamca-board-card:hover {
-    outline: 1px solid var(--mud-palette-primary);
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: var(--mud-palette-primary);
 }
 .yamca-board-card-title {
     font-size: 0.9rem;
@@ -203,6 +216,29 @@ h1:focus {
     font-size: 0.8rem;
     opacity: 0.5;
     padding: 0.25rem;
+}
+
+/* Small viewports: stack the columns and let the page scroll naturally instead
+   of pinning each column to the full viewport height. */
+@media (max-width: 768px) {
+    .yamca-board {
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+    }
+    .yamca-board-lane {
+        flex: 0 0 auto;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+    }
+    .yamca-board-lane:last-child {
+        border-bottom: none;
+    }
+    .yamca-board-lane-cards {
+        overflow-y: visible;
+    }
 }
 
 .yamca-tile-header {

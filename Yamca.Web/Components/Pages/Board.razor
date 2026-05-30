@@ -50,7 +50,7 @@ else
         {
             <div class="yamca-board-lane">
                 <div class="yamca-board-lane-header">
-                    <span class="flex-grow-1">@column.DisplayName (@column.Cards.Count)</span>
+                    <span class="flex-grow-1">@column.DisplayName</span>
                     @if (column.Order == _snapshot.Columns[0].Order)
                     {
                         <MudIconButton Icon="@Icons.Material.Filled.Add" Size="Size.Small"
@@ -69,7 +69,7 @@ else
                             var c = card;
                             var done = c.Subtasks.Count(s => s.Done);
                             var total = c.Subtasks.Count;
-                            <MudPaper Class="yamca-board-card" Elevation="1" @onclick="@(() => OpenCardAsync(c, column))">
+                            <MudPaper Class="yamca-board-card" Elevation="3" @onclick="@(() => OpenCardAsync(c, column))">
                                 <div class="yamca-board-card-title">@c.Title</div>
                                 <div class="yamca-board-card-meta">
                                     <span>#@c.Id</span>
