@@ -148,6 +148,43 @@ public class GitServiceTests
     }
 
     [Test]
+    public async Task MoveWithUntrackedFallback_TrackedFile_UsesGitMv_StagesBothSides()
+    {
+        await CommitFile("card.md", "hello\n");
+
+        var moved = await _svc.MoveWithUntrackedFallbackAsync(
+            _root, Path.Combine(_root, "card.md"), Path.Combine(_root, "moved.md"), CancellationToken.None);
+
+        Assert.That(moved.Ok, Is.True, moved.Error);
+        Assert.That(moved.Staged, Is.True);
+        Assert.That(moved.CommitPaths, Is.EquivalentTo(new[] { "card.md", "moved.md" }));
+        Assert.That(File.Exists(Path.Combine(_root, "moved.md")), Is.True);
+        Assert.That(File.Exists(Path.Combine(_root, "card.md")), Is.False);
+
+        var status = await RunGitCapture("status", "--porcelain");
+        Assert.That(status.Trim(), Does.StartWith("R"));   // staged rename
+    }
+
+    [Test]
+    public async Task MoveWithUntrackedFallback_UntrackedFile_FallsBackAndStagesDestinationOnly()
+    {
+        // A never-committed file: git mv fails, so the fallback filesystem-move + `git add` runs.
+        File.WriteAllText(Path.Combine(_root, "fresh.md"), "new\n");
+
+        var moved = await _svc.MoveWithUntrackedFallbackAsync(
+            _root, Path.Combine(_root, "fresh.md"), Path.Combine(_root, "moved.md"), CancellationToken.None);
+
+        Assert.That(moved.Ok, Is.True, moved.Error);
+        Assert.That(moved.Staged, Is.True);
+        Assert.That(moved.CommitPaths, Is.EquivalentTo(new[] { "moved.md" }));   // destination only — no source side
+        Assert.That(File.Exists(Path.Combine(_root, "moved.md")), Is.True);
+        Assert.That(File.Exists(Path.Combine(_root, "fresh.md")), Is.False);
+
+        var status = await RunGitCapture("status", "--porcelain");
+        Assert.That(status.Trim(), Does.StartWith("A"));   // staged addition of the new path
+    }
+
+    [Test]
     public async Task GetFileCreatedAt_And_LastModified_ReturnDates()
     {
         await CommitFile("card.md", "v1\n");

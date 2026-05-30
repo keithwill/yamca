@@ -164,6 +164,48 @@ public sealed class GitService
     public Task<GitResult> MoveAsync(string repoPath, string from, string to, CancellationToken ct)
         => RunAsync(repoPath, ["mv", from, to], ct);
 
+    /// <summary>Outcome of <see cref="MoveWithUntrackedFallbackAsync"/>. <see cref="Ok"/> means the
+    /// file now lives at the destination; <see cref="Staged"/> says whether the relocation was
+    /// recorded in the index (false only when the fallback <c>git add</c> failed, e.g. outside a
+    /// repo); <see cref="CommitPaths"/> are the repo-relative paths to hand to
+    /// <see cref="CommitStagedPathsAsync"/> — both sides for a tracked rename, the destination only
+    /// for an untracked move.</summary>
+    public sealed record StagedMove(bool Ok, bool Staged, IReadOnlyList<string> CommitPaths, string Error);
+
+    /// <summary>Move a file with <c>git mv</c>, falling back to a filesystem move plus an explicit
+    /// stage of the destination when <c>git mv</c> fails (a never-committed/untracked file). Either
+    /// way the relocation is staged but NOT committed, so the caller chooses whether to bundle it
+    /// into a larger commit (the agent's step commit) or commit it in isolation via
+    /// <see cref="CommitStagedPathsAsync"/> (the board UI). Consolidates the move-with-fallback dance
+    /// shared by the board move tool and the UI's promote/move actions.</summary>
+    public async Task<StagedMove> MoveWithUntrackedFallbackAsync(string repoRoot, string srcAbs, string destAbs, CancellationToken ct)
+    {
+        var relSrc = Path.GetRelativePath(repoRoot, srcAbs);
+        var relDest = Path.GetRelativePath(repoRoot, destAbs);
+
+        // A tracked card moves with git mv, which stages both sides of the rename.
+        var mv = await MoveAsync(repoRoot, srcAbs, destAbs, ct).ConfigureAwait(false);
+        if (mv.Ok)
+            return new StagedMove(Ok: true, Staged: true, new[] { relSrc, relDest }, "");
+
+        // git mv fails for a never-committed (untracked) file. Fall back to a filesystem move, then
+        // best-effort stage the new location so the relocation still rides along with a later commit.
+        try
+        {
+            File.Move(srcAbs, destAbs);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return new StagedMove(Ok: false, Staged: false, Array.Empty<string>(),
+                $"git mv failed ({mv.Stderr.Trim()}) and the fallback move failed: {ex.Message}");
+        }
+
+        // The file is moved regardless; staging is best-effort (it fails outside a git repo), so a
+        // failed add still reports Ok with Staged=false rather than masking a completed move.
+        var add = await AddAsync(repoRoot, relDest, ct).ConfigureAwait(false);
+        return new StagedMove(Ok: true, Staged: add.Ok, new[] { relDest }, "");
+    }
+
     /// <summary>Stage a path (<c>git add</c>). Used as a fallback when moving a not-yet-tracked
     /// card file, so the relocation still rides along with the next commit.</summary>
     public Task<GitResult> AddAsync(string repoPath, string pathspec, CancellationToken ct)

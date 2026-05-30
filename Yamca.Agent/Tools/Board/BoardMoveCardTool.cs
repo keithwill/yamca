@@ -79,23 +79,14 @@ public sealed class BoardMoveCardTool : ITool
             return ToolResult.Error($"Could not create column directory: {ex.Message}");
         }
 
-        var mv = await _git.MoveAsync(root, resolvedSrc, resolvedDest, cancellationToken);
-        if (mv.Ok)
-            return ToolResult.Ok($"Moved card #{card.Id} from '{card.ColumnDirectory}' to '{target.DisplayName}'. The rename is staged (not committed) — commit it with the related code changes.");
+        // Move the card file, staging the relocation but NOT committing it — the agent bundles the
+        // move into the commit that completes the step, alongside the code changes and ticked
+        // subtasks. (The board UI shares this primitive but commits the move in isolation instead.)
+        var moved = await _git.MoveWithUntrackedFallbackAsync(root, resolvedSrc, resolvedDest, cancellationToken);
+        if (!moved.Ok)
+            return ToolResult.Error(moved.Error);
 
-        // git mv fails for a never-committed (untracked) card. Fall back to a filesystem move,
-        // then best-effort stage the new location so it still rides along with the next commit.
-        try
-        {
-            File.Move(resolvedSrc, resolvedDest);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return ToolResult.Error($"git mv failed ({mv.Stderr.Trim()}) and the fallback move failed: {ex.Message}");
-        }
-
-        var add = await _git.AddAsync(root, resolvedDest, cancellationToken);
-        var note = add.Ok ? "staged (not committed)" : "moved (not under git — history will not track the move)";
+        var note = moved.Staged ? "staged (not committed)" : "moved (not under git — history will not track the move)";
         return ToolResult.Ok($"Moved card #{card.Id} from '{card.ColumnDirectory}' to '{target.DisplayName}'; {note}.");
     }
 }
