@@ -158,11 +158,13 @@ public class BoardServiceTests
     }
 
     [Test]
-    public void HasInstructions_ReflectsInstructionsFilePresence()
+    public void HasInstructions_TrueOnlyForNonBlankInstructions()
     {
         _ws.WriteFile(Board("20-analyze/instructions.md"), "analyze it");
+        _ws.WriteFile(Board("50-done/instructions.md"), "   \n");
         Assert.That(_svc.HasInstructions(_ws.RootPath, "20-analyze"), Is.True);
-        Assert.That(_svc.HasInstructions(_ws.RootPath, "10-idea"), Is.False);
+        Assert.That(_svc.HasInstructions(_ws.RootPath, "50-done"), Is.False, "blank instructions = resting column");
+        Assert.That(_svc.HasInstructions(_ws.RootPath, "10-idea"), Is.False, "missing instructions = resting column");
     }
 
     [Test]

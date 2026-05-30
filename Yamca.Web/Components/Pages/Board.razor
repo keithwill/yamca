@@ -34,9 +34,9 @@ else if (_snapshot.Columns.Count == 0)
         <MudText Typo="Typo.h6" GutterBottom="true">No dev board yet</MudText>
         <MudText Typo="Typo.body2" Class="mb-4">
             Create a <code>.yamca/board</code> directory with numeric-prefixed column folders.
-            A folder with an <code>instructions.md</code> is a work step run in chat; one without
-            is a resting column whose cards are just promoted onward. Initialize it with the default
-            idea → analyze → implement → verify → done columns?
+            A folder whose <code>instructions.md</code> has content is a work step run in chat; an
+            empty <code>instructions.md</code> marks a resting column whose cards are just promoted
+            onward. Initialize it with the default idea → analyze → implement → verify → done columns?
         </MudText>
         <MudButton Color="Color.Primary" Variant="Variant.Filled"
                    StartIcon="@Icons.Material.Filled.ViewKanban" OnClick="InitializeBoardAsync">
@@ -136,9 +136,10 @@ else
             {
                 var d = Path.Combine(boardDir, dir);
                 Directory.CreateDirectory(d);
-                if (instr is null) continue; // resting column — no step instructions
+                // Every column gets an instructions.md, even resting columns (written empty): it both
+                // marks the column resting and keeps its directory tracked, since git ignores empty dirs.
                 var instrPath = Path.Combine(d, BoardService.InstructionsFileName);
-                if (!File.Exists(instrPath)) await File.WriteAllTextAsync(instrPath, instr);
+                if (!File.Exists(instrPath)) await File.WriteAllTextAsync(instrPath, instr ?? "");
             }
             catch (Exception ex)
             {
