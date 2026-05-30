@@ -86,6 +86,16 @@
         }
     </DialogContent>
     <DialogActions>
+        @if (MoveTargets.Count > 0)
+        {
+            <MudMenu StartIcon="@Icons.Material.Filled.DriveFileMove" Label="Move to…"
+                     Variant="Variant.Text" Disabled="@_busy" Class="mr-auto">
+                @foreach (var col in MoveTargets)
+                {
+                    <MudMenuItem OnClick="@(() => Move(col.DirectoryName))">@col.DisplayName</MudMenuItem>
+                }
+            </MudMenu>
+        }
         @if (IsBranchBound)
         {
             <MudTooltip Text="@($"Open chat on {Card.Branch}")">
@@ -173,6 +183,16 @@
     /// <see cref="BoardService.ReadForDisplay"/> uses to decide whether to overlay the worktree.</summary>
     [Parameter] public bool BranchWorktreeLive { get; set; }
 
+    /// <summary>All board columns (in order), used to populate the "Move to…" picker. The card's
+    /// current column is excluded at render time.</summary>
+    [Parameter] public IReadOnlyList<ColumnOption> Columns { get; set; } = Array.Empty<ColumnOption>();
+
+    /// <summary>Directory name of the column the card is currently in, so the picker can omit it.</summary>
+    [Parameter] public string CurrentColumnDirectory { get; set; } = "";
+
+    /// <summary>A move target offered by the "Move to…" picker.</summary>
+    public sealed record ColumnOption(string DirectoryName, string DisplayName);
+
     /// <summary>What the dialog hands back to the page when the user runs a step. The page
     /// re-checks branch/worktree existence at run time, so the chosen branch is all it needs.</summary>
     public sealed record Result(Guid EndpointId, string Branch);
@@ -189,6 +209,11 @@
     /// worktree (e.g. to resolve a merge conflict or do follow-up work). The page opens/creates the
     /// worktree and navigates to a chat bound to it.</summary>
     public sealed record OpenChatRequest;
+
+    /// <summary>Handed back when the user picks a column from the "Move to…" menu. The page relocates
+    /// the card to <paramref name="ToColumnDirectory"/> — on the root board for an unbound card, or in
+    /// the branch's worktree for a live-bound one — and commits the move.</summary>
+    public sealed record MoveRequest(string ToColumnDirectory);
 
     private bool _loading = true;
     private bool _busy;
@@ -210,6 +235,10 @@
     // A resting column promotes (rather than runs) — but only an unbound card: a branch-bound card
     // lives and moves inside its worktree board, which a plain root-board file move would not touch.
     private bool CanPromote => !IsWorkColumn && !IsBranchBound && NextColumnDisplayName is not null;
+
+    // Every column except the one the card is already in is a valid move target (forward or back).
+    private IReadOnlyList<ColumnOption> MoveTargets =>
+        Columns.Where(c => !string.Equals(c.DirectoryName, CurrentColumnDirectory, StringComparison.Ordinal)).ToList();
 
     private bool BranchExists =>
         !string.IsNullOrWhiteSpace(_branch) &&
@@ -286,6 +315,8 @@
     }
 
     private void Promote() => Dialog.Close(DialogResult.Ok(new Promotion()));
+
+    private void Move(string toColumnDirectory) => Dialog.Close(DialogResult.Ok(new MoveRequest(toColumnDirectory)));
 
     private void Merge() => Dialog.Close(DialogResult.Ok(new MergeRequest()));
 

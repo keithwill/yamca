@@ -205,6 +205,9 @@ else
             // the same test ReadForDisplay uses to decide whether to overlay the worktree board.
             ["BranchWorktreeLive"] = !string.IsNullOrWhiteSpace(card.Branch)
                                      && _branchWorktrees.ContainsKey(card.Branch!),
+            ["Columns"] = _snapshot.Columns
+                .Select(c => new CardDetailDialog.ColumnOption(c.DirectoryName, c.DisplayName)).ToList(),
+            ["CurrentColumnDirectory"] = column.DirectoryName,
         };
         var dialog = await Dialogs.ShowAsync<CardDetailDialog>($"#{card.Id} {card.Title}", parameters,
             new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
@@ -218,6 +221,11 @@ else
             await MergeCardAsync(card);
         else if (result.Data is CardDetailDialog.OpenChatRequest)
             await OpenCardChatAsync(card);
+        else if (result.Data is CardDetailDialog.MoveRequest move)
+        {
+            var target = _snapshot.FindColumn(move.ToColumnDirectory);
+            if (target is not null) await MoveCardAsync(card, column, target);
+        }
     }
 
     // Merge a branch-bound card's branch back into the base branch by reusing the same merge dialog
@@ -300,37 +308,102 @@ else
             return;
         }
 
-        // git mv stages both sides of the rename for a tracked card; it fails for a never-committed
-        // (untracked) card, so fall back to a filesystem move plus an explicit stage of the new path.
-        // Either way the rename is already staged before we commit, so the commit must NOT re-run
-        // `git add`: the moved-away source is gone from the index and re-adding it would fatal with
-        // "pathspec did not match". Commit the staged paths directly instead — a tracked card commits
-        // both old + new (the rename), an untracked card only the new location.
-        var relSrc = Path.GetRelativePath(repoRoot, src);
-        var relDest = Path.GetRelativePath(repoRoot, dest);
-        List<string> commitPaths;
-        var mv = await Git.MoveAsync(repoRoot, src, dest, ct);
-        if (mv.Ok)
+        // Move the card file (git mv for a tracked card, filesystem-move + stage fallback for an
+        // untracked one). The relocation is staged but not committed; we then commit just those
+        // staged paths in isolation so unrelated in-flight work stays out of the board commit. The
+        // commit must NOT re-run `git add`: a git-mv'd source is gone from the index and re-adding it
+        // would fatal with "pathspec did not match" — CommitStagedPathsAsync commits the staged paths
+        // as-is (both sides of a rename, or the destination only for an untracked move).
+        var moved = await Git.MoveWithUntrackedFallbackAsync(repoRoot, src, dest, ct);
+        if (!moved.Ok)
         {
-            commitPaths = new() { relSrc, relDest };
-        }
-        else
-        {
-            try { File.Move(src, dest); }
-            catch (Exception ex)
-            {
-                Snackbar.Add($"Could not move card #{card.Id}: {ex.Message}", Severity.Error);
-                return;
-            }
-            await Git.AddAsync(repoRoot, relDest, ct);
-            commitPaths = new() { relDest };
+            Snackbar.Add($"Could not move card #{card.Id}: {moved.Error}", Severity.Error);
+            return;
         }
 
-        var commit = await Git.CommitStagedPathsAsync(repoRoot, $"board: move #{card.Id} to {to.DisplayName}", commitPaths, ct);
+        var commit = await Git.CommitStagedPathsAsync(repoRoot, $"board: move #{card.Id} to {to.DisplayName}", moved.CommitPaths, ct);
         if (!commit.Ok)
             Snackbar.Add($"Card #{card.Id} moved to '{to.DisplayName}', but the commit failed: {commit.Stderr.Trim()}", Severity.Warning);
         else
             Snackbar.Add($"Moved card #{card.Id} to '{to.DisplayName}'.", Severity.Success);
+
+        await RefreshAsync();
+        StateHasChanged();
+    }
+
+    // Move a card to an arbitrary column from the UI, committing the relocation so the working tree is
+    // never left dirty — the trap of moving card files by hand, which skips the two-sided commit. Two
+    // cases, split on binding liveness (the same split the display overlay uses):
+    //   • not-live (no branch, or a branch whose worktree is gone): the card lives on the root board,
+    //     so move + commit the root copy on the current branch — PromoteCardAsync generalized to any
+    //     column, forward or backward.
+    //   • live-bound: the canonical card lives in the branch's worktree board (the root board shows
+    //     only an overlay), so move + commit the worktree copy on the card's branch. The root copy
+    //     stays put and is reconciled at merge, matching the existing overlay model. This commits
+    //     directly onto the branch even if a chat session is mid-turn on it; concurrency guarding is
+    //     deferred (a future board-action lock for cards with an in-flight chat turn).
+    private async Task MoveCardAsync(BoardCard card, BoardColumn from, BoardColumn target)
+    {
+        if (string.Equals(from.DirectoryName, target.DirectoryName, StringComparison.Ordinal)) return;
+
+        var ct = CancellationToken.None;
+        var repoRoot = Workspace.RepositoryRoot;
+
+        string? worktreePath = null;
+        var live = !string.IsNullOrWhiteSpace(card.Branch)
+                   && _branchWorktrees.TryGetValue(card.Branch!, out worktreePath);
+
+        // Resolve the git root the move/commit runs against, plus the source file and its name. For a
+        // live-bound card we re-read the worktree board to get the card's real worktree path, since the
+        // snapshot's effective card carries the root file path (the overlay rewrites AbsolutePath).
+        string gitRoot, src, fileName;
+        if (live)
+        {
+            gitRoot = worktreePath!;
+            var wtCard = BoardSvc.Read(worktreePath!).FindCard(card.Id);
+            if (wtCard is null)
+            {
+                Snackbar.Add($"Could not find card #{card.Id} in the worktree for '{card.Branch}'.", Severity.Error);
+                return;
+            }
+            src = Path.GetFullPath(wtCard.AbsolutePath);
+            fileName = wtCard.FileName;
+        }
+        else
+        {
+            gitRoot = repoRoot;
+            src = Path.GetFullPath(card.AbsolutePath);
+            fileName = card.FileName;
+        }
+
+        var destColumnDir = Path.Combine(BoardService.BoardDirectory(gitRoot), target.DirectoryName);
+        var dest = Path.GetFullPath(Path.Combine(destColumnDir, fileName));
+
+        if (File.Exists(dest))
+        {
+            Snackbar.Add($"A card file named '{fileName}' already exists in '{target.DisplayName}'.", Severity.Error);
+            return;
+        }
+
+        try { Directory.CreateDirectory(destColumnDir); }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not create column directory: {ex.Message}", Severity.Error);
+            return;
+        }
+
+        var moved = await Git.MoveWithUntrackedFallbackAsync(gitRoot, src, dest, ct);
+        if (!moved.Ok)
+        {
+            Snackbar.Add($"Could not move card #{card.Id}: {moved.Error}", Severity.Error);
+            return;
+        }
+
+        var commit = await Git.CommitStagedPathsAsync(gitRoot, $"board: move #{card.Id} to {target.DisplayName}", moved.CommitPaths, ct);
+        if (!commit.Ok)
+            Snackbar.Add($"Card #{card.Id} moved to '{target.DisplayName}', but the commit failed: {commit.Stderr.Trim()}", Severity.Warning);
+        else
+            Snackbar.Add($"Moved card #{card.Id} to '{target.DisplayName}'.", Severity.Success);
 
         await RefreshAsync();
         StateHasChanged();
