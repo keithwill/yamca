@@ -6,7 +6,7 @@
 @inject GitService Git
 
 <MudDialog>
-    <DialogContent>
+    <TitleContent>
         <div class="d-flex align-center" style="gap: 8px;">
             <MudText Typo="Typo.h6">@Card.Title</MudText>
             <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">#@Card.Id</MudChip>
@@ -16,41 +16,43 @@
                          Icon="@Icons.Material.Filled.AccountTree">@Card.Branch</MudChip>
             }
         </div>
-
-        <MudDivider Class="my-2" />
-
+    </TitleContent>
+    <DialogContent>
         <div class="yamca-markdown">
             @((MarkupString)MarkdownRenderer.ToHtml(string.IsNullOrWhiteSpace(Card.Body) ? "_(empty card)_" : Card.Body))
         </div>
 
         <MudDivider Class="my-2" />
 
-        <MudText Typo="Typo.subtitle2" Class="mb-1">Git history</MudText>
-        @if (_loading)
-        {
-            <MudProgressCircular Indeterminate="true" Size="Size.Small" />
-        }
-        else if (_history.Count == 0)
-        {
-            <MudText Typo="Typo.caption" Style="opacity:0.6">Uncommitted — no git history yet.</MudText>
-        }
-        else
-        {
-            <MudText Typo="Typo.caption" Style="opacity:0.7">
-                Created @Fmt(_created) · last modified @Fmt(_lastModified)
-            </MudText>
-            <MudList T="string" Dense="true" Class="mt-1">
-                @foreach (var e in _history.Take(20))
+        <MudExpansionPanels Elevation="0" Dense="true" Class="mt-1">
+            <MudExpansionPanel Text="History">
+                @if (_loading)
                 {
-                    <MudListItem T="string">
-                        <MudText Typo="Typo.caption">
-                            <code>@e.Sha[..Math.Min(7, e.Sha.Length)]</code>
-                            · @e.Date.LocalDateTime.ToString("yyyy-MM-dd") · @e.Subject
-                        </MudText>
-                    </MudListItem>
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
                 }
-            </MudList>
-        }
+                else if (_history.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Style="opacity:0.6">Uncommitted — no git history yet.</MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Style="opacity:0.7">
+                        Created @Fmt(_created) · last modified @Fmt(_lastModified)
+                    </MudText>
+                    <MudList T="string" Dense="true" Class="mt-1">
+                        @foreach (var e in _history.Take(20))
+                        {
+                            <MudListItem T="string">
+                                <MudText Typo="Typo.caption">
+                                    <code>@e.Sha[..Math.Min(7, e.Sha.Length)]</code>
+                                    · @e.Date.LocalDateTime.ToString("yyyy-MM-dd") · @e.Subject
+                                </MudText>
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+            </MudExpansionPanel>
+        </MudExpansionPanels>
 
         @if (IsWorkColumn && CanRunStep && !IsBranchBound)
         {
@@ -79,17 +81,17 @@
     <DialogActions>
         @if (IsBranchBound)
         {
-            <MudButton StartIcon="@Icons.Material.Filled.Forum"
-                       Disabled="@_busy"
-                       OnClick="OpenChat">
-                Open chat on <code class="mx-1">@Card.Branch</code>
-            </MudButton>
-            <MudButton Color="Color.Success" Variant="Variant.Filled"
-                       StartIcon="@Icons.Material.Filled.Merge"
-                       Disabled="@_busy"
-                       OnClick="Merge">
-                Merge branch
-            </MudButton>
+            <MudTooltip Text="@($"Open chat on {Card.Branch}")">
+                <MudIconButton Icon="@Icons.Material.Filled.Forum"
+                               Disabled="@_busy"
+                               OnClick="OpenChat" />
+            </MudTooltip>
+            <MudTooltip Text="Merge branch">
+                <MudIconButton Icon="@Icons.Material.Filled.Merge"
+                               Color="Color.Success"
+                               Disabled="@_busy"
+                               OnClick="Merge" />
+            </MudTooltip>
         }
         @if (IsWorkColumn && CanRunStep)
         {
@@ -112,21 +114,23 @@
                     }
                 </MudSelect>
             }
-            <MudButton Color="Color.Primary" Variant="Variant.Filled"
-                       StartIcon="@Icons.Material.Filled.PlayArrow"
-                       Disabled="@(_busy || Endpoints.Count == 0)"
-                       OnClick="RunStep">
-                Run "@ColumnDisplayName" step
-            </MudButton>
+            <MudTooltip Text="@ColumnDisplayName">
+                <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
+                               Color="Color.Primary"
+                               Variant="Variant.Filled"
+                               Disabled="@(_busy || Endpoints.Count == 0)"
+                               OnClick="RunStep" />
+            </MudTooltip>
         }
         else if (CanPromote)
         {
-            <MudButton Color="Color.Primary" Variant="Variant.Filled"
-                       StartIcon="@Icons.Material.Filled.ArrowForward"
-                       Disabled="@_busy"
-                       OnClick="Promote">
-                Move to "@NextColumnDisplayName"
-            </MudButton>
+            <MudTooltip Text="@($"Move to \"{NextColumnDisplayName}\"")">
+                <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
+                               Color="Color.Primary"
+                               Variant="Variant.Filled"
+                               Disabled="@_busy"
+                               OnClick="Promote" />
+            </MudTooltip>
         }
         <MudButton OnClick="Close">Close</MudButton>
     </DialogActions>
