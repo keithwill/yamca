@@ -144,12 +144,52 @@ h1:focus {
 }
 
 /* Dev board (kanban) */
-/* Columns share the viewport width via flex (no horizontal scroll) and run full
-   height; only an overflowing column shows its (thin) scrollbar. Columns are
-   separated by a border rather than a gap. */
+/* .yamca-board-root is the column-flex container that stacks the toolbar above the
+   lane area. .yamca-board holds only the lanes and fills remaining height. */
+.yamca-board-root {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+.yamca-board-toolbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0 0.25rem;
+    min-height: 2.5rem;
+    border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+}
+.yamca-board-toolbar-start {
+    display: flex;
+    align-items: center;
+    gap: 0.125rem;
+}
+.yamca-board-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    padding: 0 0.125rem 0 0.625rem;
+    border-radius: 999px;
+    background: rgba(var(--mud-palette-primary-rgb), 0.12);
+    border: 1px solid var(--mud-palette-primary);
+    font-size: 0.78rem;
+}
+.yamca-board-filter-chip-text {
+    opacity: 0.9;
+    white-space: nowrap;
+}
+.yamca-board-filter-chip-clear {
+    width: 1.5rem !important;
+    height: 1.5rem !important;
+    padding: 0 !important;
+}
 .yamca-board {
     display: flex;
-    height: 100vh;
+    flex: 1 1 auto;
+    min-height: 0;
     box-sizing: border-box;
     overflow: hidden;
 }
@@ -240,10 +280,14 @@ h1:focus {
 /* Small viewports: stack the columns and let the page scroll naturally instead
    of pinning each column to the full viewport height. */
 @media (max-width: 768px) {
-    .yamca-board {
-        flex-direction: column;
+    .yamca-board-root {
         height: auto;
         min-height: 100vh;
+        overflow: visible;
+    }
+    .yamca-board {
+        flex-direction: column;
+        flex: 0 0 auto;
         overflow: visible;
     }
     .yamca-board-lane {

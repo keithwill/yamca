@@ -49,66 +49,93 @@ else if (_snapshot.Columns.Count == 0)
 }
 else
 {
-    <div class="yamca-board">
-        @foreach (var column in _snapshot.Columns)
-        {
-            <div class="yamca-board-lane">
-                <div class="yamca-board-lane-header">
-                    @if (_isWorkColumn.GetValueOrDefault(column.DirectoryName))
-                    {
-                        <MudIcon Icon="@Icons.Material.Filled.Chat" Size="Size.Small"
-                                 Class="yamca-board-ai-indicator" Title="AI work step" />
-                    }
-                    <span class="flex-grow-1">@column.DisplayName</span>
-                    @if (column.Order == _snapshot.Columns[0].Order)
-                    {
-                        <MudIconButton Icon="@Icons.Material.Filled.Add" Size="Size.Small"
-                                       OnClick="@(() => AddCardAsync(column))" aria-label="New card" />
-                    }
-                    <MudIconButton Icon="@Icons.Material.Outlined.Settings" Size="Size.Small"
-                                   Class="yamca-board-column-edit"
-                                   OnClick="@(() => OpenColumnSettingsAsync(column))"
-                                   aria-label="Edit column" />
-                </div>
-                <div class="yamca-board-lane-cards @(_dragOverColumn == column.DirectoryName ? "yamca-board-lane-cards--dragover" : "")"
-                     @ondragover:preventDefault="true"
-                     @ondragenter="@(() => OnDragEnter(column))"
-                     @ondrop:preventDefault="true"
-                     @ondrop="@(() => OnDropAsync(column))">
-                    @if (column.Cards.Count == 0)
-                    {
-                        <div class="yamca-board-empty">No cards</div>
-                    }
-                    else
-                    {
-                        @foreach (var card in column.Cards)
-                        {
-                            var c = card;
-                            var done = c.Subtasks.Count(s => s.Done);
-                            var total = c.Subtasks.Count;
-                            <MudPaper Class="yamca-board-card" Elevation="3"
-                                      draggable="true"
-                                      @ondragstart="@(() => OnDragStart(c, column))"
-                                      @ondragend="OnDragEnd"
-                                      @onclick="@(() => OpenCardAsync(c, column))">
-                                <div class="yamca-board-card-title">@c.Title</div>
-                                <div class="yamca-board-card-meta">
-                                    <span>#@c.Id</span>
-                                    @if (total > 0)
-                                    {
-                                        <span>@done/@total subtasks</span>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(c.Branch))
-                                    {
-                                        <span>⎇ @c.Branch</span>
-                                    }
-                                </div>
-                            </MudPaper>
-                        }
-                    }
-                </div>
+    <div class="yamca-board-root">
+        <div class="yamca-board-toolbar">
+            <div class="yamca-board-toolbar-start">
+                <MudTooltip Text="@(HasFilter ? "Edit filter" : "Filter cards")" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.Search"
+                                   Size="Size.Small"
+                                   Color="@(HasFilter ? Color.Primary : Color.Inherit)"
+                                   OnClick="OpenSearchAsync"
+                                   aria-label="Filter cards" />
+                </MudTooltip>
             </div>
-        }
+            @if (HasFilter)
+            {
+                <div class="yamca-board-filter-chip">
+                    <span class="yamca-board-filter-chip-text">
+                        @(_filterStartsWith ? "starts with" : "contains") "@_filterQuery"
+                    </span>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                   Size="Size.Small"
+                                   Class="yamca-board-filter-chip-clear"
+                                   OnClick="ClearFilter"
+                                   aria-label="Clear filter" />
+                </div>
+            }
+        </div>
+        <div class="yamca-board">
+            @foreach (var column in _snapshot.Columns)
+            {
+                <div class="yamca-board-lane">
+                    <div class="yamca-board-lane-header">
+                        @if (_isWorkColumn.GetValueOrDefault(column.DirectoryName))
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Chat" Size="Size.Small"
+                                     Class="yamca-board-ai-indicator" Title="AI work step" />
+                        }
+                        <span class="flex-grow-1">@column.DisplayName</span>
+                        @if (column.Order == _snapshot.Columns[0].Order)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Add" Size="Size.Small"
+                                           OnClick="@(() => AddCardAsync(column))" aria-label="New card" />
+                        }
+                        <MudIconButton Icon="@Icons.Material.Outlined.Settings" Size="Size.Small"
+                                       Class="yamca-board-column-edit"
+                                       OnClick="@(() => OpenColumnSettingsAsync(column))"
+                                       aria-label="Edit column" />
+                    </div>
+                    <div class="yamca-board-lane-cards @(_dragOverColumn == column.DirectoryName ? "yamca-board-lane-cards--dragover" : "")"
+                         @ondragover:preventDefault="true"
+                         @ondragenter="@(() => OnDragEnter(column))"
+                         @ondrop:preventDefault="true"
+                         @ondrop="@(() => OnDropAsync(column))">
+                        @{ var visibleCards = FilteredCards(column); }
+                        @if (visibleCards.Count == 0)
+                        {
+                            <div class="yamca-board-empty">@(HasFilter ? "No matching cards" : "No cards")</div>
+                        }
+                        else
+                        {
+                            @foreach (var card in visibleCards)
+                            {
+                                var c = card;
+                                var done = c.Subtasks.Count(s => s.Done);
+                                var total = c.Subtasks.Count;
+                                <MudPaper Class="yamca-board-card" Elevation="3"
+                                          draggable="true"
+                                          @ondragstart="@(() => OnDragStart(c, column))"
+                                          @ondragend="OnDragEnd"
+                                          @onclick="@(() => OpenCardAsync(c, column))">
+                                    <div class="yamca-board-card-title">@c.Title</div>
+                                    <div class="yamca-board-card-meta">
+                                        <span>#@c.Id</span>
+                                        @if (total > 0)
+                                        {
+                                            <span>@done/@total subtasks</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(c.Branch))
+                                        {
+                                            <span>⎇ @c.Branch</span>
+                                        }
+                                    </div>
+                                </MudPaper>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </div>
     </div>
 }
 
@@ -124,6 +151,11 @@ else
     // one whose branch never started or was merged/deleted offers run-fresh instead.
     private IReadOnlyDictionary<string, string> _branchWorktrees =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    private string? _filterQuery;
+    private bool _filterStartsWith;
+    private bool _filterFullCard;
+    private bool HasFilter => !string.IsNullOrWhiteSpace(_filterQuery);
 
     // In-flight drag state for moving a card between columns. The card and the column it was picked
     // up from are captured on dragstart; _dragOverColumn drives the drop-target highlight and is keyed
@@ -173,6 +205,39 @@ else
     }
 
     private static DialogOptions Small() => new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    private async Task OpenSearchAsync()
+    {
+        var parameters = new DialogParameters
+        {
+            ["InitialQuery"] = _filterQuery ?? "",
+            ["InitialStartsWith"] = _filterStartsWith,
+            ["InitialFullCard"] = _filterFullCard,
+        };
+        var dialog = await Dialogs.ShowAsync<BoardSearchDialog>("Filter cards", parameters, Small());
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not BoardSearchDialog.Result data) return;
+        _filterQuery = data.Query;
+        _filterStartsWith = data.StartsWithMode;
+        _filterFullCard = data.FullCard;
+    }
+
+    private void ClearFilter() => _filterQuery = null;
+
+    private IReadOnlyList<BoardCard> FilteredCards(BoardColumn column)
+    {
+        if (!HasFilter) return column.Cards;
+        return column.Cards.Where(MatchesFilter).ToList();
+    }
+
+    private bool MatchesFilter(BoardCard card)
+    {
+        var query = _filterQuery!.ToLowerInvariant();
+        var text = _filterFullCard
+            ? $"{card.Title} {card.Body ?? ""}".ToLowerInvariant()
+            : card.Title.ToLowerInvariant();
+        return _filterStartsWith ? text.StartsWith(query) : text.Contains(query);
+    }
 
     // Bootstrap the board worktree (creates the yamca-board orphan branch and seeds default columns
     // on first use). Normally unreachable — RefreshAsync ensures the worktree on first navigation, so

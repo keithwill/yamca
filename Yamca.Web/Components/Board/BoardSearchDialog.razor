@@ -1,0 +1,71 @@
+@namespace Yamca.Web.Components.Board
+
+<MudDialog>
+    <DialogContent>
+        <div @onkeydown="HandleKeyDown">
+            <MudTextField @ref="_field" @bind-Value="_query" T="string"
+                          Label="Search cards"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Immediate="true"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Placeholder="Type to filter…" />
+
+            <MudRadioGroup T="bool" @bind-Value="_startsWithMode" Class="mt-3 d-block">
+                <MudRadio T="bool" Value="false">Contains</MudRadio>
+                <MudRadio T="bool" Value="true">Starts with</MudRadio>
+            </MudRadioGroup>
+
+            <MudSwitch T="bool" @bind-Value="_fullCard" Class="mt-1"
+                       Label="Search full card text (title + body)" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="Apply" Disabled="@string.IsNullOrWhiteSpace(_query)">
+            Apply filter
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public string InitialQuery { get; set; } = "";
+    [Parameter] public bool InitialStartsWith { get; set; }
+    [Parameter] public bool InitialFullCard { get; set; }
+
+    private MudTextField<string>? _field;
+    private string _query = "";
+    private bool _startsWithMode;
+    private bool _fullCard;
+
+    public sealed record Result(string Query, bool StartsWithMode, bool FullCard);
+
+    protected override void OnInitialized()
+    {
+        _query = InitialQuery;
+        _startsWithMode = InitialStartsWith;
+        _fullCard = InitialFullCard;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _field is not null)
+            await _field.FocusAsync();
+    }
+
+    private void Cancel() => Dialog.Cancel();
+
+    private void Apply()
+    {
+        if (string.IsNullOrWhiteSpace(_query)) return;
+        Dialog.Close(DialogResult.Ok(new Result(_query.Trim(), _startsWithMode, _fullCard)));
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_query))
+            Apply();
+    }
+}
