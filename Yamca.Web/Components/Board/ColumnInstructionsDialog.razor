@@ -3,8 +3,8 @@
 <MudDialog>
     <DialogContent>
         <MudText Typo="Typo.body2" Class="mb-4" Style="opacity: 0.8">
-            A <strong>work column</strong> runs an AI chat step when a card is promoted into it.
-            A <strong>resting column</strong> just holds cards — no AI step runs.
+            A <strong>work column</strong> can be run to prompt the LLM to complete the work of this step, utilizing the provided instruction.
+            A <strong>resting column</strong> just holds cards (best used for columns to hold new and completed items, or to represent manual steps).
         </MudText>
 
         <MudSwitch @bind-Value="_isWorkStep" T="bool" Color="Color.Primary"
@@ -23,7 +23,7 @@
         else
         {
             <MudAlert Severity="Severity.Info" Class="mt-3" Dense="true">
-                Cards promoted into this column will not trigger an AI step.
+                This step won't be runnable with the LLM.
             </MudAlert>
         }
     </DialogContent>
