@@ -7,47 +7,47 @@
 
 <MudDialog>
     <TitleContent>
-        <div class="d-flex align-center" style="gap: 8px; width: 100%;">
-            <MudText Typo="Typo.h6">@Card.Title</MudText>
-            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">#@Card.Id</MudChip>
-            <MudTooltip Text="Priority">
-                <MudSelect T="CardPriority" @bind-Value="_priority" Dense="true"
-                           Variant="Variant.Outlined" Margin="Margin.Dense"
-                           Adornment="Adornment.Start"
-                           AdornmentIcon="@Icons.Material.Filled.Flag"
-                           AdornmentColor="@(_priority == CardPriority.High ? Color.Warning : Color.Default)"
-                           Style="@($"min-width: 105px; max-width: 125px; {(_priority == CardPriority.Low ? "opacity:0.6;" : "")}")">
-                    <MudSelectItem T="CardPriority" Value="CardPriority.High">↑ High</MudSelectItem>
-                    <MudSelectItem T="CardPriority" Value="CardPriority.Normal">Normal</MudSelectItem>
-                    <MudSelectItem T="CardPriority" Value="CardPriority.Low">↓ Low</MudSelectItem>
-                </MudSelect>
-            </MudTooltip>
-            @if (MoveTargets.Count > 0)
-            {
-                <MudTooltip Text="Column">
-                    <MudMenu Icon="@Icons.Material.Filled.ViewColumn"
-                             Variant="Variant.Text" Disabled="@_busy">
-                        @foreach (var col in MoveTargets)
-                        {
-                            <MudMenuItem OnClick="@(() => Move(col.DirectoryName))">@col.DisplayName</MudMenuItem>
-                        }
-                    </MudMenu>
-                </MudTooltip>
-            }
-            @if (IsBranchBound)
-            {
-                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
-                         Icon="@Icons.Material.Filled.AccountTree">@Card.Branch</MudChip>
-            }
-            else if (HasBranchAttribute)
-            {
-                <MudTooltip Text="Branch doesn't exist or isn't loaded into a worktree">
-                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined"
-                             Icon="@Icons.Material.Filled.AccountTree" Style="opacity:0.5;">@Card.Branch</MudChip>
-                </MudTooltip>
-            }
-            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
-                           Class="ml-auto" OnClick="Close" />
+        <div class="d-flex flex-column" style="gap: 2px; width: 100%;">
+            <div class="d-flex align-center">
+                <MudText Typo="Typo.h6">@Card.Title</MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                               Class="ml-auto" OnClick="Close" />
+            </div>
+            <div class="d-flex align-center" style="gap: 6px;">
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">#@Card.Id</MudChip>
+                <MudMenu AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" Dense="true">
+                    <ActivatorContent>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                 Icon="@Icons.Material.Filled.Flag"
+                                 Color="@(_priority == CardPriority.High ? Color.Warning : Color.Default)"
+                                 Style="@(_priority == CardPriority.Low ? "opacity:0.6;" : "")"
+                                 OnClick="@(e => context.ToggleAsync(e))">
+                            @(_priority switch {
+                                CardPriority.High => "↑ High",
+                                CardPriority.Low => "↓ Low",
+                                _ => "Normal"
+                            })
+                        </MudChip>
+                    </ActivatorContent>
+                    <ChildContent>
+                        <MudMenuItem OnClick="@(() => _priority = CardPriority.High)">↑ High</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => _priority = CardPriority.Normal)">Normal</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => _priority = CardPriority.Low)">↓ Low</MudMenuItem>
+                    </ChildContent>
+                </MudMenu>
+                @if (IsBranchBound)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
+                             Icon="@Icons.Material.Filled.AccountTree">@Card.Branch</MudChip>
+                }
+                else if (HasBranchAttribute)
+                {
+                    <MudTooltip Text="Branch doesn't exist or isn't loaded into a worktree">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined"
+                                 Icon="@Icons.Material.Filled.AccountTree" Style="opacity:0.5;">@Card.Branch</MudChip>
+                    </MudTooltip>
+                }
+            </div>
         </div>
     </TitleContent>
     <DialogContent>
@@ -80,6 +80,18 @@
         }
     </DialogContent>
     <DialogActions>
+        @if (MoveTargets.Count > 0)
+        {
+            <MudTooltip Text="Move to column">
+                <MudMenu Icon="@Icons.Material.Filled.ViewColumn"
+                         Variant="Variant.Text" Disabled="@_busy">
+                    @foreach (var col in MoveTargets)
+                    {
+                        <MudMenuItem OnClick="@(() => Move(col.DirectoryName))">@col.DisplayName</MudMenuItem>
+                    }
+                </MudMenu>
+            </MudTooltip>
+        }
         <MudTooltip Text="Delete Card">
             <MudIconButton Icon="@Icons.Material.Filled.Delete"
                            Color="Color.Error"
