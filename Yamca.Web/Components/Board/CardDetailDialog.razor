@@ -7,7 +7,7 @@
 
 <MudDialog>
     <TitleContent>
-        <div class="d-flex align-center" style="gap: 8px;">
+        <div class="d-flex align-center" style="gap: 8px; width: 100%;">
             <MudText Typo="Typo.h6">@Card.Title</MudText>
             <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">#@Card.Id</MudChip>
             <MudTooltip Text="Priority">
@@ -22,6 +22,18 @@
                     <MudSelectItem T="CardPriority" Value="CardPriority.Low">↓ Low</MudSelectItem>
                 </MudSelect>
             </MudTooltip>
+            @if (MoveTargets.Count > 0)
+            {
+                <MudTooltip Text="Column">
+                    <MudMenu Icon="@Icons.Material.Filled.ViewColumn"
+                             Variant="Variant.Text" Disabled="@_busy">
+                        @foreach (var col in MoveTargets)
+                        {
+                            <MudMenuItem OnClick="@(() => Move(col.DirectoryName))">@col.DisplayName</MudMenuItem>
+                        }
+                    </MudMenu>
+                </MudTooltip>
+            }
             @if (IsBranchBound)
             {
                 <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
@@ -34,6 +46,8 @@
                              Icon="@Icons.Material.Filled.AccountTree" Style="opacity:0.5;">@Card.Branch</MudChip>
                 </MudTooltip>
             }
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                           Class="ml-auto" OnClick="Close" />
         </div>
     </TitleContent>
     <DialogContent>
@@ -66,25 +80,14 @@
         }
     </DialogContent>
     <DialogActions>
-        @if (MoveTargets.Count > 0)
-        {
-            <MudTooltip Text="Move To">
-            <MudMenu Icon="@Icons.Material.Filled.DriveFileMove"
-                     Variant="Variant.Text" Disabled="@_busy" Class="mr-auto">
-                @foreach (var col in MoveTargets)
-                {
-                    <MudMenuItem OnClick="@(() => Move(col.DirectoryName))">@col.DisplayName</MudMenuItem>
-                }
-            </MudMenu>
-            </MudTooltip>
-        }
+        <MudTooltip Text="Delete Card">
+            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                           Color="Color.Error"
+                           Disabled="@_busy"
+                           OnClick="DeleteCard" />
+        </MudTooltip>
         @if (IsBranchBound)
         {
-            <MudTooltip Text="@($"Open chat on {Card.Branch}")">
-                <MudIconButton Icon="@Icons.Material.Filled.Forum"
-                               Disabled="@_busy"
-                               OnClick="OpenChat" />
-            </MudTooltip>
             <MudTooltip Text="Merge branch">
                 <MudIconButton Icon="@Icons.Material.Filled.Merge"
                                Color="Color.Success"
@@ -113,6 +116,14 @@
                     }
                 </MudSelect>
             }
+            @if (IsBranchBound)
+            {
+                <MudTooltip Text="@($"Open chat on {Card.Branch}")">
+                    <MudIconButton Icon="@Icons.Material.Filled.Forum"
+                                   Disabled="@_busy"
+                                   OnClick="OpenChat" />
+                </MudTooltip>
+            }
             <MudTooltip Text="@ColumnDisplayName">
                 <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
                                Color="Color.Primary"
@@ -131,13 +142,6 @@
                                OnClick="Promote" />
             </MudTooltip>
         }
-        <MudTooltip Text="Delete Card">
-            <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                           Color="Color.Error"
-                           Disabled="@_busy"
-                           OnClick="DeleteCard" />
-        </MudTooltip>
-        <MudButton OnClick="Close">Close</MudButton>
     </DialogActions>
 </MudDialog>
 
