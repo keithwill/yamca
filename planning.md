@@ -19,6 +19,8 @@ Attach or paste images (PNG, screenshots) to send to multimodal models. The
 composer already has a paperclip button, but attachments are currently read as
 text only. **High confidence — we'll almost certainly do this.**
 
+This could go well with browser screen capture apis. We should investigate this interaction.
+
 ### Copy button
 One-click copy on assistant messages and code blocks. **Definitely wanted.**
 
