@@ -277,6 +277,17 @@ h1:focus {
     font-size: 0.9rem;
     font-weight: 500;
 }
+.yamca-board-card-priority--high {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #e09000;
+    margin-top: 0.1rem;
+}
+.yamca-board-card-priority--low {
+    font-size: 0.68rem;
+    opacity: 0.4;
+    margin-top: 0.1rem;
+}
 .yamca-board-card-meta {
     font-size: 0.72rem;
     opacity: 0.65;

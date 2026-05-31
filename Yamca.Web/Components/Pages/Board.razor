@@ -125,6 +125,14 @@ else
                                           @ondragend="OnDragEnd"
                                           @onclick="@(() => OpenCardAsync(c, column))">
                                     <div class="yamca-board-card-title">@c.Title</div>
+                                    @if (c.Priority == CardPriority.High)
+                                    {
+                                        <div class="yamca-board-card-priority--high">↑ high</div>
+                                    }
+                                    else if (c.Priority == CardPriority.Low)
+                                    {
+                                        <div class="yamca-board-card-priority--low">↓ low</div>
+                                    }
                                     <div class="yamca-board-card-meta">
                                         <span>#@c.Id</span>
                                         @if (total > 0)
@@ -323,7 +331,8 @@ else
         {
             var id = BoardSvc.NextCardId(boardRoot);
             var path = Path.Combine(boardRoot, column.DirectoryName, BoardService.CardFileName(id, data.Title));
-            var content = $"---\nid: {id}\ntitle: \"{data.Title.Replace("\"", "'")}\"\n---\n\n{data.Body}\n";
+            var priorityLine = data.Priority == CardPriority.Normal ? "" : $"priority: {data.Priority.ToString().ToLowerInvariant()}\n";
+            var content = $"---\nid: {id}\ntitle: \"{data.Title.Replace("\"", "'")}\"\n{priorityLine}---\n\n{data.Body}\n";
             try
             {
                 await File.WriteAllTextAsync(path, content);
@@ -390,6 +399,8 @@ else
         }
         else if (result.Data is CardDetailDialog.DeleteRequest)
             await DeleteCardAsync(card);
+        else if (result.Data is CardDetailDialog.PriorityUpdate pu)
+            await UpdateCardPriorityAsync(card, pu.Priority);
     }
 
     // Merge a branch-bound card's branch back into the base branch by reusing the same merge dialog
@@ -769,6 +780,34 @@ else
 
         if (ok) await RefreshAsync();
         return ok;
+    }
+
+    private async Task UpdateCardPriorityAsync(BoardCard card, CardPriority priority)
+    {
+        var ct = CancellationToken.None;
+        await BoardWorktree.MutateAsync(async boardRoot =>
+        {
+            var path = Path.Combine(boardRoot, card.ColumnDirectory, card.FileName);
+            string raw;
+            try { raw = await File.ReadAllTextAsync(path); }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Could not read card #{card.Id}: {ex.Message}", Severity.Error);
+                return;
+            }
+            try { await File.WriteAllTextAsync(path, BoardService.WithPriority(raw, priority)); }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Could not update card #{card.Id}: {ex.Message}", Severity.Error);
+                return;
+            }
+            var commit = await Git.CommitAllAsync(boardRoot, $"board: set #{card.Id} priority to {priority.ToString().ToLowerInvariant()}", ct);
+            if (!commit.Ok)
+                Snackbar.Add($"Priority updated but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning);
+        }, ct);
+
+        await RefreshAsync();
+        StateHasChanged();
     }
 
     private static string Sanitize(string branch) => branch.Replace('/', '-').Replace('\\', '-');

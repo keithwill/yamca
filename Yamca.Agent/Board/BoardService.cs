@@ -78,9 +78,11 @@ public sealed partial class BoardService
         return new BoardSnapshot(columns);
     }
 
-    // Card order within a column: by leading numeric id, then file name (both case-insensitive).
+    // Card order within a column: high → normal → low priority, then by leading numeric id, then file name.
     private static int CompareCards(BoardCard a, BoardCard b)
     {
+        var pc = b.Priority.CompareTo(a.Priority); // descending: high first
+        if (pc != 0) return pc;
         var an = LeadingInt(a.Id);
         var bn = LeadingInt(b.Id);
         if (an.HasValue && bn.HasValue && an != bn) return an.Value.CompareTo(bn.Value);
@@ -123,8 +125,15 @@ public sealed partial class BoardService
         var branch = fm.GetValueOrDefault("branch");
         if (string.IsNullOrWhiteSpace(branch)) branch = null;
 
+        var priority = fm.GetValueOrDefault("priority")?.ToLowerInvariant() switch
+        {
+            "high" => CardPriority.High,
+            "low"  => CardPriority.Low,
+            _      => CardPriority.Normal,
+        };
+
         var subtasks = ParseSubtasks(body);
-        return new BoardCard(id.Trim(), title.Trim(), branch?.Trim(), fileName, columnDirName, absPath, body, subtasks);
+        return new BoardCard(id.Trim(), title.Trim(), branch?.Trim(), fileName, columnDirName, absPath, body, subtasks, priority);
     }
 
     /// <summary>(done, total) checklist counts for a card body.</summary>
@@ -188,6 +197,12 @@ public sealed partial class BoardService
     /// endings to LF.</summary>
     public static string WithCommit(string rawText, string sha)
         => WithFrontmatterField(rawText, "commit", sha);
+
+    /// <summary>Return <paramref name="rawText"/> with its frontmatter <c>priority:</c> set to
+    /// the string form of <paramref name="priority"/> (low / normal / high). Normalizes line
+    /// endings to LF.</summary>
+    public static string WithPriority(string rawText, CardPriority priority)
+        => WithFrontmatterField(rawText, "priority", priority.ToString().ToLowerInvariant());
 
     // Sets a scalar frontmatter field, replacing an existing line for the key or appending one,
     // and synthesizing a frontmatter block when the text has none. Backs WithBranch / WithCommit.

@@ -26,6 +26,16 @@
         </div>
     </TitleContent>
     <DialogContent>
+        <div class="d-flex align-center mb-3" style="gap: 8px;">
+            <MudText Typo="Typo.caption" Style="opacity:0.7; white-space:nowrap;">Priority</MudText>
+            <MudSelect T="CardPriority" @bind-Value="_priority" Dense="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Style="min-width: 100px; max-width: 120px;">
+                <MudSelectItem T="CardPriority" Value="CardPriority.High">High</MudSelectItem>
+                <MudSelectItem T="CardPriority" Value="CardPriority.Normal">Normal</MudSelectItem>
+                <MudSelectItem T="CardPriority" Value="CardPriority.Low">Low</MudSelectItem>
+            </MudSelect>
+        </div>
         <div class="yamca-markdown">
             @((MarkupString)MarkdownRenderer.ToHtml(string.IsNullOrWhiteSpace(Card.Body) ? "_(empty card)_" : Card.Body))
         </div>
@@ -225,11 +235,16 @@
     /// file from the board worktree and commits the removal.</summary>
     public sealed record DeleteRequest;
 
+    /// <summary>Handed back when the user changed the priority and clicked Close. The page writes
+    /// the updated <c>priority:</c> frontmatter field and commits it to the board branch.</summary>
+    public sealed record PriorityUpdate(CardPriority Priority);
+
     private bool _loading = true;
     private bool _busy;
     private string? _error;
     private string? _branch;
     private Guid _endpointId;
+    private CardPriority _priority;
     private DateTimeOffset? _created;
     private DateTimeOffset? _lastModified;
     private IReadOnlyList<GitFileLogEntry> _history = Array.Empty<GitFileLogEntry>();
@@ -261,6 +276,7 @@
         // and otherwise to the presumptive name derived from the card id/title.
         _branch = HasBranchAttribute ? Card.Branch : PresumptiveBranch;
         _endpointId = DefaultEndpointId;
+        _priority = Card.Priority;
     }
 
     protected override async Task OnInitializedAsync()
@@ -346,5 +362,11 @@
         Dialog.Close(DialogResult.Ok(new DeleteRequest()));
     }
 
-    private void Close() => Dialog.Cancel();
+    private void Close()
+    {
+        if (_priority != Card.Priority)
+            Dialog.Close(DialogResult.Ok(new PriorityUpdate(_priority)));
+        else
+            Dialog.Cancel();
+    }
 }

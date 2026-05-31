@@ -1,4 +1,5 @@
 @namespace Yamca.Web.Components.Board
+@using Yamca.Agent.Board
 
 <MudDialog>
     <DialogContent>
@@ -7,6 +8,17 @@
                       Variant="Variant.Outlined" Margin="Margin.Dense"
                       Immediate="true"
                       HelperText="A short summary of the idea." />
+
+        <div class="d-flex align-center mt-3" style="gap: 12px;">
+            <MudText Typo="Typo.body2" Style="opacity:0.7; white-space:nowrap;">Priority</MudText>
+            <MudSelect T="CardPriority" @bind-Value="_priority"
+                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Style="min-width: 110px; max-width: 110px;">
+                <MudSelectItem T="CardPriority" Value="CardPriority.High">High</MudSelectItem>
+                <MudSelectItem T="CardPriority" Value="CardPriority.Normal">Normal</MudSelectItem>
+                <MudSelectItem T="CardPriority" Value="CardPriority.Low">Low</MudSelectItem>
+            </MudSelect>
+        </div>
 
         <MudTextField @bind-Value="_body" T="string"
                       Label="Details / plan (optional)"
@@ -28,14 +40,15 @@
 
     private string _title = "";
     private string _body = "";
+    private CardPriority _priority = CardPriority.Normal;
 
-    public sealed record Result(string Title, string Body);
+    public sealed record Result(string Title, string Body, CardPriority Priority);
 
     private void Cancel() => Dialog.Cancel();
 
     private void Create()
     {
         if (string.IsNullOrWhiteSpace(_title)) return;
-        Dialog.Close(DialogResult.Ok(new Result(_title.Trim(), _body ?? "")));
+        Dialog.Close(DialogResult.Ok(new Result(_title.Trim(), _body ?? "", _priority)));
     }
 }

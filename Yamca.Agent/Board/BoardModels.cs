@@ -4,6 +4,11 @@ namespace Yamca.Agent.Board;
 /// (a GitHub-style <c>- [ ]</c> / <c>- [x]</c> line).</summary>
 public sealed record SubtaskItem(string Text, bool Done);
 
+/// <summary>Card importance level stored in the frontmatter <c>priority:</c> field.
+/// <see cref="Normal"/> is the default when the field is absent or unrecognized.
+/// Cards are sorted high → normal → low within each column.</summary>
+public enum CardPriority { Low = -1, Normal = 0, High = 1 }
+
 /// <summary>A board card: one markdown file living in its current column's directory.
 /// <see cref="Id"/> is canonical (frontmatter <c>id</c> or the filename's leading digits);
 /// <see cref="Branch"/> is the git branch bound to the card across steps, if any.</summary>
@@ -15,7 +20,8 @@ public sealed record BoardCard(
     string ColumnDirectory,
     string AbsolutePath,
     string Body,
-    IReadOnlyList<SubtaskItem> Subtasks);
+    IReadOnlyList<SubtaskItem> Subtasks,
+    CardPriority Priority = CardPriority.Normal);
 
 /// <summary>A board column, materialized from a numeric-prefixed directory
 /// (e.g. <c>30-implement</c>). <see cref="Order"/> is the numeric prefix and
