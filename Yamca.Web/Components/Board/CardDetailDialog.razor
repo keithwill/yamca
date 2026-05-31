@@ -15,26 +15,14 @@
             </div>
             <div class="d-flex align-center" style="gap: 6px;">
                 <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">#@Card.Id</MudChip>
-                <MudMenu AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" Dense="true">
-                    <ActivatorContent>
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                                 Icon="@Icons.Material.Filled.Flag"
-                                 Color="@(_priority == CardPriority.High ? Color.Warning : Color.Default)"
-                                 Style="@(_priority == CardPriority.Low ? "opacity:0.6;" : "")"
-                                 OnClick="@(e => context.ToggleAsync(e))">
-                            @(_priority switch {
-                                CardPriority.High => "↑ High",
-                                CardPriority.Low => "↓ Low",
-                                _ => "Normal"
-                            })
-                        </MudChip>
-                    </ActivatorContent>
-                    <ChildContent>
-                        <MudMenuItem OnClick="@(() => _priority = CardPriority.High)">↑ High</MudMenuItem>
-                        <MudMenuItem OnClick="@(() => _priority = CardPriority.Normal)">Normal</MudMenuItem>
-                        <MudMenuItem OnClick="@(() => _priority = CardPriority.Low)">↓ Low</MudMenuItem>
-                    </ChildContent>
-                </MudMenu>
+                <ChipDropdown Label="@(_priority switch { CardPriority.High => "↑ High", CardPriority.Low => "↓ Low", _ => "Normal" })"
+                              Icon="@Icons.Material.Filled.Flag"
+                              Color="@(_priority == CardPriority.High ? Color.Warning : Color.Default)"
+                              Style="@(_priority == CardPriority.Low ? "opacity:0.6;" : "")">
+                    <MudMenuItem OnClick="@(() => SetPriority(CardPriority.High))">↑ High</MudMenuItem>
+                    <MudMenuItem OnClick="@(() => SetPriority(CardPriority.Normal))">Normal</MudMenuItem>
+                    <MudMenuItem OnClick="@(() => SetPriority(CardPriority.Low))">↓ Low</MudMenuItem>
+                </ChipDropdown>
                 @if (IsBranchBound)
                 {
                     <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
@@ -327,11 +315,11 @@
         Dialog.Close(DialogResult.Ok(new DeleteRequest()));
     }
 
-    private void Close()
+    private void SetPriority(CardPriority priority)
     {
-        if (_priority != Card.Priority)
-            Dialog.Close(DialogResult.Ok(new PriorityUpdate(_priority)));
-        else
-            Dialog.Cancel();
+        if (priority != Card.Priority)
+            Dialog.Close(DialogResult.Ok(new PriorityUpdate(priority)));
     }
+
+    private void Close() => Dialog.Cancel();
 }

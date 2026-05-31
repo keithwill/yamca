@@ -804,6 +804,9 @@ else
 
     private async Task UpdateCardPriorityAsync(BoardCard card, CardPriority priority)
     {
+        _busyCards.Add(card.Id);
+        StateHasChanged();
+
         var ct = CancellationToken.None;
         await BoardWorktree.MutateAsync(async boardRoot =>
         {
@@ -826,8 +829,12 @@ else
                 Snackbar.Add($"Priority updated but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning);
         }, ct);
 
-        await RefreshAsync();
-        StateHasChanged();
+        await InvokeAsync(async () =>
+        {
+            _busyCards.Remove(card.Id);
+            await RefreshAsync();
+            StateHasChanged();
+        });
     }
 
     private static string Sanitize(string branch) => branch.Replace('/', '-').Replace('\\', '-');
