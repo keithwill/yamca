@@ -1,6 +1,5 @@
 @namespace Yamca.Web.Components.Board
 @using Yamca.Agent.Board
-@using Yamca.Agent.Git
 @using Yamca.Agent.Settings
 @using Yamca.Web.Services
 @inject GitService Git
@@ -39,38 +38,6 @@
         <div class="yamca-markdown">
             @((MarkupString)MarkdownRenderer.ToHtml(string.IsNullOrWhiteSpace(Card.Body) ? "_(empty card)_" : Card.Body))
         </div>
-
-        <MudDivider Class="my-2" />
-
-        <MudExpansionPanels Elevation="0" Dense="true" Class="mt-1">
-            <MudExpansionPanel Text="History">
-                @if (_loading)
-                {
-                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
-                }
-                else if (_history.Count == 0)
-                {
-                    <MudText Typo="Typo.caption" Style="opacity:0.6">Uncommitted — no git history yet.</MudText>
-                }
-                else
-                {
-                    <MudText Typo="Typo.caption" Style="opacity:0.7">
-                        Created @Fmt(_created) · last modified @Fmt(_lastModified)
-                    </MudText>
-                    <MudList T="string" Dense="true" Class="mt-1">
-                        @foreach (var e in _history.Take(20))
-                        {
-                            <MudListItem T="string">
-                                <MudText Typo="Typo.caption">
-                                    <code>@e.Sha[..Math.Min(7, e.Sha.Length)]</code>
-                                    · @e.Date.LocalDateTime.ToString("yyyy-MM-dd") · @e.Subject
-                                </MudText>
-                            </MudListItem>
-                        }
-                    </MudList>
-                }
-            </MudExpansionPanel>
-        </MudExpansionPanels>
 
         @if (IsWorkColumn && CanRunStep && !IsBranchBound)
         {
@@ -241,15 +208,11 @@
     /// the updated <c>priority:</c> frontmatter field and commits it to the board branch.</summary>
     public sealed record PriorityUpdate(CardPriority Priority);
 
-    private bool _loading = true;
     private bool _busy;
     private string? _error;
     private string? _branch;
     private Guid _endpointId;
     private CardPriority _priority;
-    private DateTimeOffset? _created;
-    private DateTimeOffset? _lastModified;
-    private IReadOnlyList<GitFileLogEntry> _history = Array.Empty<GitFileLogEntry>();
 
     // The card names an intended branch in its frontmatter…
     private bool HasBranchAttribute => !string.IsNullOrWhiteSpace(Card.Branch);
@@ -281,22 +244,6 @@
         _priority = Card.Priority;
     }
 
-    protected override async Task OnInitializedAsync()
-    {
-        var ct = CancellationToken.None;
-        try
-        {
-            _history = await Git.GetFileHistoryAsync(WorkspaceRoot, Card.AbsolutePath, ct);
-            _created = await Git.GetFileCreatedAtAsync(WorkspaceRoot, Card.AbsolutePath, ct);
-            _lastModified = await Git.GetFileLastModifiedAtAsync(WorkspaceRoot, Card.AbsolutePath, ct);
-        }
-        catch { /* history is best-effort */ }
-        finally
-        {
-            _loading = false;
-        }
-    }
-
     private Task<IEnumerable<string>> SearchBranches(string? value, CancellationToken ct)
     {
         IEnumerable<string> matches = string.IsNullOrWhiteSpace(value)
@@ -304,8 +251,6 @@
             : ExistingBranches.Where(b => b.Contains(value.Trim(), StringComparison.OrdinalIgnoreCase));
         return Task.FromResult(matches);
     }
-
-    private static string Fmt(DateTimeOffset? d) => d?.LocalDateTime.ToString("yyyy-MM-dd") ?? "—";
 
     private async Task RunStep()
     {
