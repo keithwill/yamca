@@ -312,7 +312,7 @@ public sealed class ChatViewModel : IDisposable
 
         // A cleared chat starts a new history record — rotate the id and timestamp, and
         // drop any not-yet-consumed restore state. The prior session's file is left
-        // intact so it remains in Recent Chats.
+        // intact so it remains under History.
         PersistentId = Guid.NewGuid();
         _createdUtc = DateTimeOffset.UtcNow;
         IsReadOnly = false;

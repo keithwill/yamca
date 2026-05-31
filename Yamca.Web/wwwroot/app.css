@@ -105,7 +105,7 @@ h1:focus {
     flex: 0 0 auto;
 }
 
-/* Hide the expand/collapse caret on nav groups (Recent Chats, Settings). */
+/* Hide the expand/collapse caret on nav groups (History, Settings). */
 .mud-nav-group .mud-nav-link-expand-icon {
     display: none;
 }

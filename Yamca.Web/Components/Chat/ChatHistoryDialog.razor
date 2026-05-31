@@ -1,4 +1,5 @@
 @inject ChatStore Store
+@inject IDialogService Dialogs
 
 <MudDialog>
     <DialogContent>
@@ -39,6 +40,11 @@
         }
     </DialogContent>
     <DialogActions>
+        @if (_items.Count > 0)
+        {
+            <MudButton Color="Color.Error" StartIcon="@Icons.Material.Filled.DeleteSweep"
+                       OnClick="ClearAll">Clear All</MudButton>
+        }
         <MudButton OnClick="Cancel">Close</MudButton>
     </DialogActions>
 </MudDialog>
@@ -59,6 +65,22 @@
         Store.Delete(id);
         Refresh();
         StateHasChanged();
+    }
+
+    private async Task ClearAll()
+    {
+        var parameters = new DialogParameters
+        {
+            ["Message"] = "This permanently deletes every saved chat. This cannot be undone.",
+            ["YesText"] = "Clear All",
+            ["CancelText"] = "Cancel",
+        };
+        var dialog = await Dialogs.ShowAsync<MudMessageBox>("Clear all chat history?", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not true) return;
+
+        Store.ClearAll();
+        Dialog.Cancel();
     }
 
     private void Cancel() => Dialog.Cancel();

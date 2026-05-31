@@ -42,9 +42,9 @@
                 var recentClosed = _recent.Where(r => Sessions.FindByPersistentId(r.Id) is null).ToList();
                 var recentShown = recentClosed.Take(RecentInSidebar).ToList();
             }
-            @if (Store.IsEnabled && recentShown.Count > 0)
+            @if (Store.IsEnabled)
             {
-                <MudNavGroup Title="Recent Chats" Icon="@Icons.Material.Filled.History"
+                <MudNavGroup Title="History" Icon="@Icons.Material.Filled.History"
                              @bind-Expanded="_recentExpanded">
                     @foreach (var item in recentShown)
                     {
@@ -60,10 +60,8 @@
                                            aria-label="Delete chat" />
                         </div>
                     }
-                    @if (recentClosed.Count > recentShown.Count)
-                    {
-                        <MudNavLink Icon="@Icons.Material.Filled.MoreHoriz" OnClick="OpenRecentModal">More…</MudNavLink>
-                    }
+                    <MudNavLink Icon="@Icons.Material.Filled.MoreHoriz" OnClick="OpenRecentModal"
+                                aria-label="All saved chats" />
                 </MudNavGroup>
             }
 
@@ -100,7 +98,7 @@
     private const int RecentInSidebar = 5;
     private IReadOnlyList<ChatListItem> _recent = Array.Empty<ChatListItem>();
 
-    // Recent Chats starts collapsed; bound (not just set) so re-renders don't fight the
+    // History starts collapsed; bound (not just set) so re-renders don't fight the
     // user's expand/collapse toggle.
     private bool _recentExpanded;
 
@@ -237,7 +235,7 @@
     private async Task OpenRecentModal()
     {
         var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
-        var dialog = await Dialogs.ShowAsync<RecentChatsDialog>("Recent chats", options);
+        var dialog = await Dialogs.ShowAsync<ChatHistoryDialog>("Chat history", options);
         var result = await dialog.Result;
         RefreshRecent();
         StateHasChanged();

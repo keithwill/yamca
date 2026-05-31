@@ -123,6 +123,24 @@ public sealed class ChatStore
         }
     }
 
+    /// <summary>Delete every saved session and the index. Best-effort per file so a single
+    /// locked/unreadable file doesn't abort the rest.</summary>
+    public void ClearAll()
+    {
+        if (!IsEnabled) return;
+        lock (_gate)
+        {
+            if (!Directory.Exists(ChatDir)) return;
+            foreach (var file in Directory.EnumerateFiles(ChatDir, "*.json"))
+            {
+                try { File.Delete(file); }
+                catch (IOException) { /* best-effort */ }
+                catch (UnauthorizedAccessException) { /* best-effort */ }
+            }
+            WriteIndexLocked(new List<ChatListItem>());
+        }
+    }
+
     private static ChatListItem ToListItem(PersistedChat doc) => new(
         doc.Id, doc.Title, doc.Worktree?.Branch, doc.CreatedUtc, doc.UpdatedUtc, doc.Messages.Count);
 

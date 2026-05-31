@@ -2,7 +2,7 @@
     <DialogContent>
         <MudText Typo="Typo.body2" Class="mb-2">
             All @Slots.Count chat slots are in use. Pick one to close so the saved chat can
-            open in its place. The closed chat's history is kept and stays in Recent Chats.
+            open in its place. The closed chat's history is kept and stays under History.
         </MudText>
         <MudList T="int" SelectedValue="_selected" SelectedValueChanged="@(v => _selected = v)" Dense="true">
             @foreach (var slot in Slots)
