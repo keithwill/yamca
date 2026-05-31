@@ -19,12 +19,19 @@
         </div>
     }
 
+    @if (Chat.IsReadOnly)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="ma-2">
+            This chat's worktree no longer exists — viewing history only.
+        </MudAlert>
+    }
+
     <div class="yamca-input-dock">
         <div class="yamca-composer">
             <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
                           Lines="3" Variant="Variant.Text" Immediate="true"
                           Class="yamca-composer-input"
-                          OnKeyDown="OnKeyDown" Disabled="Chat.IsBusy" />
+                          OnKeyDown="OnKeyDown" Disabled="@(Chat.IsBusy || Chat.IsReadOnly)" />
             <div class="yamca-composer-toolbar">
                 <div class="yamca-composer-left">
                     <MudFileUpload T="IReadOnlyList<IBrowserFile>"
@@ -34,7 +41,7 @@
                             <MudIconButton Icon="@Icons.Material.Filled.AttachFile"
                                            Color="Color.Default" Variant="Variant.Text"
                                            Size="Size.Small"
-                                           Disabled="Chat.IsBusy"
+                                           Disabled="@(Chat.IsBusy || Chat.IsReadOnly)"
                                            OnClick="@(() => fileUpload.OpenFilePickerAsync())"
                                            aria-label="Attach file" />
                         </CustomContent>
@@ -47,7 +54,7 @@
                                 <MudIconButton Icon="@Icons.Material.Filled.Cloud"
                                                Color="Color.Default" Variant="Variant.Text"
                                                Size="Size.Small"
-                                               Disabled="@(Chat.IsBusy || Chat.IsEndpointLocked)"
+                                               Disabled="@(Chat.IsBusy || Chat.IsEndpointLocked || Chat.IsReadOnly)"
                                                OnClick="OnEndpointPickerClicked"
                                                aria-label="Select endpoint" />
                             </span>
@@ -58,7 +65,7 @@
                             <MudIconButton Icon="@Icons.Material.Filled.CallSplit"
                                            Color="Color.Default" Variant="Variant.Text"
                                            Size="Size.Small"
-                                           Disabled="@(Chat.IsBusy || Chat.IsGitRepository != true)"
+                                           Disabled="@(Chat.IsBusy || Chat.IsGitRepository != true || Chat.IsReadOnly)"
                                            OnClick="OnBranchClicked"
                                            aria-label="Branch Code" />
                         </span>
@@ -68,7 +75,7 @@
                             <MudIconButton Icon="@Icons.Material.Filled.UnfoldLess"
                                            Color="Color.Default" Variant="Variant.Text"
                                            Size="Size.Small"
-                                           Disabled="@(Chat.IsBusy || Chat.Turns.Count == 0)"
+                                           Disabled="@(Chat.IsBusy || Chat.Turns.Count == 0 || Chat.IsReadOnly)"
                                            OnClick="OpenCompactDialog"
                                            aria-label="Compact context" />
                         </span>
@@ -123,7 +130,7 @@
                                        Size="Size.Small"
                                        Icon="@Icons.Material.Filled.PlayArrow"
                                        OnClick="OnSend"
-                                       Disabled="@(string.IsNullOrWhiteSpace(_prompt) && _attachments.Count == 0)"
+                                       Disabled="@(Chat.IsReadOnly || (string.IsNullOrWhiteSpace(_prompt) && _attachments.Count == 0))"
                                        aria-label="Send" />
                     }
                 </div>
@@ -262,6 +269,7 @@
 
     private bool IsBranchOpBusy()
     {
+        if (Chat.IsReadOnly) return true;
         if (Chat.IsRunning) return true;
         if (Chat.WorktreeInfo is { } wt)
         {

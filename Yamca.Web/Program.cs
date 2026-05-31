@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using MudBlazor.Services;
 using Yamca.Agent.Board;
 using Yamca.Agent.Chat;
+using Yamca.Agent.Chat.Persistence;
 using Yamca.Agent.Git;
 using Yamca.Agent.Mcp;
 using Yamca.Agent.Permissions;
@@ -220,6 +221,9 @@ builder.Services.AddScoped<WorkspaceKey>();
 builder.Services.AddScoped<SettingsHydrator>();
 builder.Services.AddScoped<InstructionFilesLoader>();
 builder.Services.AddScoped<WorkspaceBrowser>();
+// Chat history persistence. Scoped, but resolves the singleton IWorkspace so chat files
+// always anchor to the main repository root (.yamca/chat) — not a per-session worktree.
+builder.Services.AddScoped<ChatStore>();
 builder.Services.AddScoped<ChatSessionManager>();
 builder.Services.AddScoped<BoardStepLauncher>();
 builder.Services.AddScoped<McpConfigStore>();

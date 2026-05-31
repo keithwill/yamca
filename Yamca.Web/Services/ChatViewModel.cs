@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using Yamca.Agent.Chat;
+using Yamca.Agent.Chat.Persistence;
 using Yamca.Agent.Git;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
@@ -25,6 +26,7 @@ public sealed class ChatViewModel : IDisposable
     private readonly EndpointHealthService _endpointHealth;
     private readonly LoadedToolSet _loadedTools;
     private readonly ContextCompactor _compactor;
+    private readonly ChatStore _store;
 
     private AgentLoop? _loop;
     private readonly List<string> _seedInstructions = new();
@@ -33,6 +35,13 @@ public sealed class ChatViewModel : IDisposable
     private CancellationTokenSource? _consumerCts;
     private int? _lastReportedPromptTokens;
     private int? _lastReportedCompletionTokens;
+
+    // Set when this VM was loaded from a saved session and hasn't sent a turn yet.
+    // Consumed by EnsureStarted to rebuild the agent loop from the saved state instead
+    // of a fresh system prompt.
+    private IReadOnlyList<ChatMessage>? _restoredMessages;
+    private PersistedEndpoint? _restoredEndpoint;
+    private DateTimeOffset _createdUtc = DateTimeOffset.UtcNow;
 
     public ChatViewModel(
         int id,
@@ -47,7 +56,8 @@ public sealed class ChatViewModel : IDisposable
         IHttpClientFactory httpFactory,
         EndpointHealthService endpointHealth,
         LoadedToolSet loadedTools,
-        ContextCompactor compactor)
+        ContextCompactor compactor,
+        ChatStore store)
     {
         Id = id;
         _workspace = workspace;
@@ -62,9 +72,20 @@ public sealed class ChatViewModel : IDisposable
         _endpointHealth = endpointHealth;
         _loadedTools = loadedTools;
         _compactor = compactor;
+        _store = store;
     }
 
     public int Id { get; }
+
+    /// <summary>Stable identifier used as the persistence file name and to detect when a
+    /// saved chat is already open. Distinct from the volatile 1–4 slot <see cref="Id"/>.
+    /// Rotated by <see cref="Clear"/> so a cleared chat becomes a new history entry.</summary>
+    public Guid PersistentId { get; private set; } = Guid.NewGuid();
+
+    /// <summary>True when this chat was loaded as read-only history — its bound worktree
+    /// no longer exists, so sending and branch operations are disabled and nothing is
+    /// re-saved.</summary>
+    public bool IsReadOnly { get; private set; }
 
     /// <summary>User's preferred endpoint id for this chat. Settable while the chat
     /// has no turns; ignored once <see cref="LockedEndpoint"/> is set. <c>null</c>
@@ -192,6 +213,7 @@ public sealed class ChatViewModel : IDisposable
     public async Task SendAsync(string prompt)
     {
         if (IsRunning) return;
+        if (IsReadOnly) return;
         if (string.IsNullOrWhiteSpace(prompt)) return;
 
         EnsureStarted();
@@ -232,6 +254,7 @@ public sealed class ChatViewModel : IDisposable
             _runCts?.Dispose();
             _runCts = null;
             Raise();
+            Persist();
         }
     }
 
@@ -286,6 +309,16 @@ public sealed class ChatViewModel : IDisposable
         CompactionError = null;
         CompactionBoundaryUiTurnIndex = null;
         LastCompactionSummary = null;
+
+        // A cleared chat starts a new history record — rotate the id and timestamp, and
+        // drop any not-yet-consumed restore state. The prior session's file is left
+        // intact so it remains in Recent Chats.
+        PersistentId = Guid.NewGuid();
+        _createdUtc = DateTimeOffset.UtcNow;
+        IsReadOnly = false;
+        _restoredMessages = null;
+        _restoredEndpoint = null;
+
         Raise();
     }
 
@@ -371,6 +404,7 @@ public sealed class ChatViewModel : IDisposable
         {
             IsCompacting = false;
             Raise();
+            Persist();
         }
     }
 
@@ -380,9 +414,9 @@ public sealed class ChatViewModel : IDisposable
 
         // Snapshot the chosen endpoint so later edits/deletes in Settings don't
         // disrupt this chat. Once locked, every subsequent turn uses the snapshot.
-        var endpoints = _settings.Endpoints;
-        var resolved = SelectedEndpointId is Guid id ? endpoints.FindById(id) : null;
-        var endpoint = resolved ?? endpoints.Default;
+        // A restored chat re-locks the endpoint it was saved with (re-resolved from
+        // settings by id so we recover the API key, which is never persisted).
+        var endpoint = ResolveStartEndpoint();
         LockedEndpoint = endpoint;
 
         var modelId = string.IsNullOrWhiteSpace(endpoint.Model) ? "local-model" : endpoint.Model;
@@ -397,27 +431,55 @@ public sealed class ChatViewModel : IDisposable
 
         var completion = new OpenAIChatCompletionClient(http, modelId);
 
-        var prompt = _settings.SystemPrompt;
-        var hint = _settings.MarkdownEnabled
-            ? "Your responses are rendered as GitHub-flavored Markdown — use fenced code blocks for code, and standard Markdown for emphasis, lists, and tables."
-            : "Your responses are rendered as plain text. Do NOT use Markdown formatting: no `backticks`, no **bold**/*italics*, no #headings, no fenced code blocks, no bullet/numbered lists. Write code and identifiers inline as plain text.";
-        prompt = (string.IsNullOrWhiteSpace(prompt) ? "" : prompt + "\n\n") + hint;
-        var instructions = _instructionLoader.Load(_settings, _workspace).ToList();
-        foreach (var tool in _tools.Tools)
+        ChatSession session;
+        if (_restoredMessages is { } restored)
         {
-            var ctx = new ToolContext(_workspace, _permissions.RestrictToWorkspace(tool.Name));
-            var contribution = tool.SessionStartMessage(ctx);
-            if (!string.IsNullOrWhiteSpace(contribution))
-                instructions.Add(contribution);
+            // Resume: adopt the saved message log verbatim so the model sees the same
+            // context (including any compaction summary). System prompt / instructions
+            // are already baked into messages[0].
+            session = ChatSession.Restore(restored);
+            _restoredMessages = null;
+            _restoredEndpoint = null;
         }
-        instructions.AddRange(_seedInstructions);
-        var session = new ChatSession(_workspace, prompt, instructions);
+        else
+        {
+            var prompt = _settings.SystemPrompt;
+            var hint = _settings.MarkdownEnabled
+                ? "Your responses are rendered as GitHub-flavored Markdown — use fenced code blocks for code, and standard Markdown for emphasis, lists, and tables."
+                : "Your responses are rendered as plain text. Do NOT use Markdown formatting: no `backticks`, no **bold**/*italics*, no #headings, no fenced code blocks, no bullet/numbered lists. Write code and identifiers inline as plain text.";
+            prompt = (string.IsNullOrWhiteSpace(prompt) ? "" : prompt + "\n\n") + hint;
+            var instructions = _instructionLoader.Load(_settings, _workspace).ToList();
+            foreach (var tool in _tools.Tools)
+            {
+                var ctx = new ToolContext(_workspace, _permissions.RestrictToWorkspace(tool.Name));
+                var contribution = tool.SessionStartMessage(ctx);
+                if (!string.IsNullOrWhiteSpace(contribution))
+                    instructions.Add(contribution);
+            }
+            instructions.AddRange(_seedInstructions);
+            session = new ChatSession(_workspace, prompt, instructions);
+        }
 
         _loop = new AgentLoop(
             session, completion, _tools, _permissions, _availability, _approvals, _permissionStore, _workspace, _loadedTools);
 
         StartApprovalConsumer();
         _ = DetectCapabilitiesAsync(endpoint);
+    }
+
+    private EndpointSettings ResolveStartEndpoint()
+    {
+        var endpoints = _settings.Endpoints;
+
+        // Restored chat: prefer the saved endpoint by id (recovers the API key); if it
+        // was deleted since, fall back to the saved non-secret snapshot with no key so
+        // the user can re-pick before the next send.
+        if (_restoredEndpoint is { } re)
+            return endpoints.FindById(re.Id)
+                   ?? new EndpointSettings(re.Id, re.Name, re.BaseUrl, ApiKey: "", re.Model);
+
+        var resolved = SelectedEndpointId is Guid id ? endpoints.FindById(id) : null;
+        return resolved ?? endpoints.Default;
     }
 
     private async Task DetectCapabilitiesAsync(EndpointSettings endpoint)
@@ -566,6 +628,119 @@ public sealed class ChatViewModel : IDisposable
     }
 
     private void Raise() => Changed?.Invoke();
+
+    /// <summary>Write the current state to disk. No-op for read-only history and for
+    /// chats with nothing in them yet. Disk failures are swallowed — persistence must
+    /// never break an active chat.</summary>
+    private void Persist()
+    {
+        if (IsReadOnly) return;
+        if (Turns.Count == 0) return;
+        try { _store.Save(BuildPersistedChat()); }
+        catch (Exception ex) { Console.Error.WriteLine($"yamca: failed to persist chat: {ex.Message}"); }
+    }
+
+    private PersistedChat BuildPersistedChat() => new()
+    {
+        Id = PersistentId,
+        Title = Title,
+        CreatedUtc = _createdUtc,
+        Endpoint = LockedEndpoint is { } ep
+            ? new PersistedEndpoint(ep.Id, ep.Name, ep.BaseUrl, ep.Model)
+            : null,
+        Worktree = WorktreeInfo,
+        WorkspaceRootPath = _workspace.RootPath,
+        Compaction = CompactionBoundaryUiTurnIndex is int b && LastCompactionSummary is { } s
+            ? new PersistedCompaction(s, b)
+            : null,
+        Messages = _loop?.Session.Messages.ToList() ?? new List<ChatMessage>(),
+        Turns = Turns.Select(MapTurn).ToList(),
+    };
+
+    private static PersistedTurn MapTurn(ChatTurn turn)
+    {
+        var pt = new PersistedTurn { UserMessage = turn.UserMessage, Error = turn.Error };
+        foreach (var item in turn.Items)
+        {
+            pt.Items.Add(item switch
+            {
+                AssistantTextItem a => new PersistedTurnItem { Kind = "text", Text = a.Text, IsComplete = a.IsComplete },
+                ReasoningItem r => new PersistedTurnItem { Kind = "reasoning", Text = r.Text, IsComplete = r.IsComplete },
+                ToolCallItem c => new PersistedTurnItem
+                {
+                    Kind = "tool",
+                    CallId = c.CallId,
+                    ToolName = c.ToolName,
+                    ArgumentsJson = c.ArgumentsJson,
+                    State = c.State.ToString(),
+                    Result = c.Result,
+                },
+                _ => new PersistedTurnItem { Kind = "text", Text = "" },
+            });
+        }
+        return pt;
+    }
+
+    /// <summary>Populate this VM from a saved session for display. When
+    /// <paramref name="readOnly"/> is false, the message log and endpoint snapshot are
+    /// stashed for <see cref="EnsureStarted"/> to resume from on the next send.</summary>
+    internal void LoadFrom(PersistedChat doc, bool readOnly)
+    {
+        ArgumentNullException.ThrowIfNull(doc);
+
+        PersistentId = doc.Id;
+        _createdUtc = doc.CreatedUtc;
+        IsReadOnly = readOnly;
+
+        Turns.Clear();
+        foreach (var pt in doc.Turns)
+        {
+            var turn = new ChatTurn(pt.UserMessage) { IsRunning = false, Error = pt.Error };
+            foreach (var pi in pt.Items)
+            {
+                switch (pi.Kind)
+                {
+                    case "text":
+                        var text = new AssistantTextItem { IsComplete = pi.IsComplete };
+                        text.Append(pi.Text);
+                        turn.Items.Add(text);
+                        break;
+                    case "reasoning":
+                        var reasoning = new ReasoningItem { IsComplete = pi.IsComplete };
+                        reasoning.Append(pi.Text);
+                        turn.Items.Add(reasoning);
+                        break;
+                    case "tool":
+                        turn.Items.Add(new ToolCallItem
+                        {
+                            CallId = pi.CallId ?? "",
+                            ToolName = pi.ToolName ?? "",
+                            ArgumentsJson = pi.ArgumentsJson ?? "",
+                            State = Enum.TryParse<ToolCallState>(pi.State, out var st) ? st : ToolCallState.Succeeded,
+                            Result = pi.Result,
+                        });
+                        break;
+                }
+            }
+            Turns.Add(turn);
+        }
+
+        if (doc.Worktree is { } wt) WorktreeInfo = wt;
+
+        if (doc.Compaction is { } c)
+        {
+            CompactionBoundaryUiTurnIndex = c.BoundaryUiTurnIndex;
+            LastCompactionSummary = c.Summary;
+        }
+
+        if (!readOnly)
+        {
+            _restoredMessages = doc.Messages;
+            _restoredEndpoint = doc.Endpoint;
+        }
+
+        Raise();
+    }
 
     public void Dispose()
     {

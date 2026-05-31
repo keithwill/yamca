@@ -31,6 +31,27 @@ public sealed class ChatSession
         ArgumentNullException.ThrowIfNull(instructionMessages);
     }
 
+    // Restore path: adopt a previously captured message log verbatim (including an
+    // already-compacted system message at index 0).
+    private ChatSession(List<ChatMessage> messages)
+    {
+        SystemPrompt = messages[0].Content;
+        _messages = messages;
+        RecomputeEstimatedChars();
+    }
+
+    /// <summary>Rebuild a session from a persisted message log, preserving it exactly so
+    /// the model sees the same context it had when the chat was saved (including any
+    /// compaction summary folded into the system message). The first message must be the
+    /// system message.</summary>
+    public static ChatSession Restore(IReadOnlyList<ChatMessage> messages)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        if (messages.Count == 0 || messages[0].Role != ChatRole.System)
+            throw new ArgumentException("Restored message log must begin with a system message.", nameof(messages));
+        return new ChatSession(messages.ToList());
+    }
+
     private ChatSession(string systemPrompt, IWorkspace? workspace, IReadOnlyList<string>? instructionMessages)
     {
         ArgumentNullException.ThrowIfNull(systemPrompt);

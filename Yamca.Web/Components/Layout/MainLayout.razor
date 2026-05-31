@@ -1,7 +1,10 @@
 @inherits LayoutComponentBase
 @implements IDisposable
+@using WorkspaceImpl = Yamca.Agent.Workspace.Workspace
 @inject ChatSessionManager Sessions
 @inject NavigationManager Nav
+@inject ChatStore Store
+@inject IDialogService Dialogs
 
 <MudThemeProvider IsDarkMode="true" />
 <MudPopoverProvider />
@@ -32,6 +35,38 @@
                 New Chat
             </MudNavLink>
             <MudNavLink Href="split" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.GridView">Split View</MudNavLink>
+
+            @{
+                // Only chats not already open in a slot are "recent" — the rest are reachable
+                // directly above.
+                var recentClosed = _recent.Where(r => Sessions.FindByPersistentId(r.Id) is null).ToList();
+                var recentShown = recentClosed.Take(RecentInSidebar).ToList();
+            }
+            @if (Store.IsEnabled && recentShown.Count > 0)
+            {
+                <MudNavGroup Title="Recent Chats" Icon="@Icons.Material.Filled.History"
+                             @bind-Expanded="_recentExpanded">
+                    @foreach (var item in recentShown)
+                    {
+                        <div class="yamca-session-row">
+                            <MudNavLink Icon="@Icons.Material.Filled.Chat"
+                                        OnClick="@(() => LoadRecent(item.Id))">
+                                @(string.IsNullOrWhiteSpace(item.Title) ? "(untitled chat)" : item.Title)
+                            </MudNavLink>
+                            <MudIconButton Class="yamca-session-close"
+                                           Icon="@Icons.Material.Filled.Close"
+                                           Size="Size.Small"
+                                           OnClick="@(() => DeleteRecent(item.Id))"
+                                           aria-label="Delete chat" />
+                        </div>
+                    }
+                    @if (recentClosed.Count > recentShown.Count)
+                    {
+                        <MudNavLink Icon="@Icons.Material.Filled.MoreHoriz" OnClick="OpenRecentModal">More…</MudNavLink>
+                    }
+                </MudNavGroup>
+            }
+
             <MudNavLink Href="board" Icon="@Icons.Material.Filled.ViewKanban">Dev Board</MudNavLink>
             <MudNavLink Href="endpoints" Icon="@Icons.Material.Filled.Cloud">Endpoints</MudNavLink>
             <MudNavLink Href="tools" Icon="@Icons.Material.Filled.Build">Tools</MudNavLink>
@@ -57,12 +92,31 @@
 @code {
     private bool _drawerOpen = false;
 
+    private const int RecentInSidebar = 5;
+    private IReadOnlyList<ChatListItem> _recent = Array.Empty<ChatListItem>();
+
+    // Recent Chats starts collapsed; bound (not just set) so re-renders don't fight the
+    // user's expand/collapse toggle.
+    private bool _recentExpanded;
+
     protected override void OnInitialized()
     {
         Sessions.Changed += OnSessionsChanged;
+        RefreshRecent();
     }
 
-    private void OnSessionsChanged() => InvokeAsync(StateHasChanged);
+    private void OnSessionsChanged()
+    {
+        // Closing/opening a chat changes which saved sessions count as "recent".
+        RefreshRecent();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshRecent()
+    {
+        try { _recent = Store.List(); }
+        catch { _recent = Array.Empty<ChatListItem>(); }
+    }
 
     private void NewChat()
     {
@@ -105,6 +159,95 @@
             && int.TryParse(uri.AsSpan(5), out var id))
             return id;
         return null;
+    }
+
+    /// <summary>Reopen a saved chat. If it's already in a slot, just navigate there.
+    /// Otherwise load it (prompting to free a slot when all 4 are full) and rehydrate
+    /// into the appropriate workspace / read-only mode.</summary>
+    private async Task LoadRecent(Guid id)
+    {
+        var existing = Sessions.FindByPersistentId(id);
+        if (existing is not null)
+        {
+            NavigateToChat(existing.Id);
+            return;
+        }
+
+        var doc = Store.Load(id);
+        if (doc is null)
+        {
+            // File vanished or unreadable — drop it from the list and move on.
+            RefreshRecent();
+            StateHasChanged();
+            return;
+        }
+
+        if (!Sessions.CanCreate)
+        {
+            var slot = await PickSlotToReplace();
+            if (slot is null) return; // user cancelled
+            Sessions.Close(slot.Value);
+        }
+
+        var (workspace, readOnly) = ResolveWorkspace(doc);
+        var vm = Sessions.Rehydrate(doc, workspace, readOnly);
+        RefreshRecent();
+        NavigateToChat(vm.Id);
+    }
+
+    /// <summary>Decide the workspace and read-only state for a saved chat. A chat bound to
+    /// a worktree resumes against that worktree when it still exists; if the worktree is
+    /// gone it opens as read-only history under the root workspace. Non-worktree chats use
+    /// the root workspace (null = DI default).</summary>
+    private static (IWorkspace?, bool) ResolveWorkspace(PersistedChat doc)
+    {
+        if (doc.Worktree is { } wt)
+        {
+            if (Directory.Exists(wt.WorktreePath))
+                return (new WorkspaceImpl(wt.WorktreePath), false);
+            return (null, true); // worktree gone → read-only history
+        }
+        return (null, false);
+    }
+
+    private async Task<int?> PickSlotToReplace()
+    {
+        var choices = Sessions.Sessions
+            .Select((s, i) => new ReplaceSlotDialog.SlotChoice(s.Id, SlotLabel(s, i)))
+            .ToList();
+        var parameters = new DialogParameters { ["Slots"] = choices };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true };
+        var dialog = await Dialogs.ShowAsync<ReplaceSlotDialog>("Replace a chat", parameters, options);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not int id) return null;
+        return id;
+    }
+
+    private static string SlotLabel(ChatViewModel s, int index) =>
+        s.Turns.Count == 0 && s.WorktreeInfo is null ? $"Chat {index + 1}" : s.Title;
+
+    private async Task OpenRecentModal()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await Dialogs.ShowAsync<RecentChatsDialog>("Recent chats", options);
+        var result = await dialog.Result;
+        RefreshRecent();
+        StateHasChanged();
+        if (result is not null && !result.Canceled && result.Data is Guid id)
+            await LoadRecent(id);
+    }
+
+    private void DeleteRecent(Guid id)
+    {
+        Store.Delete(id);
+        RefreshRecent();
+        StateHasChanged();
+    }
+
+    private void NavigateToChat(int id)
+    {
+        if (IsOnSplit()) return;
+        Nav.NavigateTo($"chat/{id}");
     }
 
     public void Dispose()

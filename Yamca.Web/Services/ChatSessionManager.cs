@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Yamca.Agent.Chat.Persistence;
 using Yamca.Agent.Git;
 using Yamca.Agent.Workspace;
 
@@ -51,6 +52,32 @@ public sealed class ChatSessionManager : IDisposable
         Raise();
         return vm;
     }
+
+    /// <summary>Reopen a saved chat into a free slot. <paramref name="sessionWorkspace"/>
+    /// replaces the DI-resolved root workspace when the chat is bound to a live worktree;
+    /// pass <c>null</c> to use the root workspace (for non-worktree chats and read-only
+    /// history of a worktree that no longer exists). Honors the slot cap like
+    /// <see cref="Create"/> — the caller frees a slot first when full.</summary>
+    public ChatViewModel Rehydrate(PersistedChat doc, IWorkspace? sessionWorkspace, bool readOnly)
+    {
+        ArgumentNullException.ThrowIfNull(doc);
+        if (!CanCreate) throw new InvalidOperationException($"Maximum of {MaxSessions} chat sessions reached.");
+        var id = _nextId++;
+        var vm = sessionWorkspace is null
+            ? ActivatorUtilities.CreateInstance<ChatViewModel>(_services, id)
+            : ActivatorUtilities.CreateInstance<ChatViewModel>(_services, id, sessionWorkspace);
+        vm.LoadFrom(doc, readOnly);
+        if (doc.Worktree is not null && !readOnly) vm.IsGitRepository = true;
+        vm.Changed += Raise;
+        _sessions.Add(vm);
+        Raise();
+        return vm;
+    }
+
+    /// <summary>The open session restored from the given saved chat, if any. Used to
+    /// avoid loading a duplicate when the user reopens a chat that's already in a slot.</summary>
+    public ChatViewModel? FindByPersistentId(Guid persistentId) =>
+        _sessions.FirstOrDefault(s => s.PersistentId == persistentId);
 
     public void Close(int id)
     {

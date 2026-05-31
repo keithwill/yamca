@@ -1,0 +1,65 @@
+@inject ChatStore Store
+
+<MudDialog>
+    <DialogContent>
+        @if (_items.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary)">
+                No saved chats yet.
+            </MudText>
+        }
+        else
+        {
+            @foreach (var item in _items)
+            {
+                <div class="d-flex align-center" style="gap: 8px;">
+                    <MudButton Variant="Variant.Text" FullWidth="true"
+                               Class="justify-start flex-grow-1" Style="text-transform:none; min-width:0;"
+                               StartIcon="@Icons.Material.Filled.History"
+                               OnClick="@(() => Open(item.Id))">
+                        <div style="min-width:0; text-align:left;">
+                            <MudText Typo="Typo.body2" Style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                                @(string.IsNullOrWhiteSpace(item.Title) ? "(untitled chat)" : item.Title)
+                            </MudText>
+                            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+                                @item.UpdatedUtc.ToLocalTime().ToString("g")
+                                @if (!string.IsNullOrWhiteSpace(item.Branch))
+                                {
+                                    <text> · </text><code>@item.Branch</code>
+                                }
+                            </MudText>
+                        </div>
+                    </MudButton>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Size="Size.Small"
+                                   OnClick="@(() => Delete(item.Id))"
+                                   aria-label="Delete chat" />
+                </div>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    private List<ChatListItem> _items = new();
+
+    protected override void OnInitialized() => Refresh();
+
+    private void Refresh() => _items = Store.List().ToList();
+
+    private void Open(Guid id) => Dialog.Close(DialogResult.Ok(id));
+
+    private void Delete(Guid id)
+    {
+        Store.Delete(id);
+        Refresh();
+        StateHasChanged();
+    }
+
+    private void Cancel() => Dialog.Cancel();
+}
