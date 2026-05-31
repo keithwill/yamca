@@ -30,7 +30,7 @@ Shared component: **`Yamca.Web/Components/ChipDropdown.razor`** — a `<MudMenu>
 
 ## Implementation plan
 
-- [ ] Replace the priority `<MudSelect>` row in `NewCardDialog.razor` with a `<ChipDropdown>` matching the `CardDetailDialog` pattern (flag icon, color/style binding, three menu items)
-- [ ] Place the chip in a compact flex row below the title field (consistent visual spacing)
-- [ ] Add `@using Yamca.Web.Components` if needed (already covered by `_Imports.razor`)
-- [ ] Verify the dialog renders correctly and priority selection still produces the correct `CardPriority` value in `Result`
+- [x] Replace the priority `<MudSelect>` row in `NewCardDialog.razor` with a `<ChipDropdown>` matching the `CardDetailDialog` pattern (flag icon, color/style binding, three menu items)
+- [x] Place the chip in a compact flex row below the title field (consistent visual spacing)
+- [x] Add `@using Yamca.Web.Components` if needed (already covered by `_Imports.razor`)
+- [x] Verify the dialog renders correctly and priority selection still produces the correct `CardPriority` value in `Result`
