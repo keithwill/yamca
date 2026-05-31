@@ -2,6 +2,7 @@
 id: 0003
 title: "Dev Board Edit Card Title"
 branch: 0003-dev-board-edit-card-title
+commit: 2e3afdcc8a4569963fe285a5854698888fae8f21
 ---
 
 ## Analysis
