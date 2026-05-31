@@ -198,6 +198,13 @@ public sealed partial class BoardService
     public static string WithCommit(string rawText, string sha)
         => WithFrontmatterField(rawText, "commit", sha);
 
+    /// <summary>Return <paramref name="rawText"/> with its frontmatter <c>title:</c> set to
+    /// <paramref name="title"/>, double-quoted (inner double quotes downgraded to single quotes to
+    /// keep the value a valid single-line scalar), adding a frontmatter block if none exists. Used
+    /// when the card detail dialog renames a card. Normalizes line endings to LF.</summary>
+    public static string WithTitle(string rawText, string title)
+        => WithFrontmatterField(rawText, "title", $"\"{(title ?? string.Empty).Trim().Replace("\"", "'")}\"");
+
     /// <summary>Return <paramref name="rawText"/> with its frontmatter <c>priority:</c> set to
     /// the string form of <paramref name="priority"/> (low / normal / high). Normalizes line
     /// endings to LF.</summary>

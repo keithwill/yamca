@@ -41,6 +41,9 @@
     <DialogContent>
         @if (_editingBody)
         {
+            <MudTextField @bind-Value="_title" T="string"
+                          Label="Title" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Immediate="true" Class="mb-2" />
             <MudTextField @bind-Value="_body" T="string"
                           Variant="Variant.Outlined" Margin="Margin.Dense"
                           Lines="16" Immediate="true" AutoFocus="true"
@@ -54,14 +57,8 @@
         }
         else
         {
-            <div class="d-flex align-start">
-                <div class="yamca-markdown flex-grow-1">
-                    @((MarkupString)MarkdownRenderer.ToHtml(string.IsNullOrWhiteSpace(Card.Body) ? "_(empty card)_" : Card.Body))
-                </div>
-                <MudTooltip Text="Edit description">
-                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                   Disabled="@_busy" OnClick="BeginEditBody" />
-                </MudTooltip>
+            <div class="yamca-markdown">
+                @((MarkupString)MarkdownRenderer.ToHtml(string.IsNullOrWhiteSpace(Card.Body) ? "_(empty card)_" : Card.Body))
             </div>
         }
 
@@ -90,6 +87,14 @@
         }
     </DialogContent>
     <DialogActions>
+        @if (!_editingBody)
+        {
+            <MudTooltip Text="Edit Card">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                               Disabled="@_busy"
+                               OnClick="BeginEditBody" />
+            </MudTooltip>
+        }
         @if (MoveTargets.Count > 0)
         {
             <MudTooltip Text="Move to column">
@@ -236,9 +241,10 @@
     /// the updated <c>priority:</c> frontmatter field and commits it to the board branch.</summary>
     public sealed record PriorityUpdate(CardPriority Priority);
 
-    /// <summary>Handed back when the user edits the markdown body and clicks Save. The page writes
-    /// the new body (frontmatter preserved) and commits it to the board branch.</summary>
-    public sealed record BodyUpdate(string Body);
+    /// <summary>Handed back when the user edits the title and/or markdown body and clicks Save. The
+    /// page writes the new title (frontmatter) and body (frontmatter otherwise preserved) and commits
+    /// them to the board branch.</summary>
+    public sealed record BodyUpdate(string Title, string Body);
 
     private bool _busy;
     private string? _error;
@@ -247,6 +253,7 @@
     private CardPriority _priority;
     private bool _editingBody;
     private string _body = "";
+    private string _title = "";
 
     // The card names an intended branch in its frontmatter…
     private bool HasBranchAttribute => !string.IsNullOrWhiteSpace(Card.Branch);
@@ -360,6 +367,7 @@
     private void BeginEditBody()
     {
         _body = (Card.Body ?? string.Empty).Trim();
+        _title = Card.Title;
         _editingBody = true;
     }
 
@@ -369,13 +377,18 @@
     // so the page can run the shared busy/commit/refresh workflow.
     private void SaveBody()
     {
-        var trimmed = (_body ?? string.Empty).Trim();
-        if (string.Equals(trimmed, (Card.Body ?? string.Empty).Trim(), StringComparison.Ordinal))
+        var trimmedBody = (_body ?? string.Empty).Trim();
+        var trimmedTitle = (_title ?? string.Empty).Trim();
+        var bodyChanged = !string.Equals(trimmedBody, (Card.Body ?? string.Empty).Trim(), StringComparison.Ordinal);
+        // An empty title would slug to nothing and leave the card unlabelled, so keep the old one.
+        var titleChanged = trimmedTitle.Length > 0
+                           && !string.Equals(trimmedTitle, Card.Title.Trim(), StringComparison.Ordinal);
+        if (!bodyChanged && !titleChanged)
         {
             _editingBody = false;
             return;
         }
-        Dialog.Close(DialogResult.Ok(new BodyUpdate(trimmed)));
+        Dialog.Close(DialogResult.Ok(new BodyUpdate(titleChanged ? trimmedTitle : Card.Title, trimmedBody)));
     }
 
     private void Close() => Dialog.Cancel();
