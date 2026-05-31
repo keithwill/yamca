@@ -68,13 +68,18 @@
             }
 
             <MudNavLink Href="board" Icon="@Icons.Material.Filled.ViewKanban">Dev Board</MudNavLink>
-            <MudNavLink Href="endpoints" Icon="@Icons.Material.Filled.Cloud">Endpoints</MudNavLink>
-            <MudNavLink Href="tools" Icon="@Icons.Material.Filled.Build">Tools</MudNavLink>
-            <MudNavLink Href="scripts" Icon="@Icons.Material.Filled.Terminal">Scripts</MudNavLink>
-            <MudNavLink Href="instructions" Icon="@Icons.Material.Filled.MenuBook">Instructions</MudNavLink>
-            <MudNavLink Href="mcp" Icon="@Icons.Material.Filled.Extension">MCP</MudNavLink>
             <MudNavLink Href="workspace" Icon="@Icons.Material.Filled.FolderOpen">Workspace</MudNavLink>
-            <MudNavLink Href="settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
+
+            <MudNavGroup Title="Settings" Icon="@Icons.Material.Filled.Settings"
+                         @bind-Expanded="_settingsExpanded">
+                <MudNavLink Href="endpoints" Icon="@Icons.Material.Filled.Cloud">Endpoints</MudNavLink>
+                <MudNavLink Href="tools" Icon="@Icons.Material.Filled.Build">Tools</MudNavLink>
+                <MudNavLink Href="scripts" Icon="@Icons.Material.Filled.Terminal">Scripts</MudNavLink>
+                <MudNavLink Href="instructions" Icon="@Icons.Material.Filled.MenuBook">Instructions</MudNavLink>
+                <MudNavLink Href="mcp" Icon="@Icons.Material.Filled.Extension">MCP</MudNavLink>
+                <MudNavLink Href="preferences" Icon="@Icons.Material.Filled.Tune">Preferences</MudNavLink>
+                <MudNavLink Href="backup" Icon="@Icons.Material.Filled.Backup">Backup</MudNavLink>
+            </MudNavGroup>
         </MudNavMenu>
     </MudDrawer>
 
@@ -98,6 +103,9 @@
     // Recent Chats starts collapsed; bound (not just set) so re-renders don't fight the
     // user's expand/collapse toggle.
     private bool _recentExpanded;
+
+    // Settings group starts collapsed; bound so re-renders don't fight the user's toggle.
+    private bool _settingsExpanded;
 
     protected override void OnInitialized()
     {

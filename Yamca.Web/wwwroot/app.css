@@ -105,6 +105,11 @@ h1:focus {
     flex: 0 0 auto;
 }
 
+/* Hide the expand/collapse caret on nav groups (Recent Chats, Settings). */
+.mud-nav-group .mud-nav-link-expand-icon {
+    display: none;
+}
+
 .yamca-session-row {
     position: relative;
 }

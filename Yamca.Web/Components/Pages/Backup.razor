@@ -1,9 +1,8 @@
-@page "/settings"
+@page "/backup"
 @rendermode InteractiveServer
 @implements IDisposable
-@using Yamca.Agent.Chat
 
-<PageTitle>Settings — yamca</PageTitle>
+<PageTitle>Backup — yamca</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
 
@@ -14,55 +13,6 @@
 }
 else
 {
-    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-        <MudText Typo="Typo.h6" Class="mb-2">Chat</MudText>
-
-        <MudSwitch T="bool" Value="Session.MarkdownEnabled"
-                   ValueChanged="@((bool v) => Session.SetMarkdownEnabled(v))"
-                   Color="Color.Primary"
-                   Label="Markdown rendering" />
-        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
-            A capability hint is appended to the system prompt either way: when on, the model is told its replies are rendered as Markdown; when off, it's told to reply in plain text.
-        </MudText>
-
-        <MudSelect T="ReasoningDisplay" Value="Session.ReasoningDisplay"
-                   ValueChanged="@((ReasoningDisplay v) => Session.SetReasoningDisplay(v))"
-                   Label="Reasoning blocks"
-                   Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense"
-                   Class="mt-3">
-            <MudSelectItem T="ReasoningDisplay" Value="ReasoningDisplay.Hidden">Hidden</MudSelectItem>
-            <MudSelectItem T="ReasoningDisplay" Value="ReasoningDisplay.Collapsed">Collapsed (default)</MudSelectItem>
-            <MudSelectItem T="ReasoningDisplay" Value="ReasoningDisplay.Expanded">Expanded</MudSelectItem>
-        </MudSelect>
-        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
-            How to display chain-of-thought emitted by reasoning models inside <code>&lt;think&gt;</code>, <code>&lt;thinking&gt;</code>, or <code>&lt;reasoning&gt;</code> tags (Qwen3, QwQ, DeepSeek-R1, etc.). Collapsed mode shows it live while streaming and auto-closes when the answer begins.
-        </MudText>
-
-        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Context</MudText>
-        <MudSwitch T="bool" Value="Session.AutoCompactionEnabled"
-                   ValueChanged="@((bool v) => Session.SetAutoCompactionEnabled(v))"
-                   Color="Color.Primary"
-                   Label="Auto-compaction" />
-        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
-            When the chat exceeds the threshold percentage of the endpoint's context window, summarize older turns into the system message and keep only the most recent N turns verbatim. Requires the backend to report its context size.
-        </MudText>
-
-        <div class="d-flex mt-2" style="gap: 12px;">
-            <MudNumericField T="int" Value="Session.AutoCompactionThresholdPercent"
-                             ValueChanged="@((int v) => Session.SetAutoCompactionThresholdPercent(v))"
-                             Label="Trigger at (%)"
-                             Min="1" Max="95" Step="5"
-                             Variant="Variant.Outlined" Margin="Margin.Dense"
-                             Disabled="@(!Session.AutoCompactionEnabled)" />
-            <MudNumericField T="int" Value="Session.AutoCompactionKeepRecentTurns"
-                             ValueChanged="@((int v) => Session.SetAutoCompactionKeepRecentTurns(v))"
-                             Label="Keep recent turns"
-                             Min="1" Max="50" Step="1"
-                             Variant="Variant.Outlined" Margin="Margin.Dense"
-                             Disabled="@(!Session.AutoCompactionEnabled)" />
-        </div>
-    </MudPaper>
-
     <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
         <MudText Typo="Typo.h6" Class="mb-2">Backup</MudText>
         <MudText Typo="Typo.caption" Class="mb-3">
