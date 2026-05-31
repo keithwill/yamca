@@ -103,7 +103,7 @@
                     No endpoints configured — add one on the Endpoints page.
                 </MudText>
             }
-            else
+            else if (Endpoints.Count > 1)
             {
                 <MudTooltip Text="Endpoint">
                 <ChipDropdown Label="@(EndpointLabel(_endpointId))" Icon="@Icons.Material.Filled.Cloud">
