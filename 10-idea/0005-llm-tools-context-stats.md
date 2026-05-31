@@ -1,6 +1,6 @@
 ---
 id: 0005
-title: "LLM Tools current_context"
+title: "LLM Tools context_stats"
 ---
 
 We should provide a tool to the LLM for checking the current context stats. This would provide the current context size, the maximum size, and any other details that would be relevant for the LLM to make actionable decisions about its context. The maximum size should be based on the auto compaction limit (preferred), or the model's maximum context size.
