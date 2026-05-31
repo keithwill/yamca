@@ -150,6 +150,17 @@ else
                                             <MudProgressCircular Indeterminate="true" Size="Size.Small" />
                                         </div>
                                     }
+                                    @if (_isWorkColumn.GetValueOrDefault(column.DirectoryName) && Session.Endpoints.Items.Count > 0)
+                                    {
+                                        <button type="button"
+                                                class="yamca-board-card-play"
+                                                disabled="@(_busyCards.Contains(c.Id) || !Manager.CanCreate)"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="@(() => QuickRunAsync(c, column))"
+                                                aria-label="Run step">
+                                            <MudIcon Icon="@Icons.Material.Filled.PlayArrow" Size="Size.Small" />
+                                        </button>
+                                    }
                                 </MudPaper>
                             }
                         }
@@ -714,6 +725,15 @@ else
         {
             Snackbar.Add($"Could not start step: {ex.Message}", Severity.Error);
         }
+    }
+
+    private async Task QuickRunAsync(BoardCard card, BoardColumn column)
+    {
+        if (_busyCards.Contains(card.Id) || !Manager.CanCreate || Session.Endpoints.Items.Count == 0) return;
+        var branch = !string.IsNullOrWhiteSpace(card.Branch)
+            ? card.Branch
+            : BoardService.PresumptiveBranch(card.Id, card.Title);
+        await RunStepAsync(card, column, new CardDetailDialog.Result(Session.Endpoints.DefaultId, branch));
     }
 
     // Resolve a usable worktree for a branch, creating whatever is missing:

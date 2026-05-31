@@ -250,6 +250,7 @@ h1:focus {
 .yamca-board-card {
     cursor: grab;
     padding: 0.5rem 0.625rem;
+    position: relative;
     /* Lift the card off the lane: a lighter surface plus a hairline border read
        as more contrast than elevation shadow alone does on the dark theme. */
     background-color: rgba(255, 255, 255, 0.07);
@@ -260,7 +261,6 @@ h1:focus {
     border-color: var(--mud-palette-primary);
 }
 .yamca-board-card--busy {
-    position: relative;
     pointer-events: none;
     opacity: 0.6;
 }
@@ -272,6 +272,35 @@ h1:focus {
     justify-content: center;
     background: rgba(0, 0, 0, 0.25);
     border-radius: 4px;
+}
+.yamca-board-card-play {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    /* button reset */
+    background: var(--mud-palette-primary);
+    color: var(--mud-palette-primary-text);
+    border: none;
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+}
+.yamca-board-card:hover .yamca-board-card-play {
+    opacity: 1;
+}
+.yamca-board-card-play:disabled {
+    opacity: 0.4 !important;
+    cursor: default;
+}
+.yamca-board-card--busy .yamca-board-card-play {
+    display: none;
 }
 .yamca-board-card-title {
     font-size: 0.9rem;
