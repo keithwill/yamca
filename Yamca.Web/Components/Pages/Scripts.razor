@@ -23,7 +23,7 @@ else
             </MudTabs>
         </div>
         <MudText Typo="Typo.caption" Class="mb-3">
-            Scripts the LLM may run via <code>execute_script</code> without prompting. Each path is workspace-relative. Files inside a registered directory count as registered. Descriptions are optional but are shown to the LLM at session start so it can pick the right entry.
+            Known scripts the LLM may run via <code>execute_script</code> with different tool permissions than scripts that are discovered by the LLM in other ways (such as file operations). Each path is workspace-relative. Files inside a registered directory count as registered. Descriptions are optional but are shown to the LLM at session start so it can pick the right entry.
             @if (_scriptTierIndex == 0)
             {
                 <text> Stored in </text>
