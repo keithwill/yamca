@@ -7,37 +7,32 @@ namespace Yamca.Agent.Tests.Board;
 public class BoardPromptsTests
 {
     private static BoardCard Card() =>
-        new("7", "Add OAuth login", null, "0007-add-oauth.md", "10-idea", "/x/0007-add-oauth.md", "body", Array.Empty<SubtaskItem>());
+        new("7", "Add OAuth login", null, "0007-add-oauth.md", "10-idea", "/x/0007-add-oauth.md", "Plan the login flow.", Array.Empty<SubtaskItem>());
 
     private static BoardColumn Col(string dir, int order, string name) =>
         new(dir, order, name, $"/x/{dir}", Array.Empty<BoardCard>());
 
     [Test]
-    public void BuildSeedPrompt_NamesStepCardAndNextColumn()
+    public void BuildSeedPrompt_InlinesStepCardAndInstructions()
     {
-        var prompt = BoardPrompts.BuildSeedPrompt(Card(), Col("10-idea", 10, "idea"), Col("20-analyze", 20, "analyze"));
+        var prompt = BoardPrompts.BuildSeedPrompt(Card(), Col("20-analyze", 20, "analyze"), "Investigate the codebase.");
 
-        Assert.That(prompt, Does.Contain("\"idea\" step"));
+        Assert.That(prompt, Does.Contain("\"analyze\" step"));
         Assert.That(prompt, Does.Contain("#7 \"Add OAuth login\""));
-        Assert.That(prompt, Does.Contain("board_move_card"));
-        Assert.That(prompt, Does.Contain("\"analyze\""));
-        Assert.That(prompt, Does.Contain("tracked separately"));
-    }
-
-    [Test]
-    public void BuildSeedPrompt_FinalColumn_HasNoMoveTarget()
-    {
-        var prompt = BoardPrompts.BuildSeedPrompt(Card(), Col("50-done", 50, "done"), next: null);
-
-        Assert.That(prompt, Does.Contain("final column"));
+        Assert.That(prompt, Does.Contain("Plan the login flow."));
+        Assert.That(prompt, Does.Contain("Investigate the codebase."));
+        // The old system-message handoff and its generic completion blurb are gone.
+        Assert.That(prompt, Does.Not.Contain("system context"));
         Assert.That(prompt, Does.Not.Contain("board_move_card"));
+        Assert.That(prompt, Does.Not.Contain("tracked separately"));
     }
 
     [Test]
-    public void BuildStepInstruction_PrefixesColumnHeader()
+    public void BuildSeedPrompt_BlankInstructions_OmitsInstructionsSection()
     {
-        var instr = BoardPrompts.BuildStepInstruction(Col("30-implement", 30, "implement"), "Write the code.");
-        Assert.That(instr, Does.Contain("# Board step: implement"));
-        Assert.That(instr, Does.Contain("Write the code."));
+        var prompt = BoardPrompts.BuildSeedPrompt(Card(), Col("10-idea", 10, "idea"), instructions: null);
+
+        Assert.That(prompt, Does.Contain("#7 \"Add OAuth login\""));
+        Assert.That(prompt, Does.Not.Contain("step instructions"));
     }
 }

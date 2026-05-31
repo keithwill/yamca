@@ -14,9 +14,9 @@ public sealed record StepRunRequest(
     string? ColumnInstructions);
 
 /// <summary>Provisions a chat session pre-seeded to work a board step: bound to the card's
-/// branch worktree (if any), with the column's instructions.md injected as a system seed and a
-/// draft prompt pre-filled in the composer for the user to review. The session is NOT sent —
-/// the pure builders in <see cref="BoardPrompts"/> leave a clean path to auto-send for automation.</summary>
+/// branch worktree (if any), with a self-contained draft prompt (card + the column's instructions.md
+/// inlined) pre-filled in the composer. The session is flagged to auto-send the draft on open via
+/// <see cref="ChatViewModel.AutoSendDraft"/>.</summary>
 public sealed class BoardStepLauncher
 {
     private readonly ChatSessionManager _sessions;
@@ -35,9 +35,8 @@ public sealed class BoardStepLauncher
             : _sessions.Create();
 
         vm.SelectEndpoint(request.EndpointId);
-        if (!string.IsNullOrWhiteSpace(request.ColumnInstructions))
-            vm.AddSeedInstruction(BoardPrompts.BuildStepInstruction(request.CurrentColumn, request.ColumnInstructions));
-        vm.DraftPrompt = BoardPrompts.BuildSeedPrompt(request.Card, request.CurrentColumn, request.NextColumn);
+        vm.DraftPrompt = BoardPrompts.BuildSeedPrompt(request.Card, request.CurrentColumn, request.ColumnInstructions);
+        vm.AutoSendDraft = true;
         return vm;
     }
 }

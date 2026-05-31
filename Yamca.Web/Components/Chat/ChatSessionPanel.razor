@@ -235,6 +235,7 @@
     private readonly List<Attachment> _attachments = new();
     private string? _attachError;
     private bool _wasCompacting;
+    private bool _pendingAutoSend;
     private Snackbar? _compactingSnackbar;
     private bool _summaryDialogOpen;
     private bool _compactDialogOpen;
@@ -293,12 +294,15 @@
         _attachments.Clear();
         _attachError = null;
 
-        // Consume a one-shot seed prompt (e.g. from a board step launch) into the composer
-        // so the user can review it before sending. Only for a fresh, unsent session.
+        // Consume a one-shot seed prompt (e.g. from a board step launch) into the composer.
+        // A board step also flags AutoSendDraft so the prompt is sent on first render rather than
+        // left for review. Only for a fresh, unsent session.
         if (!string.IsNullOrEmpty(Chat.DraftPrompt) && Chat.Turns.Count == 0)
         {
             _prompt = Chat.DraftPrompt;
             Chat.DraftPrompt = null;
+            _pendingAutoSend = Chat.AutoSendDraft;
+            Chat.AutoSendDraft = false;
         }
     }
 
@@ -306,6 +310,14 @@
     {
         await SafeInvokeAsync("yamcaChat.init", _scrollContainer);
         await SafeInvokeAsync("yamcaChat.scrollIfSticky", _scrollAnchor);
+
+        // Auto-send a seeded board-step prompt now that the session is bound and rendered.
+        if (_pendingAutoSend)
+        {
+            _pendingAutoSend = false;
+            if (!string.IsNullOrWhiteSpace(_prompt) && !Chat.IsRunning)
+                await OnSend();
+        }
 
         if (Chat.IsGitRepository is null)
         {

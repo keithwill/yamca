@@ -24,9 +24,9 @@ public sealed partial class BoardService
     public static readonly IReadOnlyList<(string Dir, string? Instructions)> DefaultColumns = new (string, string?)[]
     {
         ("10-idea", null),
-        ("20-analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan into the card. Break the work into a `- [ ]` subtask checklist where useful.\n"),
+        ("20-analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan into the card with board_update_card. Break the work into a `- [ ]` subtask checklist where useful. When the plan is ready, move the card to the next column with board_move_card — the board is tracked separately and the move is committed for you.\n"),
         ("30-implement", "# Implement\n\nDo the work described in the card. Tick subtasks as you complete them. When the implementation is done, commit your code changes on this branch, then move the card to the next column with board_move_card — the board is tracked separately and the move is committed for you.\n"),
-        ("40-verify", "# Verify\n\nBuild, run tests, and confirm the change works end to end. Fix anything that fails. Note verification results on the card before moving it on.\n"),
+        ("40-verify", "# Verify\n\nBuild, run tests, and confirm the change works end to end. Fix anything that fails. Note verification results on the card with board_update_card, commit any fixes on this branch, then move the card to the next column with board_move_card — the board is tracked separately and the move is committed for you.\n"),
         ("50-done", null),
     };
 
