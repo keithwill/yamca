@@ -105,16 +105,16 @@
             }
             else
             {
-                <MudSelect T="Guid" @bind-Value="_endpointId" Dense="true"
-                           Variant="Variant.Outlined" Margin="Margin.Dense"
-                           Style="min-width: 200px;" Class="mr-2" Label="Endpoint">
+                <MudTooltip Text="Endpoint">
+                <ChipDropdown Label="@(EndpointLabel(_endpointId))" Icon="@Icons.Material.Filled.Cloud">
                     @foreach (var ep in Endpoints)
                     {
-                        <MudSelectItem T="Guid" Value="@ep.Id">
+                        <MudMenuItem OnClick="@(() => _endpointId = ep.Id)">
                             @(string.IsNullOrWhiteSpace(ep.Name) ? ep.DisplayLabel : ep.Name)@(ep.Id == DefaultEndpointId ? " (default)" : "")
-                        </MudSelectItem>
+                        </MudMenuItem>
                     }
-                </MudSelect>
+                </ChipDropdown>
+                </MudTooltip>
             }
             @if (IsBranchBound)
             {
@@ -248,6 +248,14 @@
         _branch = HasBranchAttribute ? Card.Branch : PresumptiveBranch;
         _endpointId = DefaultEndpointId;
         _priority = Card.Priority;
+    }
+
+    private string EndpointLabel(Guid id)
+    {
+        var ep = Endpoints.FirstOrDefault(e => e.Id == id);
+        if (ep is null) return "Endpoint";
+        var name = string.IsNullOrWhiteSpace(ep.Name) ? ep.DisplayLabel : ep.Name;
+        return id == DefaultEndpointId ? $"{name} (default)" : name;
     }
 
     private Task<IEnumerable<string>> SearchBranches(string? value, CancellationToken ct)
