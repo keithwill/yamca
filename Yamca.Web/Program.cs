@@ -52,9 +52,10 @@ if (cli.WorkspacePath is not null)
 // still finds the board and roots worktrees at the repo root. Falls back to the workspace root
 // when not inside a git repository. The sandbox boundary stays at workspaceRoot regardless.
 var gitService = new GitService();
-var repositoryRoot = await gitService
+var discoveredRepoRoot = await gitService
     .GetRepoRootAsync(workspaceRoot, CancellationToken.None)
-    .ConfigureAwait(false) ?? workspaceRoot;
+    .ConfigureAwait(false);
+var repositoryRoot = discoveredRepoRoot ?? workspaceRoot;
 
 if (cli.Mode == CliMode.BoardReinit)
 {
@@ -70,6 +71,12 @@ if (cli.Mode == CliMode.BoardReinit)
     if (r.CardsWiped > 0) Console.WriteLine($"  Cards wiped:           {r.CardsWiped}");
     return 0;
 }
+
+// Keep yamca's local-only state under .yamca (chat history, etc.) out of git without making the
+// user edit their repo's root .gitignore. Only meaningful inside a git repository, so skip it when
+// the workspace isn't one. Independent of the board/worktree bootstrap, which manage their own paths.
+if (discoveredRepoRoot is not null)
+    WorkspaceScaffold.EnsureGitignore(repositoryRoot);
 
 // Fixed default port so browser localStorage (keyed by origin) persists across
 // runs and explicit via --port if the user needs to move it.
