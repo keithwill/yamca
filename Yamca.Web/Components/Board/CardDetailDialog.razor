@@ -99,13 +99,15 @@
     <DialogActions>
         @if (MoveTargets.Count > 0)
         {
-            <MudMenu StartIcon="@Icons.Material.Filled.DriveFileMove" Label="Move to…"
+            <MudTooltip Text="Move To">
+            <MudMenu Icon="@Icons.Material.Filled.DriveFileMove"
                      Variant="Variant.Text" Disabled="@_busy" Class="mr-auto">
                 @foreach (var col in MoveTargets)
                 {
                     <MudMenuItem OnClick="@(() => Move(col.DirectoryName))">@col.DisplayName</MudMenuItem>
                 }
             </MudMenu>
+            </MudTooltip>
         }
         @if (IsBranchBound)
         {
