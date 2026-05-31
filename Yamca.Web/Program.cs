@@ -10,6 +10,7 @@ using Yamca.Agent.Git;
 using Yamca.Agent.Mcp;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
+using Yamca.Agent.Settings.Persistence;
 using Yamca.Agent.Tools;
 using Yamca.Agent.Tools.Board;
 using Yamca.Agent.Tools.CodeIntel;
@@ -217,7 +218,10 @@ builder.Services.AddScoped<IPermissionStore, SessionSettingsPermissionStore>();
 builder.Services.AddScoped<EndpointHealthService>();
 builder.Services.AddTransient<ContextCompactor>();
 builder.Services.AddScoped<LocalStorage>();
-builder.Services.AddScoped<WorkspaceKey>();
+builder.Services.AddScoped<SettingsLocation>();
+// Project-tier settings persistence. Scoped, but resolves the singleton IWorkspace so the
+// settings file always anchors to the main repository root (.yamca/project.json).
+builder.Services.AddScoped<ProjectSettingsStore>();
 builder.Services.AddScoped<SettingsHydrator>();
 builder.Services.AddScoped<InstructionFilesLoader>();
 builder.Services.AddScoped<WorkspaceBrowser>();

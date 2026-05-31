@@ -204,7 +204,7 @@ else
 @code {
     [Inject] private SessionSettings Session { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
-    [Inject] private WorkspaceKey Keys { get; set; } = default!;
+    [Inject] private SettingsLocation Keys { get; set; } = default!;
     [Inject] private EndpointHealthService HealthService { get; set; } = default!;
 
     private bool _hydrated;

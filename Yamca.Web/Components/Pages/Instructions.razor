@@ -36,8 +36,7 @@ else
             Files read from the current workspace and added to the chat context as additional system messages at session start. Each entry is a bare filename or a relative path; absolute paths are not allowed. Missing files are silently skipped.
             @if (_instrTierIndex == 0)
             {
-                <text> Stored in </text>
-                <MudTooltip Text="@Keys.ProjectKey" Placement="Placement.Top"><code>@SettingsHelpers.ShortKey(Keys.ProjectKey)</code></MudTooltip><text>.</text>
+                <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
             }
             else { <text> Stored in <code>@Keys.GlobalKey</code>.</text> }
         </MudText>
@@ -148,7 +147,7 @@ else
 @code {
     [Inject] private SessionSettings Session { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
-    [Inject] private WorkspaceKey Keys { get; set; } = default!;
+    [Inject] private SettingsLocation Keys { get; set; } = default!;
     [Inject] private IWorkspace Workspace { get; set; } = default!;
     [Inject] private WorkspaceBrowser Browser { get; set; } = default!;
 

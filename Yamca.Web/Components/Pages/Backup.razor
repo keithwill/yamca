@@ -16,7 +16,7 @@ else
     <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
         <MudText Typo="Typo.h6" Class="mb-2">Backup</MudText>
         <MudText Typo="Typo.caption" Class="mb-3">
-            Export your Global settings to a JSON file, or restore them from one. Project settings (stored per workspace in <code>@SettingsHelpers.ShortKey(Keys.ProjectKey)</code>) are not included.
+            Export your Global settings to a JSON file, or restore them from one. Project settings (stored per workspace on disk in <code>@Keys.ProjectFile</code>) are not included.
         </MudText>
         <div class="d-flex align-center" style="gap: 8px;">
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.FileDownload"
@@ -77,7 +77,7 @@ else
 @code {
     [Inject] private SessionSettings Session { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
-    [Inject] private WorkspaceKey Keys { get; set; } = default!;
+    [Inject] private SettingsLocation Keys { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 

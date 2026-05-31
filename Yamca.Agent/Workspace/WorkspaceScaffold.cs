@@ -14,7 +14,7 @@ public static class WorkspaceScaffold
     // Ignore rules (relative to .yamca/) that the managed .gitignore must always contain. Anchored
     // with a leading slash so they match only at the .yamca root. "/.gitignore" makes the file
     // self-ignoring, keeping `git status` clean without the user committing anything.
-    private static readonly string[] RequiredRules = ["/chat/", "/.gitignore"];
+    private static readonly string[] RequiredRules = ["/chat/", "/project.json", "/.gitignore"];
 
     private const string Header =
         "# Managed by yamca — local-only state, not shared. Safe to delete; yamca recreates it.";

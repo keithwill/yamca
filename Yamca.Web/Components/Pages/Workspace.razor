@@ -17,10 +17,7 @@ else
         <MudText Typo="Typo.h6" Class="mb-2">Workspace</MudText>
         <MudText Typo="Typo.body2">Root: <code>@WorkspaceSvc.RootPath</code></MudText>
         <MudText Typo="Typo.caption">
-            localStorage key:
-            <MudTooltip Text="@Keys.ProjectKey" Placement="Placement.Top">
-                <code>@SettingsHelpers.ShortKey(Keys.ProjectKey)</code>
-            </MudTooltip>
+            Project settings: <code>@Keys.ProjectFile</code>
         </MudText>
     </MudPaper>
 
@@ -81,7 +78,7 @@ else
 
 @code {
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
-    [Inject] private WorkspaceKey Keys { get; set; } = default!;
+    [Inject] private SettingsLocation Keys { get; set; } = default!;
     [Inject] private IWorkspace WorkspaceSvc { get; set; } = default!;
     [Inject] private SessionSettings Session { get; set; } = default!;
     [Inject] private GitService GitSvc { get; set; } = default!;
