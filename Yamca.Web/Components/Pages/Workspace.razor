@@ -23,6 +23,58 @@ else
             </MudTooltip>
         </MudText>
     </MudPaper>
+
+    @if (_worktreeRows is not null)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Outlined="true">
+            <MudText Typo="Typo.h6" Class="mb-3">Repository</MudText>
+            <MudTable Items="_worktreeRows" Hover="true" Dense="true" Class="mud-table-bordered">
+                <HeaderContent>
+                    <MudTh>Name</MudTh>
+                    <MudTh>Path</MudTh>
+                    <MudTh>Branch</MudTh>
+                    <MudTh>Status</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <span>@context.Name</span>
+                        @if (context.IsMainWorktree)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-1" Style="height:20px">root</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd><code style="font-size:0.78rem">@context.Path</code></MudTd>
+                    <MudTd>
+                        @if (context.Branch is not null)
+                        {
+                            <code>@context.Branch</code>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">(detached)</MudText>
+                        }
+                    </MudTd>
+                    <MudTd>
+                        @if (!context.Dirty && context.CommitsAhead == 0)
+                        {
+                            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">Clean</MudText>
+                        }
+                        else
+                        {
+                            @if (context.Dirty)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="mr-1">Dirty</MudChip>
+                            }
+                            @if (context.CommitsAhead > 0)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info">@context.CommitsAhead ahead</MudChip>
+                            }
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
 }
 
 </MudContainer>
@@ -32,8 +84,13 @@ else
     [Inject] private WorkspaceKey Keys { get; set; } = default!;
     [Inject] private IWorkspace WorkspaceSvc { get; set; } = default!;
     [Inject] private SessionSettings Session { get; set; } = default!;
+    [Inject] private GitService GitSvc { get; set; } = default!;
 
     private bool _hydrated;
+    private List<WorktreeRow>? _worktreeRows;
+
+    private sealed record WorktreeRow(
+        string Name, string Path, string? Branch, bool Dirty, int CommitsAhead, bool IsMainWorktree);
 
     protected override void OnInitialized()
     {
@@ -45,7 +102,40 @@ else
         if (!firstRender) return;
         await Hydrator.HydrateAsync();
         _hydrated = true;
+
+        var ct = CancellationToken.None;
+        if (await GitSvc.IsGitRepoAsync(WorkspaceSvc.RepositoryRoot, ct))
+            _worktreeRows = await BuildWorktreeRowsAsync(ct);
+
         StateHasChanged();
+    }
+
+    private async Task<List<WorktreeRow>> BuildWorktreeRowsAsync(CancellationToken ct)
+    {
+        var repoRoot = WorkspaceSvc.RepositoryRoot;
+        var defaultBranch = await GitSvc.GetDefaultBranchAsync(repoRoot, ct);
+        var worktrees = await GitSvc.ListWorktreesAsync(repoRoot, ct);
+
+        var rows = new List<WorktreeRow>();
+        foreach (var (rawPath, branch) in worktrees)
+        {
+            var path = System.IO.Path.GetFullPath(rawPath.Trim());
+            var name = System.IO.Path.GetFileName(path);
+            var isMain = string.Equals(path, repoRoot, StringComparison.OrdinalIgnoreCase);
+            var dirty = await GitSvc.HasUncommittedChangesAsync(path, ".", ct);
+
+            // Prefer upstream tracking branch (accurate "not yet pushed" count).
+            // Fall back to default branch only for local-only branches with no upstream.
+            var upstream = await GitSvc.CountCommitsAheadOfUpstreamAsync(path, ct);
+            var ahead = upstream ?? (
+                branch is not null && defaultBranch is not null
+                    && !string.Equals(branch, defaultBranch, StringComparison.Ordinal)
+                    ? await GitSvc.CountCommitsAheadAsync(path, defaultBranch, branch, ct)
+                    : 0);
+
+            rows.Add(new WorktreeRow(name, path, branch, dirty, ahead, isMain));
+        }
+        return rows;
     }
 
     private void OnSettingsChanged(SettingsTier _) => InvokeAsync(StateHasChanged);

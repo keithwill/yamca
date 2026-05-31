@@ -226,6 +226,29 @@ public sealed class GitService
         return (s, branch);
     }
 
+    /// <summary>Number of commits in HEAD that are not in the upstream tracking branch
+    /// (<c>@{u}</c>). Returns <see langword="null"/> when no upstream is configured for the
+    /// current branch, so the caller can fall back to a different comparison.</summary>
+    public async Task<int?> CountCommitsAheadOfUpstreamAsync(string worktreePath, CancellationToken ct)
+    {
+        var r = await RunAsync(worktreePath, ["rev-list", "--count", "@{u}..HEAD"], ct).ConfigureAwait(false);
+        if (!r.Ok) return null;
+        return int.TryParse(r.Stdout.Trim(), out var n) ? n : null;
+    }
+
+    /// <summary>Returns the name of the repository's default branch by checking for "main" then
+    /// "master". Returns <see langword="null"/> when neither exists (e.g. an empty repo or an
+    /// unusual naming convention).</summary>
+    public async Task<string?> GetDefaultBranchAsync(string repoRoot, CancellationToken ct)
+    {
+        foreach (var candidate in new[] { "main", "master" })
+        {
+            if (await BranchExistsAsync(repoRoot, candidate, ct).ConfigureAwait(false))
+                return candidate;
+        }
+        return null;
+    }
+
     /// <summary>True when <paramref name="branch"/> exists as a local head in the repository.</summary>
     public async Task<bool> BranchExistsAsync(string repoRoot, string branch, CancellationToken ct)
     {
