@@ -39,9 +39,31 @@
         </div>
     </TitleContent>
     <DialogContent>
-        <div class="yamca-markdown">
-            @((MarkupString)MarkdownRenderer.ToHtml(string.IsNullOrWhiteSpace(Card.Body) ? "_(empty card)_" : Card.Body))
-        </div>
+        @if (_editingBody)
+        {
+            <MudTextField @bind-Value="_body" T="string"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Lines="16" Immediate="true" AutoFocus="true"
+                          HelperText="Plain markdown — switch back to preview by saving or cancelling."
+                          Class="yamca-body-editor" />
+            <div class="d-flex mt-2" style="gap: 8px;">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           Disabled="@_busy" OnClick="SaveBody">Save</MudButton>
+                <MudButton Variant="Variant.Text" Disabled="@_busy" OnClick="CancelEditBody">Cancel</MudButton>
+            </div>
+        }
+        else
+        {
+            <div class="d-flex align-start">
+                <div class="yamca-markdown flex-grow-1">
+                    @((MarkupString)MarkdownRenderer.ToHtml(string.IsNullOrWhiteSpace(Card.Body) ? "_(empty card)_" : Card.Body))
+                </div>
+                <MudTooltip Text="Edit description">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                   Disabled="@_busy" OnClick="BeginEditBody" />
+                </MudTooltip>
+            </div>
+        }
 
         @if (IsWorkColumn && CanRunStep && !IsBranchBound)
         {
@@ -214,11 +236,17 @@
     /// the updated <c>priority:</c> frontmatter field and commits it to the board branch.</summary>
     public sealed record PriorityUpdate(CardPriority Priority);
 
+    /// <summary>Handed back when the user edits the markdown body and clicks Save. The page writes
+    /// the new body (frontmatter preserved) and commits it to the board branch.</summary>
+    public sealed record BodyUpdate(string Body);
+
     private bool _busy;
     private string? _error;
     private string? _branch;
     private Guid _endpointId;
     private CardPriority _priority;
+    private bool _editingBody;
+    private string _body = "";
 
     // The card names an intended branch in its frontmatter…
     private bool HasBranchAttribute => !string.IsNullOrWhiteSpace(Card.Branch);
@@ -327,6 +355,27 @@
     {
         if (priority != Card.Priority)
             Dialog.Close(DialogResult.Ok(new PriorityUpdate(priority)));
+    }
+
+    private void BeginEditBody()
+    {
+        _body = (Card.Body ?? string.Empty).Trim();
+        _editingBody = true;
+    }
+
+    private void CancelEditBody() => _editingBody = false;
+
+    // Mirrors SetPriority: a no-op edit just drops back to preview, a real change closes the dialog
+    // so the page can run the shared busy/commit/refresh workflow.
+    private void SaveBody()
+    {
+        var trimmed = (_body ?? string.Empty).Trim();
+        if (string.Equals(trimmed, (Card.Body ?? string.Empty).Trim(), StringComparison.Ordinal))
+        {
+            _editingBody = false;
+            return;
+        }
+        Dialog.Close(DialogResult.Ok(new BodyUpdate(trimmed)));
     }
 
     private void Close() => Dialog.Cancel();

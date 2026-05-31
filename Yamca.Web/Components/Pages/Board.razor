@@ -412,6 +412,8 @@ else
             await DeleteCardAsync(card);
         else if (result.Data is CardDetailDialog.PriorityUpdate pu)
             await UpdateCardPriorityAsync(card, pu.Priority);
+        else if (result.Data is CardDetailDialog.BodyUpdate bu)
+            await UpdateCardBodyAsync(card, bu.Body);
     }
 
     // Merge a branch-bound card's branch back into the base branch by reusing the same merge dialog
@@ -827,6 +829,43 @@ else
             var commit = await Git.CommitAllAsync(boardRoot, $"board: set #{card.Id} priority to {priority.ToString().ToLowerInvariant()}", ct);
             if (!commit.Ok)
                 Snackbar.Add($"Priority updated but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning);
+        }, ct);
+
+        await InvokeAsync(async () =>
+        {
+            _busyCards.Remove(card.Id);
+            await RefreshAsync();
+            StateHasChanged();
+        });
+    }
+
+    // Same shape as UpdateCardPriorityAsync: mark the card busy, write the edited markdown body
+    // (frontmatter preserved) into the board worktree, commit it, then refresh and clear the spinner.
+    private async Task UpdateCardBodyAsync(BoardCard card, string body)
+    {
+        _busyCards.Add(card.Id);
+        StateHasChanged();
+
+        var ct = CancellationToken.None;
+        await BoardWorktree.MutateAsync(async boardRoot =>
+        {
+            var path = Path.Combine(boardRoot, card.ColumnDirectory, card.FileName);
+            string raw;
+            try { raw = await File.ReadAllTextAsync(path); }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Could not read card #{card.Id}: {ex.Message}", Severity.Error);
+                return;
+            }
+            try { await File.WriteAllTextAsync(path, BoardService.WithBody(raw, body)); }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Could not update card #{card.Id}: {ex.Message}", Severity.Error);
+                return;
+            }
+            var commit = await Git.CommitAllAsync(boardRoot, $"board: edit #{card.Id} description", ct);
+            if (!commit.Ok)
+                Snackbar.Add($"Description updated but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning);
         }, ct);
 
         await InvokeAsync(async () =>

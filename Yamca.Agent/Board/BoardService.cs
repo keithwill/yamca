@@ -204,6 +204,31 @@ public sealed partial class BoardService
     public static string WithPriority(string rawText, CardPriority priority)
         => WithFrontmatterField(rawText, "priority", priority.ToString().ToLowerInvariant());
 
+    /// <summary>Return <paramref name="rawText"/> with its body (everything after the frontmatter
+    /// block) replaced by <paramref name="body"/>, leaving the frontmatter untouched. Used when the
+    /// card detail dialog edits the markdown description in place. The new body is trimmed and laid
+    /// out as <c>---…---\n\n{body}\n</c> so a single blank line separates frontmatter from body.
+    /// Cards with no frontmatter are replaced wholesale. Normalizes line endings to LF.</summary>
+    public static string WithBody(string rawText, string body)
+    {
+        var normalized = (rawText ?? string.Empty).Replace("\r\n", "\n");
+        var newBody = (body ?? string.Empty).Replace("\r\n", "\n").Trim();
+
+        if (normalized.StartsWith("---\n", StringComparison.Ordinal))
+        {
+            var end = normalized.IndexOf("\n---", 4, StringComparison.Ordinal);
+            if (end >= 0)
+            {
+                // Keep the frontmatter block plus its closing fence verbatim, then re-append the body.
+                var afterFence = normalized.IndexOf('\n', end + "\n---".Length);
+                var frontmatter = afterFence < 0 ? normalized : normalized[..afterFence];
+                return $"{frontmatter}\n\n{newBody}\n";
+            }
+        }
+
+        return $"{newBody}\n";
+    }
+
     // Sets a scalar frontmatter field, replacing an existing line for the key or appending one,
     // and synthesizing a frontmatter block when the text has none. Backs WithBranch / WithCommit.
     private static string WithFrontmatterField(string rawText, string key, string value)

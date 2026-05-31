@@ -213,6 +213,34 @@ public class BoardServiceTests
     }
 
     [Test]
+    public void WithBody_ReplacesBodyAndPreservesFrontmatter()
+    {
+        var withFm = "---\nid: 7\ntitle: Foo\npriority: high\n---\n\nold body\nmore";
+        var updated = BoardService.WithBody(withFm, "brand new body");
+
+        Assert.That(updated, Does.Contain("id: 7"));
+        Assert.That(updated, Does.Contain("priority: high"));
+        Assert.That(updated, Does.Contain("brand new body"));
+        Assert.That(updated, Does.Not.Contain("old body"));
+
+        // Frontmatter and body separated by exactly one blank line, with a trailing newline.
+        Assert.That(updated, Does.EndWith("---\n\nbrand new body\n"));
+
+        // The replacement survives a parse round-trip without disturbing other fields.
+        var card = _svc.ParseCard("10-idea", "/x/0007-foo.md", updated);
+        Assert.That(card.Body.Trim(), Is.EqualTo("brand new body"));
+        Assert.That(card.Priority, Is.EqualTo(CardPriority.High));
+        Assert.That(card.Id, Is.EqualTo("7"));
+    }
+
+    [Test]
+    public void WithBody_NoFrontmatter_ReplacesWholeText()
+    {
+        var updated = BoardService.WithBody("# Title\nold", "# Title\nnew");
+        Assert.That(updated, Is.EqualTo("# Title\nnew\n"));
+    }
+
+    [Test]
     public void Snapshot_FindCard_And_FindColumn()
     {
         _ws.WriteFile(Board("10-idea/0007-foo.md"), "---\nid: 7\ntitle: Foo\n---\nbody");
