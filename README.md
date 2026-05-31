@@ -46,11 +46,11 @@ Yamca listening on http://127.0.0.1:51234  (workspace: C:\Repos\yamca)
 
 ## Troubleshooting
 
-- **Port already in use** — Yamca defaults to port 9001 so the browser's
-  `localStorage` (which is keyed by origin) persists settings across runs.
-  If 9001 is taken Yamca exits with an error; pass `--port <n>` to pick a
-  different one. Note: settings saved on one port are not visible from
-  another.
+- **Port already in use** — Yamca defaults to port 9001. If 9001 is taken
+  Yamca exits with an error; pass `--port <n>` to pick a different one.
+  Settings persist on disk — global settings and the MCP server list in your
+  OS user-config directory, project settings under the repo's `.yamca` — so
+  they survive a port change and are shared across browsers.
 - **Browser did not open** — visit the URL printed on startup, or pass
   `--no-browser` and open it yourself. The auto-open helper uses
   `xdg-open` on Linux, `open` on macOS, and the shell on Windows.

@@ -3,28 +3,29 @@ using Yamca.Agent.Mcp;
 namespace Yamca.Web.Services;
 
 /// <summary>
-/// Bridges <see cref="LocalStorage"/> and <see cref="IMcpRegistry"/>: reads the
-/// configured-server list from <c>yamca.mcp.servers</c> on first circuit, and
-/// pushes mutations back to storage and into the registry.
+/// Bridges <see cref="McpConfigFileStore"/> and <see cref="IMcpRegistry"/>: reads the
+/// configured-server list from <c>mcp.json</c> in the per-user config directory on first
+/// circuit, and pushes mutations back to disk and into the registry.
 /// </summary>
 public sealed class McpConfigStore
 {
-    public const string StorageKey = "yamca.mcp.servers";
-
-    private readonly LocalStorage _storage;
+    private readonly McpConfigFileStore _storage;
     private readonly IMcpRegistry _registry;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private List<McpServerConfig> _configs = new();
     private bool _hydrated;
 
-    public McpConfigStore(LocalStorage storage, IMcpRegistry registry)
+    public McpConfigStore(McpConfigFileStore storage, IMcpRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(registry);
         _storage = storage;
         _registry = registry;
     }
+
+    /// <summary>Absolute path of the on-disk server list file, surfaced in the UI.</summary>
+    public string FilePath => _storage.FilePath;
 
     public IReadOnlyList<McpServerConfig> Configs
     {
@@ -41,7 +42,7 @@ public sealed class McpConfigStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var json = await _storage.GetItemAsync(StorageKey).ConfigureAwait(false);
+            var json = _storage.Load();
             var parsed = McpServerConfigJson.DeserializeList(json).ToList();
             ReplaceLocked(parsed);
             _hydrated = true;
@@ -161,9 +162,10 @@ public sealed class McpConfigStore
 
     private void ReplaceLocked(List<McpServerConfig> next) => _configs = next;
 
-    private async Task PersistAsync()
+    private Task PersistAsync()
     {
         var json = McpServerConfigJson.SerializeList(_configs);
-        await _storage.SetItemAsync(StorageKey, json).ConfigureAwait(false);
+        _storage.Save(json);
+        return Task.CompletedTask;
     }
 }

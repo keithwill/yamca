@@ -80,8 +80,9 @@ if (cli.Mode == CliMode.BoardReinit)
 if (discoveredRepoRoot is not null)
     WorkspaceScaffold.EnsureGitignore(repositoryRoot);
 
-// Fixed default port so browser localStorage (keyed by origin) persists across
-// runs and explicit via --port if the user needs to move it.
+// Fixed default port, overridable via --port. Settings now persist on disk (global tier in
+// the user config dir, project tier under .yamca), so they survive a port change; the only
+// remaining origin-keyed browser state is the MCP server list in localStorage.
 const int DefaultPort = 9001;
 var port = cli.Port ?? DefaultPort;
 if (!IsTcpPortAvailable(port))
@@ -195,6 +196,10 @@ builder.Services.AddScoped<ITool, ExecuteScriptTool>();
 // user edits the MCP server list in settings.
 builder.Services.AddSingleton<IMcpRegistry, McpRegistry>();
 builder.Services.AddSingleton<IDynamicToolSource, McpDynamicToolSource>();
+// The configured server list persists to mcp.json in the per-user config directory (out of
+// the LLM-reachable workspace), alongside the global settings file. Singleton: one in-process
+// write lock, matching the process-wide registry it feeds.
+builder.Services.AddSingleton<McpConfigFileStore>(_ => new McpConfigFileStore(UserConfigDirectory.Resolve()));
 
 // IToolRegistry is scoped so its enumeration of ITool services picks up both
 // singleton tools and the per-circuit scoped script tools. Dynamic sources
@@ -217,8 +222,11 @@ builder.Services.AddScoped<IPermissionStore, SessionSettingsPermissionStore>();
 
 builder.Services.AddScoped<EndpointHealthService>();
 builder.Services.AddTransient<ContextCompactor>();
-builder.Services.AddScoped<LocalStorage>();
 builder.Services.AddScoped<SettingsLocation>();
+// Global-tier settings persistence. Singleton (no per-circuit state) so one in-process lock
+// serializes writes across circuits; the file lives in the OS per-user config directory,
+// out of the LLM-reachable workspace.
+builder.Services.AddSingleton<GlobalSettingsStore>(_ => new GlobalSettingsStore(GlobalSettingsStore.ResolveDefaultDirectory()));
 // Project-tier settings persistence. Scoped, but resolves the singleton IWorkspace so the
 // settings file always anchors to the main repository root (.yamca/project.json).
 builder.Services.AddScoped<ProjectSettingsStore>();

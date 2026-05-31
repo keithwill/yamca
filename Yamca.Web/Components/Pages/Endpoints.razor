@@ -26,7 +26,7 @@ else
         <MudText Typo="Typo.caption" Class="mb-3">
             OpenAI-compatible endpoints (llama.cpp, vllm, OpenAI, OpenRouter, etc.). The
             endpoint marked Default is used for new chats; pick a different one per-chat
-            from the chat composer. Stored in <code>@Keys.GlobalKey</code>.
+            from the chat composer. Stored on disk in <code>@Keys.GlobalFile</code>.
         </MudText>
 
         <MudTable Items="Session.Endpoints.Items" Hover="true" Dense="true" Class="mud-table-bordered">

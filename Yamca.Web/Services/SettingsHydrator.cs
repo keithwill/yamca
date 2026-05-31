@@ -1,49 +1,45 @@
-using Microsoft.JSInterop;
 using Yamca.Agent.Settings.Persistence;
 
 namespace Yamca.Web.Services;
 
-/// <summary>Hydrates and persists <see cref="SessionSettings"/> across its two tiers:
-/// the project tier lives on disk (<see cref="ProjectSettingsStore"/>, under the repo's
-/// <c>.yamca</c>) and the global tier — which carries API keys and isn't repo-scoped —
-/// stays in browser localStorage. Pulls both on page load and writes the affected tier
+/// <summary>Hydrates and persists <see cref="SessionSettings"/> across its two tiers, both
+/// of which now live on disk: the project tier under the repo's <c>.yamca</c>
+/// (<see cref="ProjectSettingsStore"/>) and the global tier — which carries API keys and
+/// isn't repo-scoped — under the OS per-user config directory
+/// (<see cref="GlobalSettingsStore"/>). Pulls both on page load and writes the affected tier
 /// back when <see cref="SessionSettings.Changed"/> fires.</summary>
 public sealed class SettingsHydrator : IDisposable
 {
-    private const string GlobalKey = SettingsLocation.GlobalStorageKey;
-
     private readonly SessionSettings _settings;
-    private readonly LocalStorage _storage;
+    private readonly GlobalSettingsStore _globalStore;
     private readonly ProjectSettingsStore _projectStore;
 
     private bool _hydrated;
     private bool _persistOnChange;
 
-    public SettingsHydrator(SessionSettings settings, LocalStorage storage, ProjectSettingsStore projectStore)
+    public SettingsHydrator(SessionSettings settings, GlobalSettingsStore globalStore, ProjectSettingsStore projectStore)
     {
         _settings = settings;
-        _storage = storage;
+        _globalStore = globalStore;
         _projectStore = projectStore;
         _settings.Changed += OnChanged;
     }
 
     public bool IsHydrated => _hydrated;
 
-    /// <summary>One-shot: read the global blob from localStorage and the project blob from
-    /// disk, then populate the session. Must be called from a component after first render
-    /// (when JS interop is available for the global read).</summary>
-    public async Task HydrateAsync()
+    /// <summary>One-shot: read both tiers from disk and populate the session. Both reads are
+    /// synchronous; the <see cref="Task"/> return is retained so existing call sites can keep
+    /// awaiting it from <c>OnAfterRenderAsync</c> unchanged.</summary>
+    public Task HydrateAsync()
     {
-        if (_hydrated) return;
+        if (_hydrated) return Task.CompletedTask;
 
         // Disable persistence while we're hydrating — the Changed events that fire
-        // as we apply storage content would otherwise echo straight back to storage.
+        // as we apply storage content would otherwise echo straight back to disk.
         _persistOnChange = false;
         try
         {
-            var globalJson = await _storage.GetItemAsync(GlobalKey).ConfigureAwait(false);
-            _settings.HydrateGlobal(globalJson);
-
+            _settings.HydrateGlobal(_globalStore.Load());
             _settings.HydrateProject(_projectStore.Load());
         }
         finally
@@ -51,6 +47,8 @@ public sealed class SettingsHydrator : IDisposable
             _persistOnChange = true;
             _hydrated = true;
         }
+
+        return Task.CompletedTask;
     }
 
     private void OnChanged(SettingsTier tier)
@@ -60,17 +58,7 @@ public sealed class SettingsHydrator : IDisposable
         if (tier == SettingsTier.Project)
             _projectStore.Save(_settings.SerializeProject());
         else
-            _ = PersistGlobalAsync();
-    }
-
-    private async Task PersistGlobalAsync()
-    {
-        try
-        {
-            await _storage.SetItemAsync(GlobalKey, _settings.SerializeGlobal()).ConfigureAwait(false);
-        }
-        catch (JSDisconnectedException) { /* circuit gone, nothing we can do */ }
-        catch (TaskCanceledException)   { /* same */ }
+            _globalStore.Save(_settings.SerializeGlobal());
     }
 
     public void Dispose()
