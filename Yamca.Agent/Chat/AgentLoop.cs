@@ -58,13 +58,26 @@ public sealed class AgentLoop
 
     public ChatSession Session => _session;
 
-    public async IAsyncEnumerable<ChatStreamEvent> RunTurnAsync(
+    public IAsyncEnumerable<ChatStreamEvent> RunTurnAsync(
         string userMessage,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(userMessage);
         _session.AppendUser(userMessage);
+        return RunLoopAsync(cancellationToken);
+    }
 
+    /// <summary>Resume the agent loop without appending a new user message. Used to
+    /// continue a turn that previously stopped at the iteration cap: the conversation
+    /// already ends with tool results the model has not yet responded to, so the loop
+    /// simply picks up where it left off.</summary>
+    public IAsyncEnumerable<ChatStreamEvent> ContinueTurnAsync(
+        CancellationToken cancellationToken = default)
+        => RunLoopAsync(cancellationToken);
+
+    private async IAsyncEnumerable<ChatStreamEvent> RunLoopAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
         for (var iteration = 0; iteration < _options.MaxIterations; iteration++)
         {
             cancellationToken.ThrowIfCancellationRequested();

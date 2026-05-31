@@ -61,6 +61,17 @@ else
                              Variant="Variant.Outlined" Margin="Margin.Dense"
                              Disabled="@(!Session.AutoCompactionEnabled)" />
         </div>
+
+        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Tools</MudText>
+        <MudNumericField T="int" Value="Session.MaxToolIterations"
+                         ValueChanged="@((int v) => Session.SetMaxToolIterations(v))"
+                         Label="Max tool call iterations"
+                         Min="1" Max="100" Step="1"
+                         Variant="Variant.Outlined" Margin="Margin.Dense"
+                         Style="max-width: 220px;" />
+        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+            The most LLM round-trips allowed in a single turn before the agent stops. Each round-trip is one model response; a turn keeps looping while the model requests tool calls. Raise this for long autonomous tasks; lower it to cap runaway tool-calling.
+        </MudText>
     </MudPaper>
 }
 

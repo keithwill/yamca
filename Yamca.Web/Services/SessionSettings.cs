@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Yamca.Agent.Chat;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
@@ -29,6 +30,8 @@ public sealed class SessionSettings : ISessionSettings
     public bool AutoCompactionEnabled { get; private set; } = false;
     public int AutoCompactionThresholdPercent { get; private set; } = 75;
     public int AutoCompactionKeepRecentTurns { get; private set; } = 4;
+
+    public int MaxToolIterations { get; private set; } = AgentLoopOptions.Default.MaxIterations;
 
     public IReadOnlyList<string> GlobalInstructionFiles { get; private set; } = DefaultGlobalInstructionFiles;
     public IReadOnlyList<string> ProjectInstructionFiles { get; private set; } = Array.Empty<string>();
@@ -135,6 +138,14 @@ public sealed class SessionSettings : ISessionSettings
         Changed?.Invoke(SettingsTier.Global);
     }
 
+    public void SetMaxToolIterations(int iterations)
+    {
+        var clamped = Math.Clamp(iterations, 1, 100);
+        if (MaxToolIterations == clamped) return;
+        MaxToolIterations = clamped;
+        Changed?.Invoke(SettingsTier.Global);
+    }
+
     public void SetInstructionFiles(SettingsTier tier, IReadOnlyList<string> paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -222,6 +233,8 @@ public sealed class SessionSettings : ISessionSettings
             ? Math.Clamp(p, 1, 95) : 75;
         AutoCompactionKeepRecentTurns = blob.AutoCompactionKeepRecentTurns is int k
             ? Math.Clamp(k, 1, 50) : 4;
+        MaxToolIterations = blob.MaxToolIterations is int mi
+            ? Math.Clamp(mi, 1, 100) : AgentLoopOptions.Default.MaxIterations;
         Global = firstRun ? DefaultGlobalToolSettings() : MapFromDto(blob.Tools);
         GlobalInstructionFiles = firstRun
             ? DefaultGlobalInstructionFiles
@@ -270,6 +283,7 @@ public sealed class SessionSettings : ISessionSettings
             AutoCompactionEnabled = AutoCompactionEnabled,
             AutoCompactionThresholdPercent = AutoCompactionThresholdPercent,
             AutoCompactionKeepRecentTurns = AutoCompactionKeepRecentTurns,
+            MaxToolIterations = MaxToolIterations,
             Tools = MapToDto(Global),
             InstructionFiles = NonEmpty(GlobalInstructionFiles),
             Scripts = ScriptsToDto(GlobalScripts),
@@ -306,6 +320,7 @@ public sealed class SessionSettings : ISessionSettings
                 AutoCompactionEnabled = AutoCompactionEnabled,
                 AutoCompactionThresholdPercent = AutoCompactionThresholdPercent,
                 AutoCompactionKeepRecentTurns = AutoCompactionKeepRecentTurns,
+                MaxToolIterations = MaxToolIterations,
                 Tools = MapToDto(Global),
                 InstructionFiles = NonEmpty(GlobalInstructionFiles),
                 Scripts = ScriptsToDto(GlobalScripts),
@@ -360,6 +375,8 @@ public sealed class SessionSettings : ISessionSettings
             ? Math.Clamp(p, 1, 95) : 75;
         AutoCompactionKeepRecentTurns = blob.AutoCompactionKeepRecentTurns is int k
             ? Math.Clamp(k, 1, 50) : 4;
+        MaxToolIterations = blob.MaxToolIterations is int mi
+            ? Math.Clamp(mi, 1, 100) : AgentLoopOptions.Default.MaxIterations;
         Global = MapFromDto(blob.Tools);
         GlobalInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
         GlobalScripts = ScriptsFromDto(blob.Scripts);
@@ -433,6 +450,7 @@ public sealed class SessionSettings : ISessionSettings
         public bool? AutoCompactionEnabled { get; set; }
         public int? AutoCompactionThresholdPercent { get; set; }
         public int? AutoCompactionKeepRecentTurns { get; set; }
+        public int? MaxToolIterations { get; set; }
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
         public List<string>? InstructionFiles { get; set; }
         public ScriptsDto? Scripts { get; set; }

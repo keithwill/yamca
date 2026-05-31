@@ -35,6 +35,23 @@
             {
                 <MudProgressLinear Indeterminate="true" />
             }
+            @if (Turn.MaxIterationsReached && !Turn.IsRunning)
+            {
+                <MudPaper Class="pa-3 mt-2 d-flex align-center" Elevation="0" Outlined="true" Style="gap: 12px;">
+                    <MudIcon Icon="@Icons.Material.Outlined.HourglassDisabled" Color="Color.Warning" />
+                    <div class="flex-grow-1">
+                        <MudText Typo="Typo.body2">Paused — reached the maximum number of tool-call iterations for this turn.</MudText>
+                        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+                            The agent kept calling tools without finishing a reply. Continue to let it keep working, or raise the limit in Preferences.
+                        </MudText>
+                    </div>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.PlayArrow"
+                               OnClick="OnContinueClicked">
+                        Continue
+                    </MudButton>
+                </MudPaper>
+            }
             @if (Turn.Error is not null)
             {
                 <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@Turn.Error</MudAlert>
@@ -45,7 +62,14 @@
 
 @code {
     [Parameter, EditorRequired] public ChatTurn Turn { get; set; } = default!;
+
+    /// <summary>Invoked when the user clicks "Continue" on a turn parked at the
+    /// tool-call iteration cap. Resumes the same turn without a new user message.</summary>
+    [Parameter] public EventCallback OnContinue { get; set; }
+
     [Inject] private SessionSettings Session { get; set; } = default!;
+
+    private Task OnContinueClicked() => OnContinue.InvokeAsync();
 
     // Collapsed mode: stay expanded live, auto-collapse once the closing tag arrives.
     // Expanded mode: always open.

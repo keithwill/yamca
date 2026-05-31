@@ -214,6 +214,31 @@ public sealed class ChatViewModel : IDisposable
         var turn = new ChatTurn(prompt);
         Turns.Add(turn);
 
+        await DriveAsync(turn, ct => _loop!.RunTurnAsync(prompt, ct)).ConfigureAwait(false);
+    }
+
+    /// <summary>Resume the most recent turn after it stopped at the tool-call iteration
+    /// cap. No new user message is added — the agent loop picks up from the pending tool
+    /// results. No-op unless that turn is actually parked at the cap and nothing is running.</summary>
+    public async Task ContinueAsync()
+    {
+        if (IsRunning) return;
+        if (IsReadOnly) return;
+        if (_loop is null) return;
+
+        var turn = Turns.LastOrDefault();
+        if (turn is null || !turn.MaxIterationsReached) return;
+
+        turn.MaxIterationsReached = false;
+        await DriveAsync(turn, ct => _loop.ContinueTurnAsync(ct)).ConfigureAwait(false);
+    }
+
+    /// <summary>Shared run scaffolding for both a fresh turn and a continuation: flips the
+    /// running flags, streams events into <paramref name="turn"/>, then compacts and
+    /// persists. The <paramref name="run"/> delegate is the only difference between the two.</summary>
+    private async Task DriveAsync(ChatTurn turn, Func<CancellationToken, IAsyncEnumerable<ChatStreamEvent>> run)
+    {
+        turn.IsRunning = true;
         IsRunning = true;
         Error = null;
         Raise();
@@ -223,7 +248,7 @@ public sealed class ChatViewModel : IDisposable
 
         try
         {
-            await foreach (var ev in _loop!.RunTurnAsync(prompt, ct).ConfigureAwait(false))
+            await foreach (var ev in run(ct).ConfigureAwait(false))
             {
                 Apply(turn, ev);
                 Raise();
@@ -452,7 +477,8 @@ public sealed class ChatViewModel : IDisposable
         }
 
         _loop = new AgentLoop(
-            session, completion, _tools, _permissions, _availability, _approvals, _permissionStore, _workspace, _loadedTools);
+            session, completion, _tools, _permissions, _availability, _approvals, _permissionStore, _workspace, _loadedTools,
+            new AgentLoopOptions { MaxIterations = _settings.MaxToolIterations });
 
         StartApprovalConsumer();
         _ = DetectCapabilitiesAsync(endpoint);
@@ -586,7 +612,9 @@ public sealed class ChatViewModel : IDisposable
                 _lastReportedCompletionTokens = usage.CompletionTokens;
                 break;
 
-            case TurnCompleteEvent: /* nothing to do — finally{} handles it */ break;
+            case TurnCompleteEvent complete:
+                turn.MaxIterationsReached = complete.Reason == TurnCompletionReason.MaxIterationsReached;
+                break;
         }
     }
 

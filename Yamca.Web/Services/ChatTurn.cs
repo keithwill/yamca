@@ -13,6 +13,11 @@ public sealed class ChatTurn
     public List<ChatTurnItem> Items { get; } = new();
     public bool IsRunning { get; internal set; } = true;
     public string? Error { get; internal set; }
+
+    /// <summary>Set when the agent loop stopped because it hit the configured tool-call
+    /// iteration cap rather than finishing with a plain reply. Drives the "continue"
+    /// affordance in the turn view; cleared when the user resumes the turn.</summary>
+    public bool MaxIterationsReached { get; internal set; }
 }
 
 public abstract class ChatTurnItem;

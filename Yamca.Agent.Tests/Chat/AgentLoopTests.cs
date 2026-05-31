@@ -203,6 +203,31 @@ public class AgentLoopTests
     }
 
     [Test]
+    public async Task ContinueTurnAsync_ResumesCappedTurnWithoutNewUserMessage()
+    {
+        _loop = new AgentLoop(
+            new ChatSession("sys"), _llm, _registry, _resolver, _availability, _approvals, _store, _ws.Workspace, _loaded,
+            new AgentLoopOptions { MaxIterations = 1 });
+
+        // First turn: one tool call, then the cap is hit before the model can reply.
+        _llm.EnqueueToolCall("c1", "read_file", "{}");
+        var first = await Collect(_loop.RunTurnAsync("go"));
+        Assert.That(first.OfType<TurnCompleteEvent>().Single().Reason,
+            Is.EqualTo(TurnCompletionReason.MaxIterationsReached));
+        var messagesAfterFirst = _loop.Session.Messages.Count;
+
+        // Continue: the model now produces a plain reply. No user message is appended.
+        _llm.EnqueueText("all done");
+        var resumed = await Collect(_loop.ContinueTurnAsync());
+
+        Assert.That(resumed.OfType<AssistantMessageEvent>().Single().Content, Is.EqualTo("all done"));
+        Assert.That(resumed.OfType<TurnCompleteEvent>().Single().Reason,
+            Is.EqualTo(TurnCompletionReason.AssistantReply));
+        // Exactly one assistant message added by the continuation — no extra user turn.
+        Assert.That(_loop.Session.Messages, Has.Count.EqualTo(messagesAfterFirst + 1));
+    }
+
+    [Test]
     public async Task UnknownTool_ReportsErrorAndContinues()
     {
         _llm.EnqueueToolCall("c1", "does_not_exist", "{}");

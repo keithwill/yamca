@@ -194,7 +194,7 @@
                         <span style="flex: 1 1 0; border-top: 1px solid var(--mud-palette-divider);"></span>
                     </div>
                 }
-                <ChatTurnView Turn="Chat.Turns[i]" />
+                <ChatTurnView Turn="Chat.Turns[i]" OnContinue="OnContinue" />
             }
 
             @foreach (var approval in Chat.Approvals.ToList())
@@ -509,6 +509,12 @@
     }
 
     private void OnCancel() => Chat.Cancel();
+
+    private async Task OnContinue()
+    {
+        if (Chat.IsRunning) return;
+        await Chat.ContinueAsync();
+    }
 
     private void OpenCompactionSummary()
     {
