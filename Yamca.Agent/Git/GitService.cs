@@ -37,6 +37,17 @@ public sealed record WorktreeDiffStat(int FilesChanged, int Insertions, int Dele
     public bool IsEmpty => FilesChanged == 0 && UncommittedFiles == 0;
 }
 
+/// <summary>How a file changed in a worktree relative to its fork point. <see cref="Renamed"/>
+/// carries the previous path; a copy is reported as <see cref="Added"/>.</summary>
+public enum WorktreeChangeKind { Added, Modified, Deleted, Renamed }
+
+/// <summary>One changed file in a worktree relative to where its branch forked from base.
+/// <see cref="Path"/> is the current path (POSIX separators; the new path for a rename),
+/// <see cref="OldPath"/> the previous path for a rename (else null), and
+/// <see cref="Uncommitted"/> is true when the file currently has pending changes (staged,
+/// unstaged, or untracked) rather than being fully committed on the branch.</summary>
+public sealed record WorktreeFileChange(string Path, string? OldPath, WorktreeChangeKind Kind, bool Uncommitted);
+
 /// <summary>Thin wrapper around the <c>git</c> CLI. All methods return a
 /// <see cref="GitResult"/> rather than throwing on non-zero exit so callers can
 /// surface stderr to the user.</summary>
@@ -331,10 +342,8 @@ public sealed class GitService
     public async Task<WorktreeDiffStat?> GetWorktreeDiffStatAsync(string worktreePath, string baseBranch, CancellationToken ct)
     {
         // Fork point: where this branch diverged from base. Diffing the working tree against it
-        // captures committed branch work plus uncommitted tracked edits in a single pass. Fall back
-        // to the base tip if the two share no common ancestor (e.g. unrelated histories).
-        var mergeBase = await RunAsync(worktreePath, ["merge-base", baseBranch, "HEAD"], ct).ConfigureAwait(false);
-        var basis = mergeBase.Ok && mergeBase.Stdout.Trim() is { Length: > 0 } sha ? sha : baseBranch;
+        // captures committed branch work plus uncommitted tracked edits in a single pass.
+        var basis = await GetMergeBaseAsync(worktreePath, baseBranch, ct).ConfigureAwait(false);
 
         var numstat = await RunAsync(worktreePath, ["diff", "--numstat", basis], ct).ConfigureAwait(false);
         var status = await RunAsync(worktreePath, ["status", "--porcelain"], ct).ConfigureAwait(false);
@@ -358,6 +367,108 @@ public sealed class GitService
             .Length;
 
         return new WorktreeDiffStat(files, insertions, deletions, uncommitted);
+    }
+
+    /// <summary>The fork point of <paramref name="path"/>'s branch from <paramref name="baseBranch"/>
+    /// (<c>git merge-base</c>) — the commit to diff against to see "what this branch introduced".
+    /// Falls back to <paramref name="baseBranch"/> itself when the two share no common ancestor
+    /// (e.g. unrelated histories), so callers always get a usable ref.</summary>
+    public async Task<string> GetMergeBaseAsync(string path, string baseBranch, CancellationToken ct)
+    {
+        var mergeBase = await RunAsync(path, ["merge-base", baseBranch, "HEAD"], ct).ConfigureAwait(false);
+        return mergeBase.Ok && mergeBase.Stdout.Trim() is { Length: > 0 } sha ? sha : baseBranch;
+    }
+
+    /// <summary>The files a worktree changed relative to where its branch forked from
+    /// <paramref name="baseBranch"/>: committed branch work plus uncommitted tracked edits (from
+    /// <c>git diff --name-status</c> against the merge base, with rename detection) merged with
+    /// untracked files (from <c>git status --porcelain</c>, which <c>git diff</c> against a commit
+    /// does not report). Each entry's <see cref="WorktreeFileChange.Uncommitted"/> flag marks files
+    /// that still have pending changes versus the committed state. Returns an empty list when git
+    /// cannot be run at all.</summary>
+    public async Task<IReadOnlyList<WorktreeFileChange>> GetWorktreeChangesAsync(string worktreePath, string baseBranch, CancellationToken ct)
+    {
+        var basis = await GetMergeBaseAsync(worktreePath, baseBranch, ct).ConfigureAwait(false);
+        var diff = await RunAsync(worktreePath, ["diff", "--name-status", "-M", basis], ct).ConfigureAwait(false);
+        var status = await RunAsync(worktreePath, ["status", "--porcelain"], ct).ConfigureAwait(false);
+        if (!diff.Ok && !status.Ok) return Array.Empty<WorktreeFileChange>();
+        return ParseWorktreeChanges(diff.Stdout, status.Stdout);
+    }
+
+    /// <summary>Pure parse of <c>git diff --name-status -M &lt;base&gt;</c> output merged with
+    /// <c>git status --porcelain</c>: the diff supplies the tracked changes and their A/M/D/R kind,
+    /// the porcelain supplies which of those have pending edits (the <c>Uncommitted</c> flag) and the
+    /// untracked files the diff omits. Split out from <see cref="GetWorktreeChangesAsync"/> so the
+    /// merge logic is unit-testable without invoking git.</summary>
+    internal static IReadOnlyList<WorktreeFileChange> ParseWorktreeChanges(string diffNameStatus, string statusPorcelain)
+    {
+        // From porcelain: every path with a pending change (so diff entries can be flagged), plus the
+        // untracked paths, which never show up in `git diff` against a commit and must be added here.
+        var pending = new HashSet<string>(StringComparer.Ordinal);
+        var untracked = new List<string>();
+        foreach (var raw in statusPorcelain.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            if (line.Length < 3) continue;
+            var code = line[..2];
+            var rest = line[3..];
+            if (code == "??")
+            {
+                untracked.Add(Unquote(rest));
+                continue;
+            }
+            // Porcelain renders a rename as "old -> new"; the pending edit is to the new path.
+            var arrow = rest.IndexOf(" -> ", StringComparison.Ordinal);
+            pending.Add(Unquote(arrow >= 0 ? rest[(arrow + 4)..] : rest));
+        }
+
+        var changes = new List<WorktreeFileChange>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var raw in diffNameStatus.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            if (line.Length == 0) continue;
+            var parts = line.Split('\t');
+            if (parts.Length < 2) continue;
+
+            string path;
+            string? oldPath = null;
+            WorktreeChangeKind kind;
+            switch (parts[0][0])
+            {
+                case 'A': kind = WorktreeChangeKind.Added; path = parts[1]; break;
+                case 'D': kind = WorktreeChangeKind.Deleted; path = parts[1]; break;
+                case 'R': kind = WorktreeChangeKind.Renamed; oldPath = parts[1]; path = parts.Length >= 3 ? parts[2] : parts[1]; break;
+                // A copy (C) leaves the source untouched; report only the new file, as an addition.
+                case 'C': kind = WorktreeChangeKind.Added; path = parts.Length >= 3 ? parts[2] : parts[1]; break;
+                default:  kind = WorktreeChangeKind.Modified; path = parts[1]; break;
+            }
+
+            if (!seen.Add(path)) continue;
+            changes.Add(new WorktreeFileChange(path, oldPath, kind, pending.Contains(path)));
+        }
+
+        foreach (var u in untracked)
+            if (seen.Add(u))
+                changes.Add(new WorktreeFileChange(u, OldPath: null, WorktreeChangeKind.Added, Uncommitted: true));
+
+        return changes.OrderBy(c => c.Path, StringComparer.Ordinal).ToList();
+    }
+
+    // git quotes paths containing unusual bytes in double quotes (core.quotepath). For display and
+    // for handing back to `git show`, strip a surrounding pair; exotic escapes inside are rare enough
+    // to leave as-is rather than fully C-unescape.
+    private static string Unquote(string path) =>
+        path.Length >= 2 && path[0] == '"' && path[^1] == '"' ? path[1..^1] : path;
+
+    /// <summary>Content of <paramref name="relativeFilePath"/> at an arbitrary committish
+    /// (<c>git show &lt;refish&gt;:&lt;path&gt;</c>) — e.g. a merge-base SHA for the "before" side of
+    /// a worktree diff. <paramref name="relativeFilePath"/> uses POSIX separators (as git emits).
+    /// Returns <see langword="null"/> when the path does not exist at that ref (e.g. an added file).</summary>
+    public async Task<string?> ShowFileAtRefAsync(string worktreePath, string refish, string relativeFilePath, CancellationToken ct)
+    {
+        var r = await RunAsync(worktreePath, ["show", $"{refish}:{relativeFilePath}"], ct).ConfigureAwait(false);
+        return r.Ok ? r.Stdout : null;
     }
 
     /// <summary>Author date of the commit that first added <paramref name="filePath"/>

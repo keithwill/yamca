@@ -369,6 +369,14 @@ else
         var existingBranches = await Git.ListBranchesAsync(Workspace.RepositoryRoot, CancellationToken.None);
         var boardRoot = await BoardWorktree.EnsureAsync(CancellationToken.None);
         var next = _snapshot.NextColumn(column);
+
+        // When the card's branch has a live code worktree, hand the dialog its path and the repo's
+        // base branch so the Changes tab can diff that worktree against the branch's fork point.
+        var worktreePath = !string.IsNullOrWhiteSpace(card.Branch)
+                           && _branchWorktrees.TryGetValue(card.Branch!, out var wp) ? wp : null;
+        var baseBranch = worktreePath is null
+            ? ""
+            : await Git.GetCurrentBranchAsync(Workspace.RepositoryRoot, CancellationToken.None) ?? "";
         var parameters = new DialogParameters
         {
             ["Card"] = card,
@@ -390,6 +398,8 @@ else
             ["Columns"] = _snapshot.Columns
                 .Select(c => new CardDetailDialog.ColumnOption(c.DirectoryName, c.DisplayName)).ToList(),
             ["CurrentColumnDirectory"] = column.DirectoryName,
+            ["WorktreePath"] = worktreePath,
+            ["BaseBranch"] = baseBranch,
         };
         var dialog = await Dialogs.ShowAsync<CardDetailDialog>($"#{card.Id} {card.Title}", parameters,
             new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });

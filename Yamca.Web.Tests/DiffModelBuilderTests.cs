@@ -16,6 +16,15 @@ public class DiffModelBuilderTests
     }
 
     [Test]
+    public void LineEndingOnlyDifference_IsNotADiff()
+    {
+        // The Changes tab feeds git output (re-joined with the OS newline, CRLF on Windows) against
+        // the working copy read from disk (often LF). Those must not register as an all-modified file.
+        var doc = DiffModelBuilder.Build("a\nb\nc\n", "a\r\nb\r\nc\r\n");
+        Assert.That(doc.IsEmpty, Is.True);
+    }
+
+    [Test]
     public void PureAddition_CountsInsertionsOnly()
     {
         var doc = DiffModelBuilder.Build("", "line1\nline2\n");

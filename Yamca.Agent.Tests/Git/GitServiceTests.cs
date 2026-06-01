@@ -270,6 +270,92 @@ public class GitServiceTests
         await _svc.RemoveWorktreeAsync(_root, wtPath, force: true, CancellationToken.None);
     }
 
+    [Test]
+    public async Task GetWorktreeChanges_ListsCommittedAndUncommitted_WithStatusAndFlags()
+    {
+        var wtPath = Path.Combine(_root, ".yamca", "worktrees", "changes");
+        var add = await _svc.CreateWorktreeAsync(_root, wtPath, "feature/changes", isNewBranch: true, CancellationToken.None);
+        Assert.That(add.Ok, Is.True, add.Stderr);
+
+        // Committed: modify README and add a new committed file.
+        await File.WriteAllTextAsync(Path.Combine(wtPath, "README.md"), "hello\nmore\n");
+        await File.WriteAllTextAsync(Path.Combine(wtPath, "committed.txt"), "c\n");
+        await RunGitInAsync(wtPath, "add", ".");
+        await RunGitInAsync(wtPath, "commit", "-m", "branch work");
+
+        // Uncommitted: an untracked new file and an edit to the committed file.
+        await File.WriteAllTextAsync(Path.Combine(wtPath, "untracked.txt"), "u\n");
+        await File.WriteAllTextAsync(Path.Combine(wtPath, "committed.txt"), "c\nedited\n");
+
+        var changes = await _svc.GetWorktreeChangesAsync(wtPath, "main", CancellationToken.None);
+        var byPath = changes.ToDictionary(c => c.Path);
+
+        Assert.That(byPath.ContainsKey("README.md"), Is.True);
+        Assert.That(byPath["README.md"].Kind, Is.EqualTo(WorktreeChangeKind.Modified));
+        Assert.That(byPath["README.md"].Uncommitted, Is.False, "README was only changed in a commit");
+
+        // committed.txt was added on the branch then edited again without committing.
+        Assert.That(byPath["committed.txt"].Uncommitted, Is.True);
+
+        // Untracked files don't show in `git diff` against the base; they're folded in as additions.
+        Assert.That(byPath.ContainsKey("untracked.txt"), Is.True);
+        Assert.That(byPath["untracked.txt"].Kind, Is.EqualTo(WorktreeChangeKind.Added));
+        Assert.That(byPath["untracked.txt"].Uncommitted, Is.True);
+
+        await _svc.RemoveWorktreeAsync(_root, wtPath, force: true, CancellationToken.None);
+    }
+
+    [Test]
+    public async Task ShowFileAtRef_ReturnsContentAtMergeBase()
+    {
+        var wtPath = Path.Combine(_root, ".yamca", "worktrees", "showref");
+        await _svc.CreateWorktreeAsync(_root, wtPath, "feature/showref", isNewBranch: true, CancellationToken.None);
+
+        await File.WriteAllTextAsync(Path.Combine(wtPath, "README.md"), "hello\nchanged\n");
+        await RunGitInAsync(wtPath, "commit", "-am", "change readme");
+
+        var basis = await _svc.GetMergeBaseAsync(wtPath, "main", CancellationToken.None);
+        var atBase = await _svc.ShowFileAtRefAsync(wtPath, basis, "README.md", CancellationToken.None);
+
+        // The fork point still has the original content, not the branch's edit. (git output is read
+        // line-by-line and re-joined with the OS newline, so compare on content not exact endings.)
+        Assert.That(atBase?.Replace("\r\n", "\n"), Is.EqualTo("hello\n"));
+        // A path that doesn't exist at that ref returns null rather than throwing.
+        Assert.That(await _svc.ShowFileAtRefAsync(wtPath, basis, "nope.txt", CancellationToken.None), Is.Null);
+
+        await _svc.RemoveWorktreeAsync(_root, wtPath, force: true, CancellationToken.None);
+    }
+
+    [Test]
+    public void ParseWorktreeChanges_MapsStatusLetters_RenamesAndUntracked()
+    {
+        // R100 carries old\tnew (tab-separated); the new path is what we surface, old is retained.
+        var diff = "M\tsrc/a.cs\nA\tsrc/added.cs\nD\tsrc/gone.cs\nR100\tsrc/old.cs\tsrc/new.cs\n";
+        // a.cs has an unstaged edit; b.txt is untracked; new.cs has a staged rename pending.
+        var porcelain = " M src/a.cs\n?? src/b.txt\nR  src/old.cs -> src/new.cs\n";
+
+        var changes = GitService.ParseWorktreeChanges(diff, porcelain);
+        var byPath = changes.ToDictionary(c => c.Path);
+
+        Assert.That(byPath["src/a.cs"].Kind, Is.EqualTo(WorktreeChangeKind.Modified));
+        Assert.That(byPath["src/a.cs"].Uncommitted, Is.True);
+        Assert.That(byPath["src/added.cs"].Kind, Is.EqualTo(WorktreeChangeKind.Added));
+        Assert.That(byPath["src/added.cs"].Uncommitted, Is.False);
+        Assert.That(byPath["src/gone.cs"].Kind, Is.EqualTo(WorktreeChangeKind.Deleted));
+
+        var renamed = byPath["src/new.cs"];
+        Assert.That(renamed.Kind, Is.EqualTo(WorktreeChangeKind.Renamed));
+        Assert.That(renamed.OldPath, Is.EqualTo("src/old.cs"));
+        Assert.That(renamed.Uncommitted, Is.True);
+
+        // Untracked file from porcelain, absent from the diff, is added as a new file.
+        Assert.That(byPath["src/b.txt"].Kind, Is.EqualTo(WorktreeChangeKind.Added));
+        Assert.That(byPath["src/b.txt"].Uncommitted, Is.True);
+
+        // Sorted by path for a stable list.
+        Assert.That(changes.Select(c => c.Path), Is.Ordered.Using<string>(StringComparer.Ordinal));
+    }
+
     private async Task CommitFile(string relative, string content)
     {
         File.WriteAllText(Path.Combine(_root, relative), content);
