@@ -269,6 +269,138 @@ public class AgentLoopTests
         Assert.That(result.Content, Does.Contain("boom"));
     }
 
+    // --- call_tool dispatcher -------------------------------------------------------
+
+    // Builds a loop whose registry contains a single deferred tool, reachable only via call_tool.
+    private (AgentLoop loop, StubTool inner) NewDeferredLoop(
+        string name = "secret_tool", PermissionLevel permission = PermissionLevel.Allow)
+    {
+        var inner = new StubTool(name, permission);
+        _registry = new ToolRegistry(new ITool[] { inner });
+        _resolver = new PermissionResolver(_registry, _settings);
+        _availability = new Yamca.Agent.Tests.Tools.TestAvailabilityResolver(_registry).Set(name, Availability.Deferred);
+        _loaded = new LoadedToolSet();
+        var loop = new AgentLoop(
+            new ChatSession("sys"), _llm, _registry, _resolver, _availability, _approvals, _store, _ws.Workspace, _loaded,
+            new AgentLoopOptions { MaxIterations = 5 });
+        return (loop, inner);
+    }
+
+    [Test]
+    public async Task CallTool_FirstDispatch_ReturnsSchemaWithoutExecuting()
+    {
+        var (loop, inner) = NewDeferredLoop();
+        _llm.EnqueueToolCall("c1", "call_tool", """{"name":"secret_tool","arguments":{"x":1}}""");
+        _llm.EnqueueText("ok");
+
+        var events = await Collect(loop.RunTurnAsync("go"));
+
+        Assert.That(inner.Invocations, Is.Empty, "first dispatch must not execute the tool");
+        var result = events.OfType<ToolCallResultEvent>().Single();
+        Assert.That(result.IsError, Is.True);
+        Assert.That(result.ToolName, Is.EqualTo("secret_tool"), "UI should reference the real tool, not call_tool");
+        Assert.That(result.Content, Does.Contain("secret_tool"));
+        Assert.That(_loaded.Contains("secret_tool"), Is.True, "schema return should mark the tool loaded");
+    }
+
+    [Test]
+    public async Task CallTool_AfterLookup_ExecutesInnerToolWithRealNameAndArgs()
+    {
+        var (loop, inner) = NewDeferredLoop();
+        _loaded.MarkLoaded("secret_tool"); // simulate a prior lookup_tool
+        _llm.EnqueueToolCall("c1", "call_tool", """{"name":"secret_tool","arguments":{"x":1}}""");
+        _llm.EnqueueText("done");
+
+        var events = await Collect(loop.RunTurnAsync("go"));
+
+        Assert.That(inner.Invocations, Has.Count.EqualTo(1));
+        Assert.That(events.OfType<ToolCallStartedEvent>().Single().ToolName, Is.EqualTo("secret_tool"));
+        var result = events.OfType<ToolCallResultEvent>().Single();
+        Assert.That(result.IsError, Is.False);
+        Assert.That(result.ToolName, Is.EqualTo("secret_tool"));
+    }
+
+    [Test]
+    public async Task CallTool_UnknownInnerTool_ReportsError()
+    {
+        var (loop, _) = NewDeferredLoop();
+        _llm.EnqueueToolCall("c1", "call_tool", """{"name":"ghost"}""");
+        _llm.EnqueueText("ok");
+
+        var events = await Collect(loop.RunTurnAsync("go"));
+
+        var denied = events.OfType<ToolDeniedEvent>().Single();
+        Assert.That(denied.ToolName, Is.EqualTo("ghost"));
+        Assert.That(denied.Reason, Does.Contain("lookup_tool"));
+    }
+
+    [Test]
+    public async Task CallTool_OnEagerTool_ReportsMisuseWithoutExecuting()
+    {
+        // _tool ("read_file") is eager; dispatching it through call_tool is a misuse.
+        _llm.EnqueueToolCall("c1", "call_tool", """{"name":"read_file","arguments":{}}""");
+        _llm.EnqueueText("ok");
+
+        var events = await Collect(_loop.RunTurnAsync("go"));
+
+        Assert.That(_tool.Invocations, Is.Empty);
+        var result = events.OfType<ToolCallResultEvent>().Single();
+        Assert.That(result.IsError, Is.True);
+        Assert.That(result.Content, Does.Contain("call it directly"));
+    }
+
+    [Test]
+    public async Task DirectCallToDeferredTool_RedirectsToCallTool()
+    {
+        var (loop, inner) = NewDeferredLoop();
+        _loaded.MarkLoaded("secret_tool");
+        _llm.EnqueueToolCall("c1", "secret_tool", "{}"); // bypassing the dispatcher
+        _llm.EnqueueText("ok");
+
+        var events = await Collect(loop.RunTurnAsync("go"));
+
+        Assert.That(inner.Invocations, Is.Empty);
+        var denied = events.OfType<ToolDeniedEvent>().Single();
+        Assert.That(denied.ToolName, Is.EqualTo("secret_tool"));
+        Assert.That(denied.Reason, Does.Contain("call_tool"));
+    }
+
+    [Test]
+    public async Task CallTool_PermissionResolvesAgainstInnerTool()
+    {
+        // The deferred tool is denied via settings; the dispatcher must apply that to the inner
+        // tool's name (not "call_tool") and refuse to execute.
+        var (loop, inner) = NewDeferredLoop("danger_tool");
+        _loaded.MarkLoaded("danger_tool");
+        _settings.Project = new Yamca.Agent.Settings.ToolSettingsMap(
+            new Dictionary<string, Yamca.Agent.Settings.ToolPermissionSettings>
+            {
+                ["danger_tool"] = new() { Permission = PermissionLevel.Deny },
+            });
+
+        _llm.EnqueueToolCall("c1", "call_tool", """{"name":"danger_tool","arguments":{}}""");
+        _llm.EnqueueText("ack");
+
+        var events = await Collect(loop.RunTurnAsync("go"));
+
+        Assert.That(inner.Invocations, Is.Empty);
+        Assert.That(events.OfType<ToolDeniedEvent>().Single().ToolName, Is.EqualTo("danger_tool"));
+    }
+
+    [Test]
+    public async Task CallTool_InvalidArgumentsJson_ReportsError()
+    {
+        var (loop, _) = NewDeferredLoop();
+        _llm.EnqueueToolCall("c1", "call_tool", "{not json");
+        _llm.EnqueueText("ok");
+
+        var events = await Collect(loop.RunTurnAsync("go"));
+
+        var result = events.OfType<ToolCallResultEvent>().Single();
+        Assert.That(result.IsError, Is.True);
+        Assert.That(result.Content, Does.Contain("call_tool"));
+    }
+
     private static async Task<List<ChatStreamEvent>> Collect(IAsyncEnumerable<ChatStreamEvent> stream)
     {
         var list = new List<ChatStreamEvent>();

@@ -47,14 +47,14 @@ public class ToolRegistryTests
     }
 
     [Test]
-    public void GetChatTools_ExcludesDeferredTools_WhenNotLoaded()
+    public void GetChatTools_ExcludesDeferredTools()
     {
         var registry = NewRegistry();
         var availability = new TestAvailabilityResolver(registry);
 
-        var chatTools = registry.GetChatTools(new LoadedToolSet(), availability);
+        var chatTools = registry.GetChatTools(availability);
 
-        // delete_file and execute_command are deferred — should not appear in the initial list.
+        // delete_file and execute_command are deferred — should not appear in the prefix list.
         Assert.That(chatTools.Select(t => t.Name), Is.EquivalentTo(new[]
         {
             "read_file", "write_file", "list_directory"
@@ -67,19 +67,20 @@ public class ToolRegistryTests
     }
 
     [Test]
-    public void GetChatTools_IncludesDeferredTools_OnceLoaded()
+    public void GetChatTools_IsCacheStable_DeferredNeverEnterPrefix()
     {
+        // The dispatcher's whole point: discovering a deferred tool must not change the prefix
+        // tool list, so the prompt-prefix cache survives. GetChatTools no longer depends on any
+        // load state, so its output is identical before and after a tool would be "looked up".
         var registry = NewRegistry();
         var availability = new TestAvailabilityResolver(registry);
-        var loaded = new LoadedToolSet();
-        loaded.MarkLoaded("delete_file");
 
-        var chatTools = registry.GetChatTools(loaded, availability);
+        var before = registry.GetChatTools(availability).Select(t => t.Name).ToList();
+        var after = registry.GetChatTools(availability).Select(t => t.Name).ToList();
 
-        Assert.That(chatTools.Select(t => t.Name), Is.EquivalentTo(new[]
-        {
-            "read_file", "write_file", "list_directory", "delete_file"
-        }));
+        Assert.That(after, Is.EqualTo(before));
+        Assert.That(after, Does.Not.Contain("delete_file"));
+        Assert.That(after, Does.Not.Contain("execute_command"));
     }
 
     [Test]
@@ -101,7 +102,7 @@ public class ToolRegistryTests
         var availability = new TestAvailabilityResolver(registry)
             .Set("read_file", Availability.Deferred);
 
-        var chatTools = registry.GetChatTools(new LoadedToolSet(), availability);
+        var chatTools = registry.GetChatTools(availability);
 
         Assert.That(chatTools.Select(t => t.Name), Does.Not.Contain("read_file"));
         Assert.That(registry.GetDeferredTools(availability).Select(t => t.Name), Does.Contain("read_file"));
@@ -114,7 +115,7 @@ public class ToolRegistryTests
         var availability = new TestAvailabilityResolver(registry)
             .Set("delete_file", Availability.Eager);
 
-        var chatTools = registry.GetChatTools(new LoadedToolSet(), availability);
+        var chatTools = registry.GetChatTools(availability);
 
         Assert.That(chatTools.Select(t => t.Name), Does.Contain("delete_file"));
     }
@@ -126,7 +127,7 @@ public class ToolRegistryTests
         var availability = new TestAvailabilityResolver(registry)
             .Set("delete_file", Availability.Hidden);
 
-        var chat = registry.GetChatTools(new LoadedToolSet(), availability).Select(t => t.Name).ToList();
+        var chat = registry.GetChatTools(availability).Select(t => t.Name).ToList();
         var deferred = registry.GetDeferredTools(availability).Select(t => t.Name).ToList();
 
         Assert.That(chat, Does.Not.Contain("delete_file"));

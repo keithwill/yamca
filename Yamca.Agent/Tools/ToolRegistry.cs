@@ -57,9 +57,8 @@ public sealed class ToolRegistry : IToolRegistry
         return null;
     }
 
-    public IReadOnlyList<ChatTool> GetChatTools(LoadedToolSet loaded, IAvailabilityResolver availability)
+    public IReadOnlyList<ChatTool> GetChatTools(IAvailabilityResolver availability)
     {
-        ArgumentNullException.ThrowIfNull(loaded);
         ArgumentNullException.ThrowIfNull(availability);
         var dynamicTools = CollectDynamic(out var dynamicNames);
         var result = new List<ChatTool>();
@@ -67,8 +66,10 @@ public sealed class ToolRegistry : IToolRegistry
         {
             if (!t.ExposedToLlm) continue;
             var av = availability.Resolve(t.Name);
-            if (av == Availability.Hidden) continue;
-            if (av == Availability.Deferred && !loaded.Contains(t.Name)) continue;
+            // Only Eager tools enter the prefix. Deferred tools are reached via call_tool so
+            // their schemas never join the prefix and never invalidate the prefix cache; Hidden
+            // tools are invisible to the model entirely.
+            if (av != Availability.Eager) continue;
             result.Add(new ChatTool(t.Name, t.Description, t.ParametersSchema));
         }
         return result;

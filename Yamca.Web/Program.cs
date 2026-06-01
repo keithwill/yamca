@@ -168,7 +168,12 @@ builder.Services.AddSingleton<ITool, CodeFindCallsTool>();
 builder.Services.AddSingleton<ITool, CodeFindReferencesTool>();
 builder.Services.AddSingleton<ITool, CodeSearchTool>();
 builder.Services.AddSingleton<ITool, CodeEditSymbolTool>();
-builder.Services.AddScoped<ITool, LoadToolTool>();
+// Deferred-tool dispatcher: lookup_tool surfaces schemas as tool-result content, call_tool
+// invokes them. Both stay in the prefix for the whole session; deferred tool schemas never do,
+// which is what preserves the prompt-prefix cache. Scoped because lookup_tool reads the
+// per-session LoadedToolSet.
+builder.Services.AddScoped<ITool, LookupToolTool>();
+builder.Services.AddScoped<ITool, CallToolTool>();
 
 // Dev board tools. Reads default to Allow; the mutating move/update tools default to Ask
 // (like write_file/edit_file). They resolve the board through BoardWorktree and commit mutations
@@ -207,8 +212,8 @@ builder.Services.AddSingleton<McpConfigFileStore>(_ => new McpConfigFileStore(Us
 builder.Services.AddScoped<IToolRegistry>(sp =>
     new ToolRegistry(sp.GetServices<ITool>(), sp.GetServices<IDynamicToolSource>()));
 
-// Per-session set of deferred tools the LLM has loaded via load_tool. Scoped so
-// each browser circuit / chat session starts with an empty set.
+// Per-session set of deferred tools whose schemas the LLM has seen (via lookup_tool or a
+// call_tool self-correction). Scoped so each browser circuit / chat session starts empty.
 builder.Services.AddScoped<LoadedToolSet>();
 
 // Per-circuit (scoped) state — each browser tab gets its own settings, approval

@@ -82,10 +82,11 @@ public sealed class AgentLoop
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Rebuild each iteration so schemas loaded by load_tool mid-turn become
-            // visible to the LLM on the very next round-trip. The resolver is also
-            // queried per iteration so user toggles on the Tools page take effect live.
-            var chatTools = _tools.GetChatTools(_loadedTools, _availability);
+            // Rebuilt each iteration so live availability toggles on the Tools page take
+            // effect. The set is intentionally cache-stable: deferred tools never enter it
+            // (they are invoked via call_tool), so it does not grow as the model discovers
+            // tools — which is what keeps the prompt prefix cache intact across a session.
+            var chatTools = _tools.GetChatTools(_availability);
 
             // Signal the start of a model round-trip so the UI can show a prompt-processing
             // indicator during the silent gap before the first token arrives.
@@ -146,68 +147,152 @@ public sealed class AgentLoop
         LlmToolCallRequest call,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var tool = _tools.Get(call.ToolName);
-        if (tool is null)
+        // Unwrap the call_tool dispatcher to the real target. The tool result keeps the
+        // dispatcher's CallId (so it references the assistant's call_tool tool_call), but all
+        // routing, permissions, and UI events key on the inner tool. A plain (non-dispatch)
+        // call leaves target == call.
+        var viaDispatch = call.ToolName == CallToolTool.ToolName;
+        LlmToolCallRequest target = call;
+        if (viaDispatch)
         {
-            var msg = $"Unknown tool '{call.ToolName}'.";
+            var (ok, inner, error) = UnwrapDispatch(call);
+            if (!ok)
+            {
+                _session.AppendToolResult(call.CallId, error!);
+                yield return new ToolCallResultEvent(call.CallId, call.ToolName, IsError: true, Content: error!);
+                yield break;
+            }
+            target = inner!;
+        }
+
+        var tool = _tools.Get(target.ToolName);
+        var effective = tool is null ? Availability.Hidden : _availability.Resolve(tool.Name);
+
+        if (tool is null || effective == Availability.Hidden)
+        {
+            var msg = viaDispatch
+                ? $"Unknown deferred tool '{target.ToolName}'. Call lookup_tool with no arguments to see what is available."
+                : $"Unknown tool '{target.ToolName}'.";
             _session.AppendToolResult(call.CallId, msg);
-            yield return new ToolDeniedEvent(call.CallId, call.ToolName, msg);
+            yield return new ToolDeniedEvent(call.CallId, target.ToolName, msg);
             yield break;
         }
 
-        var effective = _availability.Resolve(tool.Name);
-        if (effective == Availability.Hidden)
+        // Deferred tools must go through call_tool; a direct call by name (a model hallucination,
+        // since deferred schemas are never in the prefix) is redirected rather than executed.
+        if (effective == Availability.Deferred && !viaDispatch)
         {
-            var msg = $"Unknown tool '{call.ToolName}'.";
+            var msg = $"Tool '{target.ToolName}' is deferred. Read its schema with lookup_tool, then invoke it via call_tool(name=\"{target.ToolName}\", arguments={{...}}).";
             _session.AppendToolResult(call.CallId, msg);
-            yield return new ToolDeniedEvent(call.CallId, call.ToolName, msg);
+            yield return new ToolDeniedEvent(call.CallId, target.ToolName, msg);
             yield break;
         }
+
+        // call_tool is only for deferred tools; dispatching an eager tool through it is a misuse.
+        if (effective == Availability.Eager && viaDispatch)
+        {
+            var msg = $"'{target.ToolName}' is a regular tool — call it directly, not through call_tool.";
+            _session.AppendToolResult(call.CallId, msg);
+            yield return new ToolCallResultEvent(call.CallId, target.ToolName, IsError: true, Content: msg);
+            yield break;
+        }
+
+        // Self-correction: the first dispatch of a tool the model has not looked up returns the
+        // schema instead of executing, so it can re-issue call_tool with valid arguments. Marking
+        // it loaded means the retry (or any call after an explicit lookup_tool) executes directly.
         if (effective == Availability.Deferred && !_loadedTools.Contains(tool.Name))
         {
-            var msg = $"Tool '{call.ToolName}' is deferred and has not been loaded. Call load_tool with tool_names=[\"{call.ToolName}\"] first.";
+            _loadedTools.MarkLoaded(tool.Name);
+            var schema = DeferredToolCatalog.Schemas(new[] { tool });
+            var msg = $"Tool '{tool.Name}' was not loaded yet, so it was not executed. Here is its schema — re-issue call_tool with arguments matching it:\n{schema}";
             _session.AppendToolResult(call.CallId, msg);
-            yield return new ToolDeniedEvent(call.CallId, call.ToolName, msg);
+            yield return new ToolCallResultEvent(call.CallId, target.ToolName, IsError: true, Content: msg);
             yield break;
         }
 
-        var (parsedOk, args, parseError) = TryParseArguments(call.ArgumentsJson);
+        var (parsedOk, args, parseError) = TryParseArguments(target.ArgumentsJson);
         if (!parsedOk)
         {
             var msg = $"Invalid JSON arguments: {parseError}";
             _session.AppendToolResult(call.CallId, msg);
-            yield return new ToolCallResultEvent(call.CallId, call.ToolName, IsError: true, Content: msg);
+            yield return new ToolCallResultEvent(call.CallId, target.ToolName, IsError: true, Content: msg);
             yield break;
         }
 
-        var level = _permissions.Resolve(call.ToolName);
+        var level = _permissions.Resolve(target.ToolName);
         if (level == PermissionLevel.Ask)
         {
-            var decision = await _approvals.RequestApprovalAsync(call.ToolName, args, cancellationToken)
+            var decision = await _approvals.RequestApprovalAsync(target.ToolName, args, cancellationToken)
                                            .ConfigureAwait(false);
 
             var resolved = decision.Approved ? PermissionLevel.Allow : PermissionLevel.Deny;
             if (decision.Persistence != ApprovalPersistence.None)
-                _permissionStore.Persist(call.ToolName, resolved, decision.Persistence);
+                _permissionStore.Persist(target.ToolName, resolved, decision.Persistence);
 
             level = resolved;
         }
 
         if (level == PermissionLevel.Deny)
         {
-            var reason = $"Permission denied for tool '{call.ToolName}'.";
+            var reason = $"Permission denied for tool '{target.ToolName}'.";
             _session.AppendToolResult(call.CallId, reason);
-            yield return new ToolDeniedEvent(call.CallId, call.ToolName, reason);
+            yield return new ToolDeniedEvent(call.CallId, target.ToolName, reason);
             yield break;
         }
 
-        yield return new ToolCallStartedEvent(call.CallId, call.ToolName, call.ArgumentsJson);
+        yield return new ToolCallStartedEvent(call.CallId, target.ToolName, target.ArgumentsJson);
 
-        var context = new ToolContext(_workspace, _permissions.RestrictToWorkspace(call.ToolName));
+        var context = new ToolContext(_workspace, _permissions.RestrictToWorkspace(target.ToolName));
         var result = await ExecuteToolSafelyAsync(tool, args, context, cancellationToken).ConfigureAwait(false);
 
         _session.AppendToolResult(call.CallId, result.Content);
-        yield return new ToolCallResultEvent(call.CallId, call.ToolName, result.IsError, result.Content);
+        yield return new ToolCallResultEvent(call.CallId, target.ToolName, result.IsError, result.Content);
+    }
+
+    /// <summary>Parse a <c>call_tool</c> invocation into a synthetic request for the inner tool,
+    /// preserving the dispatcher's <see cref="LlmToolCallRequest.CallId"/>. Accepts an
+    /// <c>arguments</c> object (the normal case) or a JSON-encoded string (some models do this).</summary>
+    private static (bool ok, LlmToolCallRequest? inner, string? error) UnwrapDispatch(LlmToolCallRequest call)
+    {
+        JsonElement root;
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(call.ArgumentsJson) ? "{}" : call.ArgumentsJson);
+            root = doc.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            return (false, null, $"Invalid JSON arguments for call_tool: {ex.Message}");
+        }
+
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("name", out var nameEl) ||
+            nameEl.ValueKind != JsonValueKind.String ||
+            string.IsNullOrWhiteSpace(nameEl.GetString()))
+        {
+            return (false, null, "call_tool requires a string 'name' identifying the deferred tool to invoke.");
+        }
+
+        var innerName = nameEl.GetString()!;
+        var innerArgs = "{}";
+        if (root.TryGetProperty("arguments", out var argsEl))
+        {
+            switch (argsEl.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    innerArgs = argsEl.GetRawText();
+                    break;
+                case JsonValueKind.String:
+                    innerArgs = argsEl.GetString() ?? "{}";
+                    break;
+                case JsonValueKind.Null or JsonValueKind.Undefined:
+                    break;
+                default:
+                    return (false, null, "call_tool 'arguments' must be an object matching the target tool's schema.");
+            }
+        }
+
+        return (true, new LlmToolCallRequest(call.CallId, innerName, innerArgs), null);
     }
 
     private static async Task<ToolResult> ExecuteToolSafelyAsync(

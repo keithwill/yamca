@@ -167,21 +167,21 @@ public class ToolRegistryDynamicSourceTests
     }
 
     [Test]
-    public void GetChatTools_IncludesDeferredDynamicTool_OnceLoaded()
+    public void GetChatTools_NeverIncludesDeferredDynamicTool()
     {
+        // A deferred MCP tool must stay out of the prefix entirely — it is reached via the
+        // call_tool dispatcher. Keeping it out is what stops a mid-session MCP connection from
+        // mutating the prefix and busting the prompt-prefix cache.
         var source = new StubSource();
         source.Tools.Add(new StubTool("mcp__fs__read", deferred: true));
         var registry = new ToolRegistry(new ITool[] { new StubTool("static_tool") }, new[] { source });
 
-        var loaded = new Yamca.Agent.Chat.LoadedToolSet();
         var availability = new DefaultsResolver(registry);
-        var before = registry.GetChatTools(loaded, availability).Select(t => t.Name).ToList();
-        Assert.That(before, Does.Not.Contain("mcp__fs__read"));
-        Assert.That(before, Does.Contain("static_tool"));
+        var chat = registry.GetChatTools(availability).Select(t => t.Name).ToList();
 
-        loaded.MarkLoaded("mcp__fs__read");
-        var after = registry.GetChatTools(loaded, availability).Select(t => t.Name).ToList();
-        Assert.That(after, Does.Contain("mcp__fs__read"));
+        Assert.That(chat, Does.Not.Contain("mcp__fs__read"));
+        Assert.That(chat, Does.Contain("static_tool"));
+        Assert.That(registry.GetDeferredTools(availability).Select(t => t.Name), Does.Contain("mcp__fs__read"));
     }
 
     [Test]

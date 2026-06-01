@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @implements IDisposable
 @using Yamca.Agent.Tools
+@using Yamca.Agent.Settings
 
 <PageTitle>Tools — yamca</PageTitle>
 
@@ -26,7 +27,7 @@ else
         <MudText Typo="Typo.caption" Class="mb-3">
             Project overrides Global. Unset (<em>inherit</em>) falls through to Global, then to the tool's default.
             <strong>Availability</strong> controls what the LLM sees: <em>Eager</em> = in every tool list,
-            <em>Deferred</em> = discoverable via <code>load_tool</code>, <em>Hidden</em> = invisible.
+            <em>Deferred</em> = discovered via <code>lookup_tool</code> and invoked via <code>call_tool</code> (schema stays out of the prompt prefix, preserving cache), <em>Hidden</em> = invisible.
             @if (_tierIndex == 0)
             {
                 <text>Stored on disk in <code>@Keys.ProjectFile</code>.</text>
@@ -116,6 +117,24 @@ else
                 </MudTd>
             </RowTemplate>
         </MudTable>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-1">Deferred Tools Hint</MudText>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            Controls how much of the deferred-tool catalog is added to the frozen session-start
+            message. More detail makes the model likelier to reach for a deferred tool on its own,
+            but every token here is paid on every turn of the session. <code>lookup_tool</code>
+            always lists the live catalog on demand regardless of this setting. Global; stored in
+            <code>@Keys.GlobalFile</code>.
+        </MudText>
+        <MudSelect T="DeferredToolsHint" Value="Session.DeferredToolsHint"
+                   ValueChanged="@((DeferredToolsHint h) => Session.SetDeferredToolsHint(h))"
+                   Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense" Style="max-width: 320px;">
+            <MudSelectItem T="DeferredToolsHint" Value="DeferredToolsHint.None">No Hint</MudSelectItem>
+            <MudSelectItem T="DeferredToolsHint" Value="DeferredToolsHint.Names">Tool Names</MudSelectItem>
+            <MudSelectItem T="DeferredToolsHint" Value="DeferredToolsHint.NamesAndDescriptions">Tool Names and Descriptions</MudSelectItem>
+        </MudSelect>
     </MudPaper>
 }
 

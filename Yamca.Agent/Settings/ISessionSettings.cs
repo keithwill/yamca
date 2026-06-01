@@ -22,4 +22,8 @@ public interface ISessionSettings
 
     /// <summary>Global-tier script registry — applies to every workspace.</summary>
     ScriptRegistry GlobalScripts { get; }
+
+    /// <summary>Controls how much of the deferred-tool catalog is included in the frozen
+    /// session-start system message. Honored by <c>lookup_tool</c>'s session-start contribution.</summary>
+    DeferredToolsHint DeferredToolsHint { get; }
 }

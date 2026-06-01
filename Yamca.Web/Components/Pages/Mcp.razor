@@ -26,8 +26,9 @@ else
         </div>
         <MudText Typo="Typo.caption" Class="mb-3">
             Model Context Protocol servers contribute additional tools to the agent. Tools appear as
-            <code>mcp__&lt;id&gt;__&lt;tool&gt;</code> and are deferred — the LLM calls <code>load_tool</code>
-            before using one. Stored on disk in <code>@McpStore.FilePath</code>; shared by every chat
+            <code>mcp__&lt;id&gt;__&lt;tool&gt;</code> and are deferred — the LLM looks one up with
+            <code>lookup_tool</code> and invokes it via <code>call_tool</code> (its schema never enters
+            the prompt prefix). Stored on disk in <code>@McpStore.FilePath</code>; shared by every chat
             session in this Yamca process.
         </MudText>
 

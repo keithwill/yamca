@@ -33,6 +33,8 @@ public sealed class SessionSettings : ISessionSettings
 
     public int MaxToolIterations { get; private set; } = AgentLoopOptions.Default.MaxIterations;
 
+    public DeferredToolsHint DeferredToolsHint { get; private set; } = DeferredToolsHint.Names;
+
     public IReadOnlyList<string> GlobalInstructionFiles { get; private set; } = DefaultGlobalInstructionFiles;
     public IReadOnlyList<string> ProjectInstructionFiles { get; private set; } = Array.Empty<string>();
     public bool ProjectInheritsGlobalInstructions { get; private set; } = true;
@@ -146,6 +148,13 @@ public sealed class SessionSettings : ISessionSettings
         Changed?.Invoke(SettingsTier.Global);
     }
 
+    public void SetDeferredToolsHint(DeferredToolsHint hint)
+    {
+        if (DeferredToolsHint == hint) return;
+        DeferredToolsHint = hint;
+        Changed?.Invoke(SettingsTier.Global);
+    }
+
     public void SetInstructionFiles(SettingsTier tier, IReadOnlyList<string> paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -235,6 +244,7 @@ public sealed class SessionSettings : ISessionSettings
             ? Math.Clamp(k, 1, 50) : 4;
         MaxToolIterations = blob.MaxToolIterations is int mi
             ? Math.Clamp(mi, 1, 100) : AgentLoopOptions.Default.MaxIterations;
+        DeferredToolsHint = blob.DeferredToolsHint ?? DeferredToolsHint.Names;
         Global = firstRun ? DefaultGlobalToolSettings() : MapFromDto(blob.Tools);
         GlobalInstructionFiles = firstRun
             ? DefaultGlobalInstructionFiles
@@ -284,6 +294,7 @@ public sealed class SessionSettings : ISessionSettings
             AutoCompactionThresholdPercent = AutoCompactionThresholdPercent,
             AutoCompactionKeepRecentTurns = AutoCompactionKeepRecentTurns,
             MaxToolIterations = MaxToolIterations,
+            DeferredToolsHint = DeferredToolsHint,
             Tools = MapToDto(Global),
             InstructionFiles = NonEmpty(GlobalInstructionFiles),
             Scripts = ScriptsToDto(GlobalScripts),
@@ -321,6 +332,7 @@ public sealed class SessionSettings : ISessionSettings
                 AutoCompactionThresholdPercent = AutoCompactionThresholdPercent,
                 AutoCompactionKeepRecentTurns = AutoCompactionKeepRecentTurns,
                 MaxToolIterations = MaxToolIterations,
+                DeferredToolsHint = DeferredToolsHint,
                 Tools = MapToDto(Global),
                 InstructionFiles = NonEmpty(GlobalInstructionFiles),
                 Scripts = ScriptsToDto(GlobalScripts),
@@ -377,6 +389,7 @@ public sealed class SessionSettings : ISessionSettings
             ? Math.Clamp(k, 1, 50) : 4;
         MaxToolIterations = blob.MaxToolIterations is int mi
             ? Math.Clamp(mi, 1, 100) : AgentLoopOptions.Default.MaxIterations;
+        DeferredToolsHint = blob.DeferredToolsHint ?? DeferredToolsHint.Names;
         Global = MapFromDto(blob.Tools);
         GlobalInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
         GlobalScripts = ScriptsFromDto(blob.Scripts);
@@ -451,6 +464,7 @@ public sealed class SessionSettings : ISessionSettings
         public int? AutoCompactionThresholdPercent { get; set; }
         public int? AutoCompactionKeepRecentTurns { get; set; }
         public int? MaxToolIterations { get; set; }
+        public DeferredToolsHint? DeferredToolsHint { get; set; }
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
         public List<string>? InstructionFiles { get; set; }
         public ScriptsDto? Scripts { get; set; }

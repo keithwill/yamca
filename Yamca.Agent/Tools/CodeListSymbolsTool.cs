@@ -21,7 +21,7 @@ public sealed class CodeListSymbolsTool : ITool
 
     public string Name => "code_list_symbols";
 
-    public string Description => "Extract code structure (namespaces, classes, methods, functions) from a source file or directory. Cheaper than read_file for orientation: returns ~50–200 tokens per file instead of hundreds. Honors .gitignore for directories; unsupported extensions are skipped (directory mode) or reported (file mode). To read one symbol's source rather than the whole file, use code_extract_symbol; to search code by symbol, search for code_find_definitions / code_find_calls / code_search via load_tool.";
+    public string Description => "Extract code structure (namespaces, classes, methods, functions) from a source file or directory. Cheaper than read_file for orientation: returns ~50–200 tokens per file instead of hundreds. Honors .gitignore for directories; unsupported extensions are skipped (directory mode) or reported (file mode). To read one symbol's source rather than the whole file, use code_extract_symbol; to search code by symbol, look up code_find_definitions / code_find_calls / code_search with lookup_tool and invoke them via call_tool.";
 
     public string ParametersSchema => """
     {

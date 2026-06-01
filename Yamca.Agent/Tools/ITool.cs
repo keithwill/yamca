@@ -24,18 +24,19 @@ public interface ITool
     /// <summary>True (default) = include in the tool list sent to the LLM.</summary>
     bool ExposedToLlm => true;
 
-    /// <summary>True = excluded from the initial tool list; the LLM must call
-    /// <c>load_tool</c> to obtain this tool's schema before invoking it. Once loaded,
-    /// the schema stays in the tool list for the rest of the session. Default: false.
-    /// Source of truth for <see cref="DefaultAvailability"/>; user settings override.</summary>
+    /// <summary>True = excluded from the initial tool list; the LLM discovers this tool's schema
+    /// via <c>lookup_tool</c> and invokes it through <c>call_tool</c>. The schema is never added to
+    /// the prompt prefix, so loading it mid-session does not invalidate the prefix cache.
+    /// Default: false. Source of truth for <see cref="DefaultAvailability"/>; user settings override.</summary>
     bool Deferred => false;
 
     /// <summary>Default availability when the user has not set a per-tool override.
     /// Derived from <see cref="Deferred"/> by default so existing tools keep their behavior.</summary>
     Availability DefaultAvailability => Deferred ? Availability.Deferred : Availability.Eager;
 
-    /// <summary>True = tool cannot be Deferred or Hidden by the user (e.g. <c>load_tool</c>
-    /// itself; without it the LLM cannot discover deferred tools at all). UI locks the dropdown.</summary>
+    /// <summary>True = tool cannot be Deferred or Hidden by the user (e.g. <c>lookup_tool</c> /
+    /// <c>call_tool</c>; without them the LLM cannot discover or invoke deferred tools at all).
+    /// UI locks the dropdown.</summary>
     bool MandatoryEager => false;
 
     /// <summary>False = the Hidden option is suppressed in the UI. Use for tools the harness

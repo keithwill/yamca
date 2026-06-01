@@ -10,4 +10,5 @@ internal sealed class InMemorySessionSettings : ISessionSettings
     public string SystemPrompt { get; set; } = "You are a test assistant.";
     public ScriptRegistry ProjectScripts { get; set; } = ScriptRegistry.Empty;
     public ScriptRegistry GlobalScripts { get; set; } = ScriptRegistry.Empty;
+    public DeferredToolsHint DeferredToolsHint { get; set; } = DeferredToolsHint.Names;
 }
