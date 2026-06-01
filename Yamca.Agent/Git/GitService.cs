@@ -28,6 +28,15 @@ public sealed record GitFileLogEntry(string Sha, DateTimeOffset Date, string Sub
 /// the commit that deleted it, the author date, and the commit subject.</summary>
 public sealed record DeletedFileEntry(string RelativePath, string CommitSha, DateTimeOffset DeletedAt, string Subject);
 
+/// <summary>Aggregate change counts for a worktree relative to where its branch forked from base:
+/// total files changed and lines added/removed (committed work plus uncommitted tracked edits),
+/// and how many files currently carry uncommitted changes (staged, unstaged, or untracked).</summary>
+public sealed record WorktreeDiffStat(int FilesChanged, int Insertions, int Deletions, int UncommittedFiles)
+{
+    /// <summary>True when the worktree shows no work at all relative to its base and no pending edits.</summary>
+    public bool IsEmpty => FilesChanged == 0 && UncommittedFiles == 0;
+}
+
 /// <summary>Thin wrapper around the <c>git</c> CLI. All methods return a
 /// <see cref="GitResult"/> rather than throwing on non-zero exit so callers can
 /// surface stderr to the user.</summary>
@@ -311,6 +320,44 @@ public sealed class GitService
     {
         var r = await RunAsync(repoPath, ["status", "--porcelain", "--", pathspec], ct).ConfigureAwait(false);
         return r.Ok && !string.IsNullOrWhiteSpace(r.Stdout);
+    }
+
+    /// <summary>Aggregate change stats for a worktree relative to where its branch forked from
+    /// <paramref name="baseBranch"/>. Lines and files are measured by diffing the working tree
+    /// against the merge-base, so the totals include both committed work on the branch and any
+    /// uncommitted tracked edits in one number; <see cref="WorktreeDiffStat.UncommittedFiles"/>
+    /// separately counts files with pending changes (including untracked). Returns null only when
+    /// git cannot be run at all (e.g. not a worktree).</summary>
+    public async Task<WorktreeDiffStat?> GetWorktreeDiffStatAsync(string worktreePath, string baseBranch, CancellationToken ct)
+    {
+        // Fork point: where this branch diverged from base. Diffing the working tree against it
+        // captures committed branch work plus uncommitted tracked edits in a single pass. Fall back
+        // to the base tip if the two share no common ancestor (e.g. unrelated histories).
+        var mergeBase = await RunAsync(worktreePath, ["merge-base", baseBranch, "HEAD"], ct).ConfigureAwait(false);
+        var basis = mergeBase.Ok && mergeBase.Stdout.Trim() is { Length: > 0 } sha ? sha : baseBranch;
+
+        var numstat = await RunAsync(worktreePath, ["diff", "--numstat", basis], ct).ConfigureAwait(false);
+        var status = await RunAsync(worktreePath, ["status", "--porcelain"], ct).ConfigureAwait(false);
+        if (!numstat.Ok && !status.Ok) return null;
+
+        int files = 0, insertions = 0, deletions = 0;
+        foreach (var raw in numstat.Stdout.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            if (line.Length == 0) continue;
+            // numstat is "<added>\t<deleted>\t<path>"; binary files report "-" for both counts.
+            var parts = line.Split('\t');
+            if (parts.Length < 3) continue;
+            files++;
+            if (int.TryParse(parts[0], out var add)) insertions += add;
+            if (int.TryParse(parts[1], out var del)) deletions += del;
+        }
+
+        var uncommitted = status.Stdout
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Length;
+
+        return new WorktreeDiffStat(files, insertions, deletions, uncommitted);
     }
 
     /// <summary>Author date of the commit that first added <paramref name="filePath"/>

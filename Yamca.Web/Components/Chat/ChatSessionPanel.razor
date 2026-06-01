@@ -119,6 +119,21 @@
                                            OnClick="OnDeleteBranchClicked"
                                            aria-label="Delete branch and worktree" />
                         </MudTooltip>
+                        @if (_diffStat is { IsEmpty: false } stat)
+                        {
+                            <MudTooltip Text="@DiffStatTooltip(stat)">
+                                <span class="yamca-diffstat-badge" aria-label="@DiffStatTooltip(stat)">
+                                    <span class="yamca-diffstat-files">@stat.FilesChanged @(stat.FilesChanged == 1 ? "file" : "files")</span>
+                                    <span class="yamca-diffstat-add">+@stat.Insertions</span>
+                                    <span class="yamca-diffstat-del">−@stat.Deletions</span>
+                                    @if (stat.UncommittedFiles > 0)
+                                    {
+                                        <span class="yamca-diffstat-dot">·</span>
+                                        <span class="yamca-diffstat-uncommitted">@stat.UncommittedFiles uncommitted</span>
+                                    }
+                                </span>
+                            </MudTooltip>
+                        }
                     }
                     @foreach (var att in _attachments)
                     {
@@ -262,6 +277,13 @@
     private bool _compactDialogOpen;
     private int _compactKeepTurns = 4;
 
+    // Worktree change badge: refreshed on bind and whenever an agent turn finishes (which is when
+    // the on-disk worktree may have changed). _wasRunningForDiff tracks the run transition; the
+    // _diffStatLoading guard collapses overlapping refreshes.
+    private WorktreeDiffStat? _diffStat;
+    private bool _wasRunningForDiff;
+    private bool _diffStatLoading;
+
     private const long MaxAttachmentBytes = 2 * 1024 * 1024; // 2 MB per file
     private const string AttachAccept =
         ".txt,.md,.markdown,.json,.xml,.yml,.yaml,.csv,.tsv,.log," +
@@ -316,6 +338,9 @@
         _prompt = "";
         _attachments.Clear();
         _attachError = null;
+        _diffStat = null;
+        _wasRunningForDiff = Chat.IsRunning;
+        _ = RefreshDiffStatAsync();
 
         // Consume a one-shot seed prompt (e.g. from a board step launch) into the composer.
         // A board step also flags AutoSendDraft so the prompt is sent on first render rather than
@@ -432,7 +457,44 @@
     private void OnChanged()
     {
         DetectCompactionTransition();
+        DetectRunCompletionForDiff();
         InvokeAsync(StateHasChanged);
+    }
+
+    // A turn just finished (running → idle): the worktree may have new edits, so refresh the badge.
+    private void DetectRunCompletionForDiff()
+    {
+        var isNow = Chat.IsRunning;
+        if (isNow == _wasRunningForDiff) return;
+        _wasRunningForDiff = isNow;
+        if (!isNow) _ = RefreshDiffStatAsync();
+    }
+
+    // Recompute the worktree change badge. No-op for sessions not bound to a worktree. Overlapping
+    // calls collapse via _diffStatLoading; failures clear the badge rather than surfacing an error.
+    private async Task RefreshDiffStatAsync()
+    {
+        if (Chat.WorktreeInfo is not { } wt) { _diffStat = null; return; }
+        if (_diffStatLoading) return;
+        _diffStatLoading = true;
+        try
+        {
+            var stat = await Git.GetWorktreeDiffStatAsync(wt.WorktreePath, wt.BaseBranch, CancellationToken.None);
+            _diffStat = stat;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch { _diffStat = null; }
+        finally { _diffStatLoading = false; }
+    }
+
+    private static string DiffStatTooltip(WorktreeDiffStat stat)
+    {
+        var files = $"{stat.FilesChanged} {(stat.FilesChanged == 1 ? "file" : "files")} changed since branch point";
+        var lines = $"+{stat.Insertions} / −{stat.Deletions} lines";
+        var pending = stat.UncommittedFiles > 0
+            ? $", {stat.UncommittedFiles} with uncommitted changes"
+            : ", all committed";
+        return $"{files} · {lines}{pending}";
     }
 
     private void DetectCompactionTransition()

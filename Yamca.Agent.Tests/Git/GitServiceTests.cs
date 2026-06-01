@@ -226,6 +226,50 @@ public class GitServiceTests
         Assert.That(await _svc.HasUncommittedChangesAsync(_root, "card.md", CancellationToken.None), Is.False);
     }
 
+    [Test]
+    public async Task GetWorktreeDiffStat_CountsCommittedAndUncommitted_AgainstBase()
+    {
+        // Branch off main into a linked worktree.
+        var wtPath = Path.Combine(_root, ".yamca", "worktrees", "feature");
+        var add = await _svc.CreateWorktreeAsync(_root, wtPath, "feature/stat", isNewBranch: true, CancellationToken.None);
+        Assert.That(add.Ok, Is.True, add.Stderr);
+
+        // One committed change on the branch: append two lines to README.
+        await File.WriteAllTextAsync(Path.Combine(wtPath, "README.md"), "hello\nadded-1\nadded-2\n");
+        await RunGitInAsync(wtPath, "commit", "-am", "extend readme");
+
+        // One uncommitted new file (untracked) plus an uncommitted edit to a tracked file.
+        await File.WriteAllTextAsync(Path.Combine(wtPath, "new.txt"), "fresh\n");
+        await File.WriteAllTextAsync(Path.Combine(wtPath, "README.md"), "hello\nadded-1\nadded-2\nadded-3\n");
+
+        var stat = await _svc.GetWorktreeDiffStatAsync(wtPath, "main", CancellationToken.None);
+
+        Assert.That(stat, Is.Not.Null);
+        // README diff vs the fork point: 3 lines added, 0 removed. new.txt is untracked so it does
+        // not appear in `git diff` against a commit — only in the uncommitted file count.
+        Assert.That(stat!.FilesChanged, Is.EqualTo(1));
+        Assert.That(stat.Insertions, Is.EqualTo(3));
+        Assert.That(stat.Deletions, Is.EqualTo(0));
+        // Two files with pending changes: the README edit and the untracked new.txt.
+        Assert.That(stat.UncommittedFiles, Is.EqualTo(2));
+
+        await _svc.RemoveWorktreeAsync(_root, wtPath, force: true, CancellationToken.None);
+    }
+
+    [Test]
+    public async Task GetWorktreeDiffStat_IsEmpty_ForCleanWorktreeAtBase()
+    {
+        var wtPath = Path.Combine(_root, ".yamca", "worktrees", "clean");
+        await _svc.CreateWorktreeAsync(_root, wtPath, "feature/clean", isNewBranch: true, CancellationToken.None);
+
+        var stat = await _svc.GetWorktreeDiffStatAsync(wtPath, "main", CancellationToken.None);
+
+        Assert.That(stat, Is.Not.Null);
+        Assert.That(stat!.IsEmpty, Is.True);
+
+        await _svc.RemoveWorktreeAsync(_root, wtPath, force: true, CancellationToken.None);
+    }
+
     private async Task CommitFile(string relative, string content)
     {
         File.WriteAllText(Path.Combine(_root, relative), content);
