@@ -5,12 +5,12 @@ namespace Yamca.Agent.Settings.Persistence;
 /// <summary>Reads and writes the project-tier settings blob at
 /// <c>&lt;RepositoryRoot&gt;/.yamca/project.json</c>. Anchors on the supplied workspace's
 /// <see cref="IWorkspace.RepositoryRoot"/> (the main repo) so settings travel with the
-/// checkout rather than living in per-browser localStorage.
+/// checkout rather than living in per-browser storage.
 ///
 /// Deliberately dumb: the store shuttles an opaque JSON string to and from disk and never
 /// inspects its shape — <c>SessionSettings.SerializeProject()</c>/<c>HydrateProject()</c>
 /// remain the single source of truth for the project blob contract. The project tier holds
-/// no secrets (API keys live in the global tier, which stays in localStorage).
+/// no secrets (API keys live in the global tier, which persists to the user config dir).
 ///
 /// All operations are no-ops outside a git repository (see <see cref="IsEnabled"/>) so we
 /// never scatter local state into a non-repo workspace. Reads/writes are serialized through

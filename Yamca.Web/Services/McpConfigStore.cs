@@ -34,7 +34,7 @@ public sealed class McpConfigStore
 
     public bool Hydrated => _hydrated;
 
-    /// <summary>Read the server list from localStorage and push it into the
+    /// <summary>Read the server list from mcp.json and push it into the
     /// process-wide registry. Idempotent across reloads in the same process:
     /// re-applying the same list is a no-op inside the registry's diff.</summary>
     public async Task HydrateAsync(CancellationToken cancellationToken = default)

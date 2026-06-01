@@ -80,24 +80,38 @@ if (cli.Mode == CliMode.BoardReinit)
 if (discoveredRepoRoot is not null)
     WorkspaceScaffold.EnsureGitignore(repositoryRoot);
 
-// Fixed default port, overridable via --port. Settings now persist on disk (global tier in
-// the user config dir, project tier under .yamca), so they survive a port change; the only
-// remaining origin-keyed browser state is the MCP server list in localStorage.
+// All settings now persist on disk (global tier in the user config dir, project tier under
+// .yamca, MCP servers in mcp.json) keyed by path — nothing is keyed on the browser origin
+// anymore, so the listening port no longer has to stay stable across runs. We still prefer
+// 9001 (the "It's over 9000!" in-joke, and a bookmarkable default), but when it's already
+// taken we bind an OS-assigned ephemeral port instead of failing, which makes running yamca
+// against several repos at once frictionless. An explicit --port is honored exactly and
+// errors when unavailable.
 const int DefaultPort = 9001;
-var port = cli.Port ?? DefaultPort;
-if (!IsTcpPortAvailable(port))
+int bindPort;
+if (cli.Port is int requested)
 {
-    Console.Error.WriteLine($"yamca: port {port} is already in use. Pass --port <n> to pick another.");
-    return 1;
+    if (!IsTcpPortAvailable(requested))
+    {
+        Console.Error.WriteLine($"yamca: port {requested} is already in use. Pass --port <n> to pick another.");
+        return 1;
+    }
+    bindPort = requested;
 }
-var url = $"http://127.0.0.1:{port}";
+else
+{
+    // Prefer the default; fall back to port 0 (OS-assigned) when it's busy. With an ephemeral
+    // port the real value isn't known until Kestrel has started, so the listening URL is
+    // resolved after startup rather than computed here.
+    bindPort = IsTcpPortAvailable(DefaultPort) ? DefaultPort : 0;
+}
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
     ContentRootPath = AppContext.BaseDirectory,
 });
-builder.WebHost.UseUrls(url);
+builder.WebHost.UseUrls($"http://127.0.0.1:{bindPort}");
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -197,7 +211,7 @@ builder.Services.AddScoped<ITool, ExecuteDiscoveredScriptTool>();
 builder.Services.AddScoped<ITool, ExecuteScriptTool>();
 
 // MCP host: one registry per process, shared across all chat sessions. The web
-// layer hydrates it from localStorage on first circuit and again whenever the
+// layer hydrates it from mcp.json on first circuit and again whenever the
 // user edits the MCP server list in settings.
 builder.Services.AddSingleton<IMcpRegistry, McpRegistry>();
 builder.Services.AddSingleton<IDynamicToolSource, McpDynamicToolSource>();
@@ -260,13 +274,18 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-Console.WriteLine($"Yamca listening on {url}  (workspace: {workspaceRoot})");
-if (!string.Equals(repositoryRoot, workspaceRoot, StringComparison.OrdinalIgnoreCase))
-    Console.WriteLine($"  git repository root: {repositoryRoot}  (dev board and worktrees anchor here)");
-if (!cli.NoBrowser)
+// The bound port may be OS-assigned (ephemeral fallback), so the actual listening URL isn't
+// known until Kestrel has started. Resolve it from the server's bound addresses once started,
+// then announce it and open the browser.
+app.Lifetime.ApplicationStarted.Register(() =>
 {
-    app.Lifetime.ApplicationStarted.Register(() => OpenBrowser(url));
-}
+    var url = app.Urls.FirstOrDefault() ?? $"http://127.0.0.1:{bindPort}";
+    Console.WriteLine($"Yamca listening on {url}  (workspace: {workspaceRoot})");
+    if (!string.Equals(repositoryRoot, workspaceRoot, StringComparison.OrdinalIgnoreCase))
+        Console.WriteLine($"  git repository root: {repositoryRoot}  (dev board and worktrees anchor here)");
+    if (!cli.NoBrowser)
+        OpenBrowser(url);
+});
 
 app.Run();
 return 0;
@@ -324,7 +343,8 @@ static void PrintHelp(TextWriter? writer = null)
     writer.WriteLine("  workspace-path        Directory to sandbox the agent to (default: current directory).");
     writer.WriteLine();
     writer.WriteLine("Options:");
-    writer.WriteLine("  -p, --port <n>        Listen on a specific port (default: 9001).");
+    writer.WriteLine("  -p, --port <n>        Listen on a specific port (default: 9001, or an");
+    writer.WriteLine("                        OS-assigned port when 9001 is already in use).");
     writer.WriteLine("      --no-browser      Do not open the default browser on startup.");
     writer.WriteLine("      --wipe            (board reinit) Delete all cards instead of moving to idea.");
     writer.WriteLine("  -h, --help            Show this help and exit.");

@@ -6,7 +6,7 @@ namespace Yamca.Agent.Permissions;
 /// <summary>
 /// Per-circuit coordinator that pairs runtime approval prompts with UI decisions.
 /// Persistence intent is returned to the caller via <see cref="ApprovalDecision.Persistence"/>;
-/// actually writing the persisted choice back to localStorage is the UI layer's job.
+/// actually writing the persisted choice back to disk is the UI layer's job.
 /// </summary>
 public sealed class ApprovalCoordinator : IApprovalCoordinator
 {

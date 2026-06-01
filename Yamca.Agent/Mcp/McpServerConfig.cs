@@ -6,7 +6,7 @@ using Yamca.Agent.Tools;
 namespace Yamca.Agent.Mcp;
 
 /// <summary>
-/// One MCP server as it appears in <c>localStorage</c>. Exactly one of
+/// One MCP server as it appears in <c>mcp.json</c>. Exactly one of
 /// <see cref="Stdio"/> or <see cref="Http"/> is populated; the parser enforces
 /// that and the connection layer dispatches on whichever is set.
 /// </summary>
@@ -72,7 +72,7 @@ public sealed record McpConfigParseResult(
 }
 
 /// <summary>
-/// Parses both the array-of-servers blob stored in localStorage and the
+/// Parses both the array-of-servers blob stored in mcp.json and the
 /// single-server "paste from README" form used by the add-server dialog.
 /// </summary>
 public static class McpServerConfigJson

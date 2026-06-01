@@ -56,8 +56,8 @@ else
         if (firstRender)
         {
             await Hydrator.HydrateAsync();
-            // MCP registry is process-wide, but config lives per-origin in
-            // localStorage — hydrate from there on the first circuit so a
+            // MCP registry is process-wide, but config lives on disk in
+            // mcp.json — hydrate from there on the first circuit so a
             // restart of yamca picks up the user's servers.
             if (!McpStore.Hydrated)
             {

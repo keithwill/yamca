@@ -189,7 +189,7 @@ public sealed class McpRegistry : IMcpRegistry, IAsyncDisposable
 
     /// <summary>Tear down the named server (if present) and re-spawn it from
     /// its current config. Used by the settings UI's "test connection" button
-    /// to retry after a transient failure without round-tripping localStorage.</summary>
+    /// to retry after a transient failure without round-tripping the on-disk config.</summary>
     public async Task<bool> RestartAsync(string id, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(id)) return false;

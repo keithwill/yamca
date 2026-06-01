@@ -10,7 +10,7 @@ using Yamca.Agent.Workspace;
 namespace Yamca.Web.Services;
 
 /// <summary>Per-circuit chat state and orchestrator. Owns the <see cref="AgentLoop"/>
-/// (lazily constructed on first send so localStorage settings are loaded first),
+/// (lazily constructed on first send so persisted settings are loaded first),
 /// the visible turn log, and the queue of outstanding approval prompts.</summary>
 public sealed class ChatViewModel : IDisposable
 {

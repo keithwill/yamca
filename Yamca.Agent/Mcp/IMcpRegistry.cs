@@ -17,7 +17,7 @@ public interface IMcpRegistry
     /// <summary>True once <see cref="ReplaceAsync"/> has been called at least once.
     /// Until then, <see cref="Tools"/> returns an empty list — the agent layer
     /// shouldn't pretend there are no MCP tools just because the web layer
-    /// hasn't hydrated localStorage yet.</summary>
+    /// hasn't hydrated the server list yet.</summary>
     bool Initialized { get; }
 
     /// <summary>Apply a new config set. Servers whose config is unchanged are

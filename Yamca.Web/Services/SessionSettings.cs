@@ -9,8 +9,8 @@ namespace Yamca.Web.Services;
 
 /// <summary>
 /// Concrete <see cref="ISessionSettings"/> implementation backing one Blazor circuit.
-/// Mutations raise <see cref="Changed"/> so the UI can persist the affected tier to
-/// localStorage. The server itself never persists anything.
+/// Mutations raise <see cref="Changed"/> so the host can persist the affected tier to
+/// disk (global tier via <c>GlobalSettingsStore</c>, project tier via <c>ProjectSettingsStore</c>).
 /// </summary>
 public sealed class SessionSettings : ISessionSettings
 {
@@ -43,7 +43,7 @@ public sealed class SessionSettings : ISessionSettings
     public ScriptRegistry ProjectScripts { get; private set; } = ScriptRegistry.Empty;
 
     /// <summary>Fired when the named tier has been mutated. The handler is expected
-    /// to serialize that tier and write it to localStorage.</summary>
+    /// to serialize that tier and write it to disk.</summary>
     public event Action<SettingsTier>? Changed;
 
     // --- mutation API (used by Settings page + IPermissionStore adapter) -----------
@@ -215,7 +215,7 @@ public sealed class SessionSettings : ISessionSettings
         Changed?.Invoke(tier);
     }
 
-    // --- (de)serialization for localStorage ----------------------------------------
+    // --- (de)serialization for the persisted settings blob --------------------------
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -225,7 +225,7 @@ public sealed class SessionSettings : ISessionSettings
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    /// <summary>Hydrate the global tier from a JSON blob read out of localStorage.
+    /// <summary>Hydrate the global tier from a JSON blob read off disk.
     /// Missing fields fall back to defaults. Silently ignores malformed input.</summary>
     public void HydrateGlobal(string? json)
     {
@@ -252,7 +252,7 @@ public sealed class SessionSettings : ISessionSettings
         GlobalScripts = ScriptsFromDto(blob.Scripts);
     }
 
-    // Seeded only when no Global blob has ever been written to localStorage.
+    // Seeded only when no Global blob has ever been written to disk.
     // Once the user has stored anything, their choices — including explicit "inherit"
     // (a removed entry) — are respected verbatim.
     private static ToolSettingsMap DefaultGlobalToolSettings()

@@ -5,7 +5,7 @@ namespace Yamca.Web.Services;
 
 /// <summary><see cref="IPermissionStore"/> adapter that writes approval decisions
 /// back into the live <see cref="SessionSettings"/>. The settings object raises
-/// <c>Changed</c>, which the chat circuit handler uses to persist to localStorage.</summary>
+/// <c>Changed</c>, which the chat circuit handler uses to persist to disk.</summary>
 internal sealed class SessionSettingsPermissionStore : IPermissionStore
 {
     private readonly SessionSettings _settings;

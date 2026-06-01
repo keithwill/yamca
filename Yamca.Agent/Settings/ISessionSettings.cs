@@ -2,7 +2,7 @@ namespace Yamca.Agent.Settings;
 
 /// <summary>
 /// Live view of the user's settings for the current Blazor circuit. The web layer
-/// hydrates this from localStorage on page load and updates it on changes.
+/// hydrates this from disk on page load and updates it on changes.
 /// </summary>
 public interface ISessionSettings
 {
