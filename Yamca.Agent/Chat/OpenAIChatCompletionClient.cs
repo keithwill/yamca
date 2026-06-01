@@ -66,6 +66,7 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient
         var reasoning = new StringBuilder();
         var stripper = new ReasoningTagStripper(_reasoningTags);
         var toolCalls = new SortedDictionary<int, ToolCallBuilder>();
+        var toolCallsAnnounced = false;
         var reasoningOpen = false;
         string? finishReason = null;
 
@@ -143,8 +144,15 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient
                     }
 
                     if (delta.TryGetProperty("tool_calls", out var calls) &&
-                        calls.ValueKind == JsonValueKind.Array)
+                        calls.ValueKind == JsonValueKind.Array &&
+                        calls.GetArrayLength() > 0)
                     {
+                        if (!toolCallsAnnounced)
+                        {
+                            toolCallsAnnounced = true;
+                            yield return LlmToolCallStreamStarted.Instance;
+                        }
+
                         foreach (var tc in calls.EnumerateArray())
                         {
                             var idx = tc.TryGetProperty("index", out var iEl) && iEl.TryGetInt32(out var i) ? i : 0;

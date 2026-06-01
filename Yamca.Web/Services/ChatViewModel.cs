@@ -547,6 +547,13 @@ public sealed class ChatViewModel : IDisposable
                 turn.Activity = TurnActivity.ProcessingPrompt;
                 break;
 
+            case ToolCallGenerationStartedEvent:
+                // The model has started streaming tool calls — switch to the wrench now, while
+                // the (often slow) argument generation is still in flight, rather than waiting
+                // for the brief execution window.
+                turn.Activity = TurnActivity.RunningTools;
+                break;
+
             case AssistantTokenEvent token:
                 // Tokens are streaming; the content itself is the indicator now.
                 turn.Activity = TurnActivity.Idle;
@@ -566,9 +573,10 @@ public sealed class ChatViewModel : IDisposable
                 break;
 
             case AssistantMessageEvent msg:
-                // Generation finished. If tool calls follow, ToolCallStartedEvent flips us to
-                // RunningTools; otherwise the turn is ending. Either way, stop showing "processing".
-                turn.Activity = TurnActivity.Idle;
+                // Generation finished. When tool calls follow, keep the wrench up through
+                // execution; otherwise the turn is ending, so drop the indicator.
+                if (msg.ToolCalls.Count == 0)
+                    turn.Activity = TurnActivity.Idle;
                 // The streaming buffer already holds the same content; just mark complete.
                 var current = CurrentText(turn);
                 if (current is null && !string.IsNullOrEmpty(msg.Content))

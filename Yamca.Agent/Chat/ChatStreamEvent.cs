@@ -34,6 +34,15 @@ public sealed record AssistantMessageEvent(
     string Content,
     IReadOnlyList<LlmToolCallRequest> ToolCalls) : ChatStreamEvent;
 
+/// <summary>The model has begun streaming one or more tool calls, but none has finished
+/// generating yet. Emitted before <see cref="AssistantMessageEvent"/> so the UI can show a
+/// "generating tool call" indicator during the (often slow) argument-streaming gap, instead
+/// of leaving the prompt-processing indicator up until execution starts.</summary>
+public sealed record ToolCallGenerationStartedEvent : ChatStreamEvent
+{
+    public static readonly ToolCallGenerationStartedEvent Instance = new();
+}
+
 /// <summary>The agent is about to invoke a tool (permission already cleared).</summary>
 public sealed record ToolCallStartedEvent(string CallId, string ToolName, string ArgumentsJson) : ChatStreamEvent;
 

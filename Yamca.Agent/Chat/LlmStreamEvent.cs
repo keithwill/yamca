@@ -19,6 +19,15 @@ public sealed record LlmReasoningClose : LlmStreamEvent
     public static readonly LlmReasoningClose Instance = new();
 }
 
+/// <summary>Emitted once, the first time a <c>tool_calls</c> delta is observed in the
+/// stream. The model has begun generating one or more tool calls (which may take a while
+/// to stream in full) but no call has completed yet. Lets the UI show a "generating tool
+/// call" indicator during the otherwise-silent gap before execution begins.</summary>
+public sealed record LlmToolCallStreamStarted : LlmStreamEvent
+{
+    public static readonly LlmToolCallStreamStarted Instance = new();
+}
+
 /// <summary>Streaming token-usage snapshot reported by the server. Emitted
 /// once per assistant turn when the server supports it (OpenAI
 /// <c>stream_options.include_usage</c>, llama-server's <c>timings</c>/<c>usage</c>
