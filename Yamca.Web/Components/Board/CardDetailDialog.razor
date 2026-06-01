@@ -1,6 +1,5 @@
 @namespace Yamca.Web.Components.Board
 @using Yamca.Agent.Board
-@using Yamca.Agent.Git
 @using Yamca.Agent.Settings
 @using Yamca.Web.Services
 @inject GitService Git
@@ -94,70 +93,12 @@
             @if (HasWorktree)
             {
                 <MudTabPanel Text="Changes">
-                    @if (_changesLoading)
+                    @* Mount the view only once the tab is first opened so opening the dialog stays
+                       cheap when the diff is never viewed. *@
+                    @if (_changesTabOpened)
                     {
-                        <div class="d-flex align-center my-3" style="gap: 8px;">
-                            <MudProgressCircular Indeterminate="true" Size="Size.Small" />
-                            <MudText Typo="Typo.body2">Loading changes…</MudText>
-                        </div>
-                    }
-                    else if (_changesError is not null)
-                    {
-                        <MudAlert Severity="Severity.Error" Dense="true" Class="my-2">@_changesError</MudAlert>
-                    }
-                    else if (_changes.Count == 0)
-                    {
-                        <MudText Typo="Typo.body2" Class="yamca-changes-empty my-3">
-                            No changes on <code>@Card.Branch</code> yet.
-                        </MudText>
-                    }
-                    else
-                    {
-                        <div class="yamca-changes-list">
-                            @foreach (var change in _changes)
-                            {
-                                var c = change;
-                                <button type="button"
-                                        class="@($"yamca-changes-row{(ReferenceEquals(c, _selected) ? " is-selected" : "")}")"
-                                        @onclick="@(() => SelectAsync(c))">
-                                    <span class="@($"yamca-changes-badge kind-{c.Kind.ToString().ToLowerInvariant()}")"
-                                          title="@c.Kind.ToString()">@KindLetter(c.Kind)</span>
-                                    <span class="yamca-changes-path">@DisplayPath(c)</span>
-                                    @if (c.Uncommitted)
-                                    {
-                                        <MudTooltip Text="Has uncommitted changes">
-                                            <span class="yamca-changes-dot" aria-label="uncommitted"></span>
-                                        </MudTooltip>
-                                    }
-                                </button>
-                            }
-                        </div>
-
-                        @if (_selected is not null)
-                        {
-                            @if (_diffLoading)
-                            {
-                                <div class="d-flex align-center my-3" style="gap: 8px;">
-                                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
-                                    <MudText Typo="Typo.body2">Loading diff…</MudText>
-                                </div>
-                            }
-                            else if (_diffError is not null)
-                            {
-                                <MudAlert Severity="Severity.Error" Dense="true" Class="my-2">@_diffError</MudAlert>
-                            }
-                            else if (_selectedBinary)
-                            {
-                                <div class="diffview-notice mt-2">Binary file — no text preview.</div>
-                            }
-                            else
-                            {
-                                <div class="mt-2">
-                                    <DiffView OldText="@_selectedOld" NewText="@_selectedNew"
-                                              FilePath="@_selected.Path" InitialMode="DiffViewMode.SideBySide" />
-                                </div>
-                            }
-                        }
+                        <WorktreeChangesView WorktreePath="@(WorktreePath!)" BaseBranch="@BaseBranch"
+                                             BranchLabel="@Card.Branch" />
                     }
                 </MudTabPanel>
             }
@@ -342,20 +283,10 @@
     private string _body = "";
     private string _title = "";
 
-    // Changes tab: the file list is loaded lazily the first time the tab is opened, and each file's
-    // before/after content is fetched on demand when its row is selected.
+    // Changes tab: the embedded view loads lazily the first time the tab is opened, so opening the
+    // dialog stays cheap when the diff is never viewed.
     private bool HasWorktree => !string.IsNullOrEmpty(WorktreePath);
-    private bool _changesLoaded;
-    private bool _changesLoading;
-    private string? _changesError;
-    private string _mergeBase = "";
-    private IReadOnlyList<WorktreeFileChange> _changes = Array.Empty<WorktreeFileChange>();
-    private WorktreeFileChange? _selected;
-    private bool _diffLoading;
-    private bool _selectedBinary;
-    private string? _diffError;
-    private string _selectedOld = "";
-    private string _selectedNew = "";
+    private bool _changesTabOpened;
 
     // The card names an intended branch in its frontmatter…
     private bool HasBranchAttribute => !string.IsNullOrWhiteSpace(Card.Branch);
@@ -387,101 +318,12 @@
         _priority = Card.Priority;
     }
 
-    // The Changes panel is index 1 (it only exists when there is a worktree). Load its file list the
-    // first time the tab is opened so opening the dialog stays cheap when the diff is never viewed.
-    private async Task OnTabChanged(int index)
+    // The Changes panel is index 1 (it only exists when there is a worktree). Mount its view the first
+    // time the tab is opened; the view loads its own data on init.
+    private void OnTabChanged(int index)
     {
-        if (index == 1 && HasWorktree && !_changesLoaded)
-            await LoadChangesAsync();
+        if (index == 1 && HasWorktree) _changesTabOpened = true;
     }
-
-    private async Task LoadChangesAsync()
-    {
-        _changesLoaded = true;
-        _changesLoading = true;
-        _changesError = null;
-        StateHasChanged();
-
-        var ct = CancellationToken.None;
-        try
-        {
-            _mergeBase = await Git.GetMergeBaseAsync(WorktreePath!, BaseBranch, ct);
-            _changes = await Git.GetWorktreeChangesAsync(WorktreePath!, BaseBranch, ct);
-        }
-        catch (Exception ex)
-        {
-            _changesError = $"Could not load changes: {ex.Message}";
-        }
-        finally
-        {
-            _changesLoading = false;
-            StateHasChanged();
-        }
-    }
-
-    // Load one file's before/after content on selection. The "before" side is the file at the fork
-    // point (the previous path for a rename); added/untracked files have none. The "after" side is the
-    // current working copy on disk; a deleted file has none. Binary content is detected and skipped.
-    private async Task SelectAsync(WorktreeFileChange change)
-    {
-        // Clicking the already-open file collapses its diff (toggle), rather than reloading it.
-        if (ReferenceEquals(change, _selected))
-        {
-            _selected = null;
-            return;
-        }
-
-        _selected = change;
-        _diffLoading = true;
-        _diffError = null;
-        _selectedBinary = false;
-        _selectedOld = "";
-        _selectedNew = "";
-        StateHasChanged();
-
-        var ct = CancellationToken.None;
-        try
-        {
-            if (change.Kind != WorktreeChangeKind.Added)
-            {
-                var basePath = change.OldPath ?? change.Path;
-                _selectedOld = await Git.ShowFileAtRefAsync(WorktreePath!, _mergeBase, basePath, ct) ?? "";
-            }
-
-            if (change.Kind != WorktreeChangeKind.Deleted)
-            {
-                var abs = Path.Combine(WorktreePath!, change.Path.Replace('/', Path.DirectorySeparatorChar));
-                if (File.Exists(abs)) _selectedNew = await File.ReadAllTextAsync(abs, ct);
-            }
-
-            _selectedBinary = LooksBinary(_selectedOld) || LooksBinary(_selectedNew);
-        }
-        catch (Exception ex)
-        {
-            _diffError = $"Could not load diff: {ex.Message}";
-        }
-        finally
-        {
-            _diffLoading = false;
-            StateHasChanged();
-        }
-    }
-
-    // A NUL byte is git's own heuristic for "binary"; good enough to keep raw bytes out of the
-    // line-based diff renderer.
-    private static bool LooksBinary(string s) => s.Contains('\0');
-
-    private static string KindLetter(WorktreeChangeKind kind) => kind switch
-    {
-        WorktreeChangeKind.Added => "A",
-        WorktreeChangeKind.Modified => "M",
-        WorktreeChangeKind.Deleted => "D",
-        WorktreeChangeKind.Renamed => "R",
-        _ => "?",
-    };
-
-    private static string DisplayPath(WorktreeFileChange c) =>
-        c.Kind == WorktreeChangeKind.Renamed && c.OldPath is not null ? $"{c.OldPath} → {c.Path}" : c.Path;
 
     private string EndpointLabel(Guid id)
     {

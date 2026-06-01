@@ -1,0 +1,34 @@
+@namespace Yamca.Web.Components.Chat
+
+@* Standalone changes browser for a chat session's worktree, opened from the composer change badge.
+   Covers the case of a branch/worktree opened without an associated board card — the card detail
+   dialog's Changes tab is unavailable there, so this gives the same view a home. *@
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center" style="gap: 6px; width: 100%;">
+            <MudIcon Icon="@Icons.Material.Filled.Difference" Size="Size.Small" />
+            <MudText Typo="Typo.h6">Changes</MudText>
+            @if (!string.IsNullOrWhiteSpace(Branch))
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
+                         Icon="@Icons.Material.Filled.AccountTree">@Branch</MudChip>
+            }
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                           Class="ml-auto" OnClick="Close" />
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <WorktreeChangesView WorktreePath="@WorktreePath" BaseBranch="@BaseBranch" BranchLabel="@Branch" />
+    </DialogContent>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string WorktreePath { get; set; } = default!;
+    [Parameter, EditorRequired] public string BaseBranch { get; set; } = default!;
+    [Parameter] public string? Branch { get; set; }
+
+    private void Close() => Dialog.Cancel();
+}

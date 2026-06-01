@@ -83,13 +83,16 @@ concerns. Better to rely on the endpoint being configured as the user desires â€
 someone running llama-server is already tuning sampling parameters there, not in
 their agent harness.
 
+
 ### Diff / review view
 Showing the git diff of an agent's worktree changes before merging.
 
-**Why:** Presenting a diff usefully would require syntax highlighting and extra
+**Why:** ~~~Presenting a diff usefully would require syntax highlighting and extra
 git interactions that complicate the system, when most users will just view the
 changes in their IDE. Yamca is a tool for devs who already have code-editing
-tools and use them alongside Yamca.
+tools and use them alongside Yamca.~~~
+
+I reserve the right to have been wrong.
 
 ### In-UI commit affordance
 Staging/committing the agent's work from within Yamca.

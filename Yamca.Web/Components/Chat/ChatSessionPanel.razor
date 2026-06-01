@@ -121,8 +121,10 @@
                         </MudTooltip>
                         @if (_diffStat is { IsEmpty: false } stat)
                         {
-                            <MudTooltip Text="@DiffStatTooltip(stat)">
-                                <span class="yamca-diffstat-badge" aria-label="@DiffStatTooltip(stat)">
+                            <MudTooltip Text="@($"{DiffStatTooltip(stat)} — click to view")">
+                                <button type="button" class="yamca-diffstat-badge"
+                                        aria-label="@($"{DiffStatTooltip(stat)} — click to view")"
+                                        @onclick="OpenChangesDialog">
                                     <span class="yamca-diffstat-files">@stat.FilesChanged @(stat.FilesChanged == 1 ? "file" : "files")</span>
                                     <span class="yamca-diffstat-add">+@stat.Insertions</span>
                                     <span class="yamca-diffstat-del">−@stat.Deletions</span>
@@ -131,7 +133,7 @@
                                         <span class="yamca-diffstat-dot">·</span>
                                         <span class="yamca-diffstat-uncommitted">@stat.UncommittedFiles uncommitted</span>
                                     }
-                                </span>
+                                </button>
                             </MudTooltip>
                         }
                     }
@@ -485,6 +487,21 @@
         }
         catch { _diffStat = null; }
         finally { _diffStatLoading = false; }
+    }
+
+    // Open the standalone changes browser for this session's worktree. This is the only place to
+    // review a worktree's diffs when the branch was opened without a board card (no card detail tab).
+    private async Task OpenChangesDialog()
+    {
+        if (Chat.WorktreeInfo is not { } wt) return;
+        var parameters = new DialogParameters
+        {
+            ["WorktreePath"] = wt.WorktreePath,
+            ["BaseBranch"] = wt.BaseBranch,
+            ["Branch"] = wt.Branch,
+        };
+        await Dialogs.ShowAsync<WorktreeChangesDialog>("Changes", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
     }
 
     private static string DiffStatTooltip(WorktreeDiffStat stat)

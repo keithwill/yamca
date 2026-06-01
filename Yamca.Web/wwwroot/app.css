@@ -411,10 +411,19 @@ h1:focus {
     gap: 0.3rem;
     margin-left: 0.25rem;
     padding: 0 0.375rem;
+    font: inherit;
     font-size: 0.75rem;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    cursor: default;
+    color: inherit;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.yamca-diffstat-badge:hover {
+    background: var(--mud-palette-action-default-hover);
+    border-color: var(--mud-palette-lines-default);
 }
 .yamca-diffstat-files { opacity: 0.7; }
 .yamca-diffstat-add { color: var(--mud-palette-success); font-weight: 500; }
