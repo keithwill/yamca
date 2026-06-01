@@ -147,6 +147,19 @@ public sealed class ChatViewModel : IDisposable
     public bool IsRunning { get; private set; }
     public string? Error { get; private set; }
 
+    /// <summary>Transient "skip all permission prompts" toggle for this session. When on,
+    /// the agent loop auto-accepts every approval prompt instead of asking the user. Tied to
+    /// the live VM only — never persisted, so a rehydrated saved chat always starts with it off.</summary>
+    public bool YoloMode { get; private set; }
+
+    /// <summary>Flip YOLO mode. Resolving any already-queued approval prompts is left to the
+    /// user — the toggle only changes how <em>future</em> prompts are handled.</summary>
+    public void ToggleYoloMode()
+    {
+        YoloMode = !YoloMode;
+        Raise();
+    }
+
     /// <summary>True while either an agent turn is running or a (manual or
     /// auto) compaction is in flight. UI uses this to gate the composer so the
     /// user can't start a second concurrent operation against the session.</summary>
@@ -480,7 +493,8 @@ public sealed class ChatViewModel : IDisposable
 
         _loop = new AgentLoop(
             session, completion, _tools, _permissions, _availability, _approvals, _permissionStore, _workspace, _loadedTools,
-            new AgentLoopOptions { MaxIterations = _settings.MaxToolIterations });
+            new AgentLoopOptions { MaxIterations = _settings.MaxToolIterations },
+            isYoloEnabled: () => YoloMode);
 
         StartApprovalConsumer();
         _ = DetectCapabilitiesAsync(endpoint);

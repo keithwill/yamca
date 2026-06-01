@@ -181,6 +181,53 @@ public class AgentLoopTests
     }
 
     [Test]
+    public async Task YoloMode_AutoApprovesAskToolWithoutPromptingOrPersisting()
+    {
+        _tool = new StubTool("write_file", PermissionLevel.Ask);
+        _registry = new ToolRegistry(new ITool[] { _tool });
+        _resolver = new PermissionResolver(_registry, _settings);
+        _availability = new Yamca.Agent.Tests.Tools.TestAvailabilityResolver(_registry);
+        _loop = new AgentLoop(
+            new ChatSession("sys"), _llm, _registry, _resolver, _availability, _approvals, _store, _ws.Workspace, _loaded,
+            isYoloEnabled: () => true);
+
+        _llm.EnqueueToolCall("c1", "write_file", "{}");
+        _llm.EnqueueText("ok");
+
+        // No one is draining the approval channel — if YOLO didn't short-circuit, this would hang.
+        var events = await Collect(_loop.RunTurnAsync("write"));
+
+        Assert.That(_tool.Invocations, Has.Count.EqualTo(1));
+        Assert.That(events.OfType<ToolCallResultEvent>().Single().IsError, Is.False);
+        Assert.That(_store.Writes, Is.Empty, "YOLO approvals are transient and never persisted");
+    }
+
+    [Test]
+    public async Task YoloMode_DoesNotOverrideExplicitDeny()
+    {
+        _tool = new StubTool("write_file", PermissionLevel.Ask);
+        _registry = new ToolRegistry(new ITool[] { _tool });
+        _settings.Project = new Yamca.Agent.Settings.ToolSettingsMap(
+            new Dictionary<string, Yamca.Agent.Settings.ToolPermissionSettings>
+            {
+                ["write_file"] = new() { Permission = PermissionLevel.Deny },
+            });
+        _resolver = new PermissionResolver(_registry, _settings);
+        _availability = new Yamca.Agent.Tests.Tools.TestAvailabilityResolver(_registry);
+        _loop = new AgentLoop(
+            new ChatSession("sys"), _llm, _registry, _resolver, _availability, _approvals, _store, _ws.Workspace, _loaded,
+            isYoloEnabled: () => true);
+
+        _llm.EnqueueToolCall("c1", "write_file", "{}");
+        _llm.EnqueueText("ack");
+
+        var events = await Collect(_loop.RunTurnAsync("write"));
+
+        Assert.That(_tool.Invocations, Is.Empty);
+        Assert.That(events.OfType<ToolDeniedEvent>(), Has.One.Items);
+    }
+
+    [Test]
     public async Task MaxIterations_TerminatesInfiniteToolLoop()
     {
         _tool = new StubTool("read_file", PermissionLevel.Allow);

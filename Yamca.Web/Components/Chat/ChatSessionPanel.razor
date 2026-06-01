@@ -27,7 +27,14 @@
     }
 
     <div class="yamca-input-dock">
-        <div class="yamca-composer">
+        <div class="@ComposerClass">
+            @if (Chat.YoloMode)
+            {
+                <div class="yamca-yolo-banner">
+                    <MudIcon Icon="@Icons.Material.Filled.Whatshot" Size="Size.Small" />
+                    <span>YOLO mode on — permission checks are skipped for this session.</span>
+                </div>
+            }
             <MudTextField @bind-Value="_prompt" T="string" Placeholder="Enter a prompt..."
                           Lines="3" Variant="Variant.Text" Immediate="true"
                           Class="yamca-composer-input"
@@ -78,6 +85,20 @@
                                            Disabled="@(Chat.IsBusy || Chat.Turns.Count == 0 || Chat.IsReadOnly)"
                                            OnClick="OpenCompactDialog"
                                            aria-label="Compact context" />
+                        </span>
+                    </MudTooltip>
+                    <MudTooltip Text="YOLO Mode - Permission checks are skipped">
+                        <span>
+                            <MudToggleIconButton Toggled="Chat.YoloMode"
+                                                 ToggledChanged="@((bool _) => Chat.ToggleYoloMode())"
+                                                 Icon="@Icons.Material.Filled.Whatshot"
+                                                 ToggledIcon="@Icons.Material.Filled.Whatshot"
+                                                 Color="Color.Default"
+                                                 ToggledColor="Color.Warning"
+                                                 Variant="Variant.Text"
+                                                 Size="Size.Small"
+                                                 Disabled="@Chat.IsReadOnly"
+                                                 aria-label="Toggle YOLO mode" />
                         </span>
                     </MudTooltip>
                     @if (Chat.WorktreeInfo is not null)
@@ -248,6 +269,8 @@
         ".py,.go,.rs,.java,.kt,.rb,.php,.sh,.ps1,.psm1,.sql,.toml,.ini,.cfg,.conf";
 
     private sealed record Attachment(string FileName, string Text);
+
+    private string ComposerClass => Chat.YoloMode ? "yamca-composer yamca-composer-yolo" : "yamca-composer";
 
     private string TileTitle
     {

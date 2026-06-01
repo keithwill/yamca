@@ -21,6 +21,7 @@ public sealed class AgentLoop
     private readonly IWorkspace _workspace;
     private readonly LoadedToolSet _loadedTools;
     private readonly AgentLoopOptions _options;
+    private readonly Func<bool> _isYoloEnabled;
 
     public AgentLoop(
         ChatSession session,
@@ -32,7 +33,8 @@ public sealed class AgentLoop
         IPermissionStore permissionStore,
         IWorkspace workspace,
         LoadedToolSet loadedTools,
-        AgentLoopOptions? options = null)
+        AgentLoopOptions? options = null,
+        Func<bool>? isYoloEnabled = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(client);
@@ -54,6 +56,7 @@ public sealed class AgentLoop
         _workspace = workspace;
         _loadedTools = loadedTools;
         _options = options ?? AgentLoopOptions.Default;
+        _isYoloEnabled = isYoloEnabled ?? (static () => false);
     }
 
     public ChatSession Session => _session;
@@ -222,14 +225,23 @@ public sealed class AgentLoop
         var level = _permissions.Resolve(target.ToolName);
         if (level == PermissionLevel.Ask)
         {
-            var decision = await _approvals.RequestApprovalAsync(target.ToolName, args, cancellationToken)
-                                           .ConfigureAwait(false);
+            // YOLO mode auto-accepts every approval prompt for the duration of the session,
+            // without prompting or persisting the choice. An explicit Deny rule still denies.
+            if (_isYoloEnabled())
+            {
+                level = PermissionLevel.Allow;
+            }
+            else
+            {
+                var decision = await _approvals.RequestApprovalAsync(target.ToolName, args, cancellationToken)
+                                               .ConfigureAwait(false);
 
-            var resolved = decision.Approved ? PermissionLevel.Allow : PermissionLevel.Deny;
-            if (decision.Persistence != ApprovalPersistence.None)
-                _permissionStore.Persist(target.ToolName, resolved, decision.Persistence);
+                var resolved = decision.Approved ? PermissionLevel.Allow : PermissionLevel.Deny;
+                if (decision.Persistence != ApprovalPersistence.None)
+                    _permissionStore.Persist(target.ToolName, resolved, decision.Persistence);
 
-            level = resolved;
+                level = resolved;
+            }
         }
 
         if (level == PermissionLevel.Deny)
