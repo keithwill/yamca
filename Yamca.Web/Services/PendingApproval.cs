@@ -22,6 +22,11 @@ public sealed class PendingApproval
 
     public bool IsDiscoveredScript => string.Equals(ToolName, "execute_discovered_script", StringComparison.Ordinal);
 
+    /// <summary>The pending change as a before/after pair when this is a file-mutating tool
+    /// (<c>edit_file</c>/<c>write_file</c>), so the prompt can show a diff instead of raw JSON.
+    /// Null for other tools.</summary>
+    public FileChange? FileChange => FileChangeArgs.Parse(ToolName, Request.Arguments);
+
     /// <summary>The <c>script_path</c> argument, when this is a script approval.</summary>
     public string? ScriptPath =>
         Request.Arguments.ValueKind == JsonValueKind.Object

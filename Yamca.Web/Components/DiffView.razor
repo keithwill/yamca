@@ -1,0 +1,148 @@
+@using Yamca.Web.Services
+
+@* Reusable diff renderer. Takes a before/after text pair, builds a DiffDocument, and renders it as
+   a unified or side-by-side diff with word-level highlighting and collapsible unchanged context.
+   Every diff surface (tool-call card, approval prompt, and later the card Changes tab) shares this. *@
+
+<div class="diffview">
+    @if (ShowHeader)
+    {
+        <div class="diffview-header">
+            @if (!string.IsNullOrEmpty(FilePath))
+            {
+                <span class="diffview-path" title="@FilePath">@FilePath</span>
+            }
+            <span class="diffview-stat diffview-add">+@_doc.Insertions</span>
+            <span class="diffview-stat diffview-del">−@_doc.Deletions</span>
+            <span class="diffview-spacer"></span>
+            @if (!_doc.IsEmpty && !_doc.TooLarge)
+            {
+                <button type="button" class="diffview-toggle" @onclick="ToggleMode"
+                        title="@(_mode == DiffViewMode.Unified ? "Switch to side-by-side" : "Switch to unified")">
+                    <MudIcon Icon="@(_mode == DiffViewMode.Unified ? Icons.Material.Filled.ViewColumn : Icons.Material.Filled.ViewHeadline)"
+                             Size="Size.Small" />
+                </button>
+            }
+        </div>
+    }
+
+    @if (_doc.TooLarge)
+    {
+        <div class="diffview-notice">Change is too large to preview here.</div>
+    }
+    else if (_doc.IsEmpty)
+    {
+        <div class="diffview-notice">No changes.</div>
+    }
+    else
+    {
+        <div class="diffview-body @(_mode == DiffViewMode.SideBySide ? "is-sxs" : "is-unified")">
+            @for (var b = 0; b < _doc.Blocks.Count; b++)
+            {
+                var block = _doc.Blocks[b];
+                if (ShouldFold(block, b))
+                {
+                    var hidden = block.Rows.Count - ContextLines * 2;
+                    var blockIndex = b;
+                    @foreach (var row in block.Rows.Take(ContextLines)) { @RenderRow(row) }
+                    <button type="button" class="diffview-gap" @onclick="() => Expand(blockIndex)">
+                        <MudIcon Icon="@Icons.Material.Filled.UnfoldMore" Size="Size.Small" />
+                        <span>@hidden unchanged line@(hidden == 1 ? "" : "s")</span>
+                    </button>
+                    @foreach (var row in block.Rows.Skip(block.Rows.Count - ContextLines)) { @RenderRow(row) }
+                }
+                else
+                {
+                    @foreach (var row in block.Rows) { @RenderRow(row) }
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? OldText { get; set; }
+    [Parameter] public string? NewText { get; set; }
+    [Parameter] public string? FilePath { get; set; }
+    [Parameter] public bool ShowHeader { get; set; } = true;
+    [Parameter] public DiffViewMode InitialMode { get; set; } = DiffViewMode.Unified;
+
+    /// <summary>Unchanged lines kept on each side of a change when folding a long unchanged run.</summary>
+    [Parameter] public int ContextLines { get; set; } = 3;
+
+    private DiffDocument _doc = DiffDocument.Empty;
+    private DiffViewMode _mode;
+    private readonly HashSet<int> _expandedBlocks = new();
+
+    // Rebuild the diff only when the input text actually changes — recomputing on every render
+    // (e.g. each streamed token in the chat) would be wasteful.
+    private string? _builtOld;
+    private string? _builtNew;
+    private bool _built;
+
+    protected override void OnParametersSet()
+    {
+        if (!_built || _builtOld != OldText || _builtNew != NewText)
+        {
+            _doc = DiffModelBuilder.Build(OldText, NewText);
+            _builtOld = OldText;
+            _builtNew = NewText;
+            _built = true;
+            _mode = InitialMode;
+            _expandedBlocks.Clear();
+        }
+    }
+
+    private void ToggleMode() =>
+        _mode = _mode == DiffViewMode.Unified ? DiffViewMode.SideBySide : DiffViewMode.Unified;
+
+    private void Expand(int blockIndex) => _expandedBlocks.Add(blockIndex);
+
+    // Fold a collapsible (pure-unchanged) block only when hiding would actually save lines.
+    private bool ShouldFold(DiffBlock block, int index) =>
+        block.Collapsible
+        && !_expandedBlocks.Contains(index)
+        && block.Rows.Count > ContextLines * 2 + 1;
+
+    private RenderFragment RenderRow(DiffRow row)
+    {
+        if (_mode == DiffViewMode.SideBySide)
+            return @<div class="dl-sxs">@RenderCell(row.Old)@RenderCell(row.New)</div>;
+        if (row.IsUnchanged)
+            return UnifiedLine(row.New.LineNumber, row.New.LineNumber, " ", "ctx", row.New.Segments);
+        return @<text>
+            @if (row.Old.IsChange) { @UnifiedLine(row.Old.LineNumber, null, "−", "del", row.Old.Segments) }
+            @if (row.New.IsChange) { @UnifiedLine(null, row.New.LineNumber, "+", "add", row.New.Segments) }
+        </text>;
+    }
+
+    private RenderFragment UnifiedLine(int? oldNo, int? newNo, string sign, string cls, IReadOnlyList<DiffSegment> segments) =>
+        @<div class="dl dl-@cls">
+            <span class="dl-num">@(oldNo?.ToString())</span>
+            <span class="dl-num">@(newNo?.ToString())</span>
+            <span class="dl-sign">@sign</span>
+            @RenderCode(segments)
+        </div>;
+
+    private RenderFragment RenderCell(DiffCell cell) =>
+        @<div class="dl-cell dl-@CellClass(cell)">
+            <span class="dl-num">@(cell.LineNumber?.ToString())</span>
+            @RenderCode(cell.Segments)
+        </div>;
+
+    private RenderFragment RenderCode(IReadOnlyList<DiffSegment> segments) =>
+        @<span class="dl-code">@foreach (var s in segments)
+            {
+                if (s.Changed) { <span class="dl-hl">@s.Text</span> }
+                else { @s.Text }
+            }</span>;
+
+    private static string CellClass(DiffCell cell) => cell.Kind switch
+    {
+        DiffCellKind.Inserted => "add",
+        DiffCellKind.Deleted => "del",
+        DiffCellKind.Modified => "mod",
+        DiffCellKind.Empty => "empty",
+        _ => "ctx",
+    };
+}

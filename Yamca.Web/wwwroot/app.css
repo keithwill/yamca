@@ -422,6 +422,93 @@ h1:focus {
 .yamca-diffstat-dot { opacity: 0.4; }
 .yamca-diffstat-uncommitted { color: var(--mud-palette-warning); }
 
+/* DiffView — shared diff renderer (tool-call cards, approval prompts, card Changes tab). */
+.diffview {
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 4px;
+    overflow: hidden;
+    font-size: 0.75rem;
+}
+.diffview-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 2px 6px;
+    background: var(--mud-palette-background-gray);
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+}
+.diffview-path {
+    font-family: var(--mud-typography-button-family), monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    opacity: 0.85;
+}
+.diffview-stat { font-weight: 600; font-variant-numeric: tabular-nums; }
+.diffview-add { color: var(--mud-palette-success); }
+.diffview-del { color: var(--mud-palette-error); }
+.diffview-spacer { flex: 1; }
+.diffview-toggle {
+    display: inline-flex;
+    align-items: center;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--mud-palette-text-secondary);
+    padding: 0 2px;
+}
+.diffview-toggle:hover { color: var(--mud-palette-text-primary); }
+.diffview-notice {
+    padding: 6px 8px;
+    color: var(--mud-palette-text-secondary);
+    font-style: italic;
+}
+.diffview-body {
+    overflow: auto;
+    max-height: 360px;
+    font-family: var(--mud-typography-button-family), ui-monospace, monospace;
+    line-height: 1.45;
+}
+
+/* Unified rows: [old#][new#][sign][code] */
+.dl, .dl-cell { display: flex; white-space: pre; }
+.dl-num {
+    flex: 0 0 auto;
+    width: 2.75em;
+    padding: 0 0.5em;
+    text-align: right;
+    color: var(--mud-palette-text-disabled);
+    user-select: none;
+    font-variant-numeric: tabular-nums;
+}
+.dl-sign {
+    flex: 0 0 auto;
+    width: 1.25em;
+    text-align: center;
+    user-select: none;
+    opacity: 0.7;
+}
+.dl-code { flex: 1 1 auto; padding-right: 0.5em; white-space: pre-wrap; word-break: break-word; }
+.dl-hl { border-radius: 2px; padding: 0 1px; }
+
+.dl-add { background: rgba(46, 160, 67, 0.12); }
+.dl-add .dl-hl { background: rgba(46, 160, 67, 0.35); }
+.dl-del { background: rgba(248, 81, 73, 0.12); }
+.dl-del .dl-hl { background: rgba(248, 81, 73, 0.35); }
+.dl-mod { background: rgba(210, 153, 34, 0.10); }
+.dl-mod .dl-hl { background: rgba(210, 153, 34, 0.32); }
+.dl-empty { background: var(--mud-palette-background-gray); }
+
+/* Side-by-side rows: two equal cells. */
+.dl-sxs { display: flex; }
+.dl-sxs .dl-cell {
+    flex: 1 1 50%;
+    min-width: 0;
+    border-right: 1px solid var(--mud-palette-lines-default);
+}
+.dl-sxs .dl-cell:last-child { border-right: none; }
+
 
 
 .yamca-user-row {

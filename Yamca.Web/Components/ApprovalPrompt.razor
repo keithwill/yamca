@@ -48,8 +48,18 @@
     }
     else
     {
-        <MudText Typo="Typo.caption" Class="mb-1">Arguments</MudText>
-        <pre class="mud-paper-outlined pa-2" style="overflow:auto; max-height: 240px; font-size: 0.8rem;">@Approval.ArgumentsPretty</pre>
+        @if (Approval.FileChange is { } change)
+        {
+            <MudText Typo="Typo.caption" Class="mb-1">Change</MudText>
+            <div class="mb-2">
+                <DiffView OldText="@change.OldText" NewText="@change.NewText" FilePath="@change.Path" />
+            </div>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Class="mb-1">Arguments</MudText>
+            <pre class="mud-paper-outlined pa-2" style="overflow:auto; max-height: 240px; font-size: 0.8rem;">@Approval.ArgumentsPretty</pre>
+        }
 
         <MudRadioGroup T="ApprovalPersistence" Value="_persistence" ValueChanged="@((ApprovalPersistence p) => _persistence = p)" Class="mt-2">
             <MudRadio T="ApprovalPersistence" Value="ApprovalPersistence.None" Dense="true">Just once</MudRadio>

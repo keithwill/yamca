@@ -2,4 +2,5 @@
   <Project Path="Yamca.Agent.Tests/Yamca.Agent.Tests.csproj" />
   <Project Path="Yamca.Agent/Yamca.Agent.csproj" />
   <Project Path="Yamca.Web/Yamca.Web.csproj" />
+  <Project Path="Yamca.Web.Tests/Yamca.Web.Tests.csproj" />
 </Solution>

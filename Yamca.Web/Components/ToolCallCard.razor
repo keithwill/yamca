@@ -23,7 +23,11 @@
     @if (_expanded)
     {
         <div class="tool-call-body">
-            @if (!string.IsNullOrWhiteSpace(Item.ArgumentsJson))
+            @if (Change is { } change)
+            {
+                <DiffView OldText="@change.OldText" NewText="@change.NewText" FilePath="@change.Path" />
+            }
+            else if (!string.IsNullOrWhiteSpace(Item.ArgumentsJson))
             {
                 <MudText Typo="Typo.caption">Arguments</MudText>
                 <pre class="tool-call-pre">@PrettyArgs</pre>
@@ -82,12 +86,20 @@
 
     private bool _expanded;
 
+    // Surface file changes by default — the diff is the point. Other tool cards stay collapsed.
+    protected override void OnInitialized() => _expanded = FileChangeArgs.IsDiffTool(Item.ToolName);
+
     private void Toggle() => _expanded = !_expanded;
+
+    // A file-mutating call reduced to a before/after pair, or null for other tools / partial
+    // (still-streaming) arguments — in which case the body falls back to raw arguments.
+    private FileChange? Change => FileChangeArgs.Parse(Item.ToolName, Item.ArgumentsJson);
 
     private string ActionLabel => Item.ToolName switch
     {
         "read_file"       => "Read",
         "write_file"      => "Write",
+        "edit_file"       => "Edit",
         "delete_file"     => "Delete",
         "list_directory"  => "List",
         "execute_command" => "Run",

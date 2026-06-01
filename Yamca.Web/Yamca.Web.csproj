@@ -34,6 +34,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="DiffPlex" Version="1.9.0" />
     <PackageReference Include="MudBlazor" Version="9.4.0" />
     <PackageReference Include="Markdig" Version="0.42.0" />
   </ItemGroup>
@@ -47,18 +48,12 @@
        etc.) plus the static-web-assets endpoints manifest that MapStaticAssets()
        consumes at runtime. Pack all of those into tools/<tfm>/any so the tool
        has everything it needs at runtime. -->
-  <Target Name="IncludePublishedAssetsInTool"
-          BeforeTargets="GenerateNuspec"
-          DependsOnTargets="Publish">
+  <Target Name="IncludePublishedAssetsInTool" BeforeTargets="GenerateNuspec" DependsOnTargets="Publish">
     <ItemGroup>
       <_YamcaToolWwwroot Include="$(PublishDir)wwwroot\**\*.*" />
-      <TfmSpecificPackageFile
-        Include="@(_YamcaToolWwwroot)"
-        PackagePath="tools/$(TargetFramework)/any/wwwroot/%(RecursiveDir)%(Filename)%(Extension)" />
+      <TfmSpecificPackageFile Include="@(_YamcaToolWwwroot)" PackagePath="tools/$(TargetFramework)/any/wwwroot/%(RecursiveDir)%(Filename)%(Extension)" />
       <_YamcaToolEndpoints Include="$(PublishDir)*.staticwebassets.endpoints.json" />
-      <TfmSpecificPackageFile
-        Include="@(_YamcaToolEndpoints)"
-        PackagePath="tools/$(TargetFramework)/any/%(Filename)%(Extension)" />
+      <TfmSpecificPackageFile Include="@(_YamcaToolEndpoints)" PackagePath="tools/$(TargetFramework)/any/%(Filename)%(Extension)" />
     </ItemGroup>
   </Target>
 
