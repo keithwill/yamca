@@ -2,4 +2,4 @@ Consider the idea contained in the dev board card. Investigate the codebase, ide
 
 Break the work into a `- [ ]` subtask checklist where useful.
 
-If successful, use the board_move_card tool to move the card to 'Implement'.
+If successful, use the board_move_card tool to move the card to the Implement column.
