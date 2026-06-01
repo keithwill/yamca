@@ -239,6 +239,7 @@ public sealed class ChatViewModel : IDisposable
     private async Task DriveAsync(ChatTurn turn, Func<CancellationToken, IAsyncEnumerable<ChatStreamEvent>> run)
     {
         turn.IsRunning = true;
+        turn.Activity = TurnActivity.ProcessingPrompt;
         IsRunning = true;
         Error = null;
         Raise();
@@ -268,6 +269,7 @@ public sealed class ChatViewModel : IDisposable
         finally
         {
             turn.IsRunning = false;
+            turn.Activity = TurnActivity.Idle;
             IsRunning = false;
             _runCts?.Dispose();
             _runCts = null;
@@ -540,12 +542,20 @@ public sealed class ChatViewModel : IDisposable
     {
         switch (ev)
         {
+            case ModelRequestStartedEvent:
+                // A round-trip just began — we're processing the prompt until the first token.
+                turn.Activity = TurnActivity.ProcessingPrompt;
+                break;
+
             case AssistantTokenEvent token:
+                // Tokens are streaming; the content itself is the indicator now.
+                turn.Activity = TurnActivity.Idle;
                 var text = CurrentOrNewText(turn);
                 text.Append(token.Delta);
                 break;
 
             case ReasoningTokenEvent rtoken:
+                turn.Activity = TurnActivity.Idle;
                 var rItem = CurrentOrNewReasoning(turn);
                 rItem.Append(rtoken.Delta);
                 break;
@@ -556,6 +566,9 @@ public sealed class ChatViewModel : IDisposable
                 break;
 
             case AssistantMessageEvent msg:
+                // Generation finished. If tool calls follow, ToolCallStartedEvent flips us to
+                // RunningTools; otherwise the turn is ending. Either way, stop showing "processing".
+                turn.Activity = TurnActivity.Idle;
                 // The streaming buffer already holds the same content; just mark complete.
                 var current = CurrentText(turn);
                 if (current is null && !string.IsNullOrEmpty(msg.Content))
@@ -569,6 +582,7 @@ public sealed class ChatViewModel : IDisposable
                 break;
 
             case ToolCallStartedEvent started:
+                turn.Activity = TurnActivity.RunningTools;
                 turn.Items.Add(new ToolCallItem
                 {
                     CallId = started.CallId,
@@ -613,6 +627,7 @@ public sealed class ChatViewModel : IDisposable
                 break;
 
             case TurnCompleteEvent complete:
+                turn.Activity = TurnActivity.Idle;
                 turn.MaxIterationsReached = complete.Reason == TurnCompletionReason.MaxIterationsReached;
                 break;
         }

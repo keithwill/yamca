@@ -18,6 +18,29 @@ public sealed class ChatTurn
     /// iteration cap rather than finishing with a plain reply. Drives the "continue"
     /// affordance in the turn view; cleared when the user resumes the turn.</summary>
     public bool MaxIterationsReached { get; internal set; }
+
+    /// <summary>What the agent is currently waiting on, used to drive the "Thinking"
+    /// status row. Updated as stream events arrive; reset to <see cref="TurnActivity.Idle"/>
+    /// while tokens stream (the content itself is the indicator) and when the turn ends.</summary>
+    public TurnActivity Activity { get; internal set; } = TurnActivity.Idle;
+}
+
+/// <summary>Coarse "what are we waiting for right now" state for an in-flight turn.
+/// Only meaningful while <see cref="ChatTurn.IsRunning"/> is true.</summary>
+public enum TurnActivity
+{
+    /// <summary>Not waiting on anything visible — either tokens are actively streaming
+    /// (the content is its own indicator) or the turn has finished.</summary>
+    Idle,
+
+    /// <summary>A request was sent and we're waiting for the model to process the prompt
+    /// (user message or tool results) before the first token streams back. Shown with the
+    /// lightbulb icon.</summary>
+    ProcessingPrompt,
+
+    /// <summary>One or more tool calls are executing; we're waiting for their results.
+    /// Shown with the wrench/tools icon.</summary>
+    RunningTools,
 }
 
 public abstract class ChatTurnItem;

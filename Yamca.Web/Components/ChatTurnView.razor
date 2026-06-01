@@ -31,9 +31,13 @@
                     <ToolCallCard Item="tool" />
                 }
             }
-            @if (Turn.IsRunning && Turn.Items.Count == 0)
+            @if (Turn.IsRunning && Turn.Activity != TurnActivity.Idle)
             {
-                <MudProgressLinear Indeterminate="true" />
+                <div class="yamca-thinking" aria-live="polite">
+                    <MudIcon Icon="@ThinkingIcon" Size="Size.Small" Class="yamca-thinking-icon" />
+                    <span class="yamca-thinking-text">@ThinkingLabel</span>
+                    <span class="yamca-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
+                </div>
             }
             @if (Turn.MaxIterationsReached && !Turn.IsRunning)
             {
@@ -60,6 +64,28 @@
     </div>
 </div>
 
+<style>
+    .yamca-thinking {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 4px 8px;
+        color: var(--mud-palette-text-secondary);
+        font-size: 0.85rem;
+    }
+    .yamca-thinking-icon { opacity: 0.8; }
+    .yamca-thinking-text { font-style: italic; }
+    .yamca-thinking-dots span {
+        animation: yamca-thinking-blink 1.4s infinite both;
+    }
+    .yamca-thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .yamca-thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @@keyframes yamca-thinking-blink {
+        0%, 80%, 100% { opacity: 0.2; }
+        40% { opacity: 1; }
+    }
+</style>
+
 @code {
     [Parameter, EditorRequired] public ChatTurn Turn { get; set; } = default!;
 
@@ -70,6 +96,16 @@
     [Inject] private SessionSettings Session { get; set; } = default!;
 
     private Task OnContinueClicked() => OnContinue.InvokeAsync();
+
+    // Prompt processing → lightbulb; tool execution → the wrench/Build icon used by the
+    // Tools sidebar nav item.
+    private string ThinkingIcon => Turn.Activity switch
+    {
+        TurnActivity.RunningTools => Icons.Material.Filled.Build,
+        _ => Icons.Material.Filled.Lightbulb,
+    };
+
+    private const string ThinkingLabel = "Thinking";
 
     // Collapsed mode: stay expanded live, auto-collapse once the closing tag arrives.
     // Expanded mode: always open.

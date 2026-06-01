@@ -87,6 +87,10 @@ public sealed class AgentLoop
             // queried per iteration so user toggles on the Tools page take effect live.
             var chatTools = _tools.GetChatTools(_loadedTools, _availability);
 
+            // Signal the start of a model round-trip so the UI can show a prompt-processing
+            // indicator during the silent gap before the first token arrives.
+            yield return ModelRequestStartedEvent.Instance;
+
             string content = "";
             IReadOnlyList<LlmToolCallRequest> toolCalls = Array.Empty<LlmToolCallRequest>();
 

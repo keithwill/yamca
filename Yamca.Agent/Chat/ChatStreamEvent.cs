@@ -5,6 +5,15 @@ namespace Yamca.Agent.Chat;
 /// off this stream.</summary>
 public abstract record ChatStreamEvent;
 
+/// <summary>A request to the model has just been dispatched; the loop is now waiting
+/// for the server to process the prompt (the system/user messages or the latest tool
+/// results) before any token streams back. The UI uses this to show a "Thinking"
+/// indicator during the otherwise-silent prompt-processing gap.</summary>
+public sealed record ModelRequestStartedEvent : ChatStreamEvent
+{
+    public static readonly ModelRequestStartedEvent Instance = new();
+}
+
 /// <summary>Incremental assistant text token.</summary>
 public sealed record AssistantTokenEvent(string Delta) : ChatStreamEvent;
 
