@@ -10,13 +10,11 @@ public static class BoardPrompts
     /// lives in each column's instructions.md, so it is not duplicated here.</summary>
     public static string BuildSeedPrompt(BoardCard card, BoardColumn current, string? instructions)
     {
-        var prompt =
-            $"Work the \"{current.DisplayName}\" step for board card #{card.Id} \"{card.Title}\".\n\n" +
-            $"## Card\n\n{card.Body}";
+        return 
+$@"Card Title: {card.Title}
+Card Body: {card.Body}
 
-        if (!string.IsNullOrWhiteSpace(instructions))
-            prompt += $"\n\n## \"{current.DisplayName}\" step instructions\n\n{instructions}";
-
-        return prompt;
+Instructions:
+{instructions}";
     }
 }
