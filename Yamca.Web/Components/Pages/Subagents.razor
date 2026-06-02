@@ -81,7 +81,7 @@ else
                                        SelectedValues="@row.AllowedTools"
                                        SelectedValuesChanged="@((IReadOnlyCollection<string> v) => OnAllowedToolsChanged(row, v))"
                                        Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
-                                       MultiSelectionTextFunc="@(new Func<List<string>, string>(s => string.Join(", ", s)))">
+                                       MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(s => string.Join(", ", s)))">
                                 @foreach (var tool in _toolNames)
                                 {
                                     <MudSelectItem T="string" Value="@tool">@tool</MudSelectItem>
