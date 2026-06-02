@@ -39,6 +39,8 @@ public sealed class BoardGetStepInstructionsTool : ITool
 
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
+    public bool Deferred => true;
+
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
         if (!ToolArguments.TryGetString(arguments, "column", out var columnRef, out var argError))

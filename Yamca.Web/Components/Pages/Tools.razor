@@ -25,7 +25,9 @@ else
             </MudTabs>
         </div>
         <MudText Typo="Typo.caption" Class="mb-3">
-            Project overrides User. Unset (<em>inherit</em>) falls through to User, then to the tool's default.
+            Project overrides User. A Project value left as <em>inherit</em> falls through to the User tier, which
+            always carries an explicit value (seeded from each tool's default) — so the effective setting is simply
+            Project-over-User.
             <strong>Availability</strong> controls what the LLM sees: <em>Eager</em> = in every tool list,
             <em>Deferred</em> = discovered via <code>lookup_tool</code> and invoked via <code>call_tool</code> (schema stays out of the prompt prefix, preserving cache), <em>Hidden</em> = invisible.
             @if (_tierIndex == 0)
@@ -58,7 +60,10 @@ else
                         <MudSelect T="Availability?" Value="avEntry" Disabled="locked"
                                    ValueChanged="@((Availability? a) => SetAvailability(context.Name, a))"
                                    Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
-                            <MudSelectItem T="Availability?" Value="@((Availability?)null)">inherit</MudSelectItem>
+                            @if (ShowInherit(avEntry))
+                            {
+                                <MudSelectItem T="Availability?" Value="@((Availability?)null)">inherit</MudSelectItem>
+                            }
                             <MudSelectItem T="Availability?" Value="@((Availability?)Availability.Eager)">Eager</MudSelectItem>
                             <MudSelectItem T="Availability?" Value="@((Availability?)Availability.Deferred)">Deferred</MudSelectItem>
                             @if (context.CanBeHidden)
@@ -82,7 +87,10 @@ else
                     <MudSelect T="PermissionLevel?" Value="selected"
                                ValueChanged="@((PermissionLevel? p) => SetPermission(context.Name, p))"
                                Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
-                        <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)null)">inherit</MudSelectItem>
+                        @if (ShowInherit(selected))
+                        {
+                            <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)null)">inherit</MudSelectItem>
+                        }
                         <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Allow)">Allow</MudSelectItem>
                         <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Ask)">Ask</MudSelectItem>
                         <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Deny)">Deny</MudSelectItem>
@@ -95,7 +103,10 @@ else
                         <MudSelect T="bool?" Value="restrict"
                                    ValueChanged="@((bool? b) => SetRestrict(context.Name, b))"
                                    Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
-                            <MudSelectItem T="bool?" Value="@((bool?)null)">inherit</MudSelectItem>
+                            @if (ShowInherit(restrict))
+                            {
+                                <MudSelectItem T="bool?" Value="@((bool?)null)">inherit</MudSelectItem>
+                            }
                             <MudSelectItem T="bool?" Value="@((bool?)true)">On</MudSelectItem>
                             <MudSelectItem T="bool?" Value="@((bool?)false)">Off</MudSelectItem>
                         </MudSelect>
@@ -149,7 +160,7 @@ else
     [Inject] private SettingsLocation Keys { get; set; } = default!;
 
     private bool _hydrated;
-    private int _tierIndex; // 0 = Project, 1 = User
+    private int _tierIndex = 1; // 0 = Project, 1 = User (User shown by default)
 
     private static string ToolDisplayName(string name) => name switch
     {
@@ -160,6 +171,13 @@ else
 
     private SettingsTier CurrentTier => _tierIndex == 0 ? SettingsTier.Project : SettingsTier.User;
     private ToolSettingsMap CurrentMap => CurrentTier == SettingsTier.Project ? Session.Project : Session.User;
+
+    // "inherit" (an unset override) only makes sense at the Project tier, where it falls through
+    // to User. The User tier is materialized to explicit defaults on load, so it normally hides
+    // inherit — but we still offer it if a value is somehow unset (e.g. a dynamic tool that
+    // appeared after hydration) so the dropdown never renders blank.
+    private bool ShowInherit<T>(T? value) where T : struct =>
+        CurrentTier == SettingsTier.Project || value is null;
 
     protected override void OnInitialized()
     {

@@ -42,6 +42,8 @@ public sealed class BoardReinitTool : ITool
 
     public PermissionLevel DefaultPermission => PermissionLevel.Ask;
 
+    public bool Deferred => true;
+
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
         bool wipe = false;

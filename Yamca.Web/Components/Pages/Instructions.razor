@@ -152,7 +152,7 @@ else
     [Inject] private WorkspaceBrowser Browser { get; set; } = default!;
 
     private bool _hydrated;
-    private int _instrTierIndex; // 0 = Project, 1 = User
+    private int _instrTierIndex = 1; // 0 = Project, 1 = User (User shown by default)
 
     private bool _pickerOpen;
     private InstructionRow? _pickerRow;

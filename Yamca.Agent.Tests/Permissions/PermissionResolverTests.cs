@@ -37,7 +37,7 @@ public class PermissionResolverTests
         var (resolver, _) = NewResolver();
 
         Assert.That(resolver.Resolve("read_file"), Is.EqualTo(PermissionLevel.Allow));
-        Assert.That(resolver.Resolve("write_file"), Is.EqualTo(PermissionLevel.Ask));
+        Assert.That(resolver.Resolve("write_file"), Is.EqualTo(PermissionLevel.Allow));
         Assert.That(resolver.Resolve("execute_command"), Is.EqualTo(PermissionLevel.Ask));
     }
 

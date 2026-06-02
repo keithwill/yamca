@@ -103,6 +103,7 @@ else
 @code {
     [Inject] private SessionSettings Session { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
+    [Inject] private IToolRegistry ToolRegistry { get; set; } = default!;
     [Inject] private SettingsLocation Keys { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
@@ -208,7 +209,7 @@ else
     private void ConfirmReset()
     {
         _resetDialogOpen = false;
-        Session.ResetUserToDefaults();
+        Session.ResetUserToDefaults(ToolRegistry.GetSettingsTools());
         Snackbar.Add("User settings reset to defaults.", Severity.Success);
     }
 

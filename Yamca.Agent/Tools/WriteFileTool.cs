@@ -23,7 +23,7 @@ public sealed class WriteFileTool : ITool
 
     public bool SupportsWorkspaceRestriction => true;
 
-    public PermissionLevel DefaultPermission => PermissionLevel.Ask;
+    public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {

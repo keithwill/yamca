@@ -1,4 +1,5 @@
 using Yamca.Agent.Settings.Persistence;
+using Yamca.Agent.Tools;
 
 namespace Yamca.Web.Services;
 
@@ -13,15 +14,17 @@ public sealed class SettingsHydrator : IDisposable
     private readonly SessionSettings _settings;
     private readonly UserSettingsStore _userStore;
     private readonly ProjectSettingsStore _projectStore;
+    private readonly IToolRegistry _tools;
 
     private bool _hydrated;
     private bool _persistOnChange;
 
-    public SettingsHydrator(SessionSettings settings, UserSettingsStore userStore, ProjectSettingsStore projectStore)
+    public SettingsHydrator(SessionSettings settings, UserSettingsStore userStore, ProjectSettingsStore projectStore, IToolRegistry tools)
     {
         _settings = settings;
         _userStore = userStore;
         _projectStore = projectStore;
+        _tools = tools;
         _settings.Changed += OnChanged;
     }
 
@@ -41,6 +44,12 @@ public sealed class SettingsHydrator : IDisposable
         {
             _settings.HydrateUser(_userStore.Load());
             _settings.HydrateProject(_projectStore.Load());
+
+            // Expand the User tier to an explicit value for every settings tool (no "inherit"
+            // at the User level), backfilling tools added since the blob was last written.
+            // Persist once if that changed anything, so the on-disk file matches what's shown.
+            if (_settings.MaterializeUserToolDefaults(_tools.GetSettingsTools()))
+                _userStore.Save(_settings.SerializeUser());
         }
         finally
         {

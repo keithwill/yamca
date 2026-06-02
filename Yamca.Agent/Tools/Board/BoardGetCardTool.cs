@@ -39,6 +39,8 @@ public sealed class BoardGetCardTool : ITool
 
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
+    public bool Deferred => true;
+
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
         if (!ToolArguments.TryGetString(arguments, "card", out var cardRef, out var argError))

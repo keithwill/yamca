@@ -26,13 +26,16 @@ can extract or edit a function/class by name instead of by line range.
 Each tool resolves to one of three levels (`PermissionLevel`):
 
 - **Allow** — runs without prompting.
-- **Ask** — pauses for your approval before each call (the default when nothing
-  else is set).
+- **Ask** — pauses for your approval before each call.
 - **Deny** — the tool is refused.
 
-Resolution is layered: **Project** setting wins, else **User**, else the
-tool's built-in `DefaultPermission`. So you can loosen or tighten a tool across
-all workspaces and still override it per project.
+Resolution is layered: the **Project** setting wins if set, otherwise the
+**User** setting applies. The User tier always carries an explicit value for
+every tool — on load it's seeded from each tool's built-in `DefaultPermission`
+(see [Default philosophy](#default-philosophy)) — so there's no "inherit" to
+fall through at the User level. A Project setting left as *inherit* falls
+through to User. So you can set a standing preference per tool across all
+workspaces, then override it per project.
 
 ### Workspace restriction
 
@@ -40,6 +43,18 @@ File-touching tools can be restricted to the workspace sandbox. When
 `RestrictToWorkspace` is on, paths are clamped to the session's `RootPath` and an
 attempt to escape it is refused (`PathOutsideWorkspaceException`). This resolves
 with the same Project → User → tool-default precedence.
+
+### Default philosophy
+
+The shipped defaults are tuned for the primary audience: developers modifying
+code in a git repository, typically on a throwaway worktree branch that
+segregates the agent's work. Under that assumption, tools that mutate files
+(`write_file`, `edit_file`, `delete_file`, the `code_edit_*` family) default to
+**Allow** — but only *within the workspace*, because workspace restriction is on
+by default for every file-touching tool. Anything reaching outside the sandbox,
+or running an arbitrary shell command (`execute_command`), still defaults to
+**Ask**. The safety net is the workspace boundary plus version control, not a
+prompt on every edit.
 
 ## Availability
 
@@ -51,9 +66,9 @@ Separately from permissions, **availability** controls what the LLM even *sees*:
   prompt-cache hits. MCP tools are always deferred.
 - **Hidden** — invisible to the model.
 
-Like permissions, availability is set per **Project** or **User** tier, with
-Project overriding User, and unset (*inherit*) falling through to the tool's
-default.
+Like permissions, availability resolves Project over User. The User tier is
+seeded with each tool's default availability, so a Project value left as
+*inherit* falls through to User.
 
 ## Approval flow
 

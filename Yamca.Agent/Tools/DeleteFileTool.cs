@@ -22,7 +22,7 @@ public sealed class DeleteFileTool : ITool
 
     public bool SupportsWorkspaceRestriction => true;
 
-    public PermissionLevel DefaultPermission => PermissionLevel.Ask;
+    public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
     public bool Deferred => true;
 
