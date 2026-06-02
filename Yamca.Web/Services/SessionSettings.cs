@@ -42,6 +42,9 @@ public sealed class SessionSettings : ISessionSettings
     public ScriptRegistry GlobalScripts { get; private set; } = ScriptRegistry.Empty;
     public ScriptRegistry ProjectScripts { get; private set; } = ScriptRegistry.Empty;
 
+    public SubagentRegistry GlobalSubagents { get; private set; } = SubagentRegistry.Empty;
+    public SubagentRegistry ProjectSubagents { get; private set; } = SubagentRegistry.Empty;
+
     /// <summary>Fired when the named tier has been mutated. The handler is expected
     /// to serialize that tier and write it to disk.</summary>
     public event Action<SettingsTier>? Changed;
@@ -195,6 +198,14 @@ public sealed class SessionSettings : ISessionSettings
         SetScripts(tier, new ScriptRegistry(registered, current.Directories));
     }
 
+    public void SetSubagents(SettingsTier tier, SubagentRegistry registry)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        if (tier == SettingsTier.Project) ProjectSubagents = registry;
+        else GlobalSubagents = registry;
+        Changed?.Invoke(tier);
+    }
+
     /// <summary>Replace a single tool entry in the given tier, or pass <c>null</c> to remove.</summary>
     public void SetToolEntry(SettingsTier tier, string toolName, ToolPermissionSettings? entry)
     {
@@ -250,6 +261,30 @@ public sealed class SessionSettings : ISessionSettings
             ? DefaultGlobalInstructionFiles
             : (blob.InstructionFiles?.ToArray() ?? Array.Empty<string>());
         GlobalScripts = ScriptsFromDto(blob.Scripts);
+        GlobalSubagents = firstRun ? DefaultGlobalSubagents() : SubagentsFromDto(blob.Subagents);
+    }
+
+    // Seeded only on first run, alongside DefaultGlobalToolSettings. A read-only "explorer"
+    // that answers broad questions about the repo. Deliberately excludes the code_* tools so
+    // it leans on plain read/list/find/grep. Mutating and execute tools are omitted entirely.
+    private static SubagentRegistry DefaultGlobalSubagents()
+    {
+        var explorer = new SubagentDefinition(
+            Id: Guid.NewGuid(),
+            Name: "explorer",
+            Description: "Read-only repository explorer. Delegate broad discovery questions to it: " +
+                         "which files implement X, what conventions the project uses, how something is wired. " +
+                         "Returns a concise written answer, not file dumps.",
+            Instructions:
+                "You are a read-only repository explorer running as a subagent. Investigate the workspace " +
+                "with the read_file, list_directory, find_files, and grep tools to answer the caller's " +
+                "question, then deliver a concise, concrete answer (cite file paths) by calling the " +
+                "subagent_result tool. Do not ask the caller questions — make reasonable assumptions and " +
+                "answer. Never attempt to modify files.",
+            AllowedTools: new[] { "read_file", "list_directory", "find_files", "grep" },
+            RestrictToWorkspace: true);
+
+        return new SubagentRegistry(new[] { explorer });
     }
 
     // Seeded only when no Global blob has ever been written to disk.
@@ -279,6 +314,7 @@ public sealed class SessionSettings : ISessionSettings
         ProjectInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
         ProjectInheritsGlobalInstructions = blob.InheritsGlobalInstructions ?? true;
         ProjectScripts = ScriptsFromDto(blob.Scripts);
+        ProjectSubagents = SubagentsFromDto(blob.Subagents);
     }
 
     public string SerializeGlobal()
@@ -298,6 +334,7 @@ public sealed class SessionSettings : ISessionSettings
             Tools = MapToDto(Global),
             InstructionFiles = NonEmpty(GlobalInstructionFiles),
             Scripts = ScriptsToDto(GlobalScripts),
+            Subagents = SubagentsToDto(GlobalSubagents),
         };
         return JsonSerializer.Serialize(blob, JsonOptions);
     }
@@ -336,6 +373,7 @@ public sealed class SessionSettings : ISessionSettings
                 Tools = MapToDto(Global),
                 InstructionFiles = NonEmpty(GlobalInstructionFiles),
                 Scripts = ScriptsToDto(GlobalScripts),
+                Subagents = SubagentsToDto(GlobalSubagents),
             },
         };
         return JsonSerializer.Serialize(envelope, ExportJsonOptions);
@@ -393,6 +431,7 @@ public sealed class SessionSettings : ISessionSettings
         Global = MapFromDto(blob.Tools);
         GlobalInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
         GlobalScripts = ScriptsFromDto(blob.Scripts);
+        GlobalSubagents = SubagentsFromDto(blob.Subagents);
     }
 
     public string SerializeProject()
@@ -403,6 +442,7 @@ public sealed class SessionSettings : ISessionSettings
             InstructionFiles = NonEmpty(ProjectInstructionFiles),
             InheritsGlobalInstructions = ProjectInheritsGlobalInstructions ? null : false,
             Scripts = ScriptsToDto(ProjectScripts),
+            Subagents = SubagentsToDto(ProjectSubagents),
         };
         return JsonSerializer.Serialize(blob, JsonOptions);
     }
@@ -468,6 +508,7 @@ public sealed class SessionSettings : ISessionSettings
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
         public List<string>? InstructionFiles { get; set; }
         public ScriptsDto? Scripts { get; set; }
+        public List<SubagentDto>? Subagents { get; set; }
     }
 
     private sealed class ProjectBlob
@@ -476,6 +517,7 @@ public sealed class SessionSettings : ISessionSettings
         public List<string>? InstructionFiles { get; set; }
         public bool? InheritsGlobalInstructions { get; set; }
         public ScriptsDto? Scripts { get; set; }
+        public List<SubagentDto>? Subagents { get; set; }
     }
 
     private sealed class EndpointDto
@@ -580,4 +622,60 @@ public sealed class SessionSettings : ISessionSettings
 
     private static string NormalizePath(string raw) => raw.Trim().Replace('\\', '/');
     private static string? Trim(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    private sealed class SubagentDto
+    {
+        public Guid? Id { get; set; }
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public string? Instructions { get; set; }
+        public List<string>? AllowedTools { get; set; }
+        public bool? RestrictToWorkspace { get; set; }
+        public bool? RequireApproval { get; set; }
+        public Guid? EndpointId { get; set; }
+        public int? MaxIterations { get; set; }
+    }
+
+    private static SubagentRegistry SubagentsFromDto(List<SubagentDto>? dto)
+    {
+        if (dto is null || dto.Count == 0) return SubagentRegistry.Empty;
+
+        var agents = new List<SubagentDefinition>(dto.Count);
+        foreach (var d in dto)
+        {
+            if (string.IsNullOrWhiteSpace(d.Name)) continue;
+            agents.Add(new SubagentDefinition(
+                Id: d.Id ?? Guid.NewGuid(),
+                Name: d.Name.Trim(),
+                Description: d.Description?.Trim() ?? string.Empty,
+                Instructions: d.Instructions ?? string.Empty,
+                AllowedTools: (d.AllowedTools ?? new List<string>())
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Select(t => t.Trim())
+                    .ToList(),
+                RestrictToWorkspace: d.RestrictToWorkspace ?? true,
+                RequireApproval: d.RequireApproval ?? false,
+                EndpointId: d.EndpointId,
+                MaxIterations: d.MaxIterations));
+        }
+
+        return agents.Count == 0 ? SubagentRegistry.Empty : new SubagentRegistry(agents);
+    }
+
+    private static List<SubagentDto>? SubagentsToDto(SubagentRegistry registry)
+    {
+        if (registry.IsEmpty) return null;
+        return registry.Agents.Select(a => new SubagentDto
+        {
+            Id = a.Id,
+            Name = a.Name,
+            Description = string.IsNullOrWhiteSpace(a.Description) ? null : a.Description,
+            Instructions = string.IsNullOrWhiteSpace(a.Instructions) ? null : a.Instructions,
+            AllowedTools = a.AllowedTools.Count == 0 ? null : a.AllowedTools.ToList(),
+            RestrictToWorkspace = a.RestrictToWorkspace,
+            RequireApproval = a.RequireApproval ? true : null,
+            EndpointId = a.EndpointId,
+            MaxIterations = a.MaxIterations,
+        }).ToList();
+    }
 }

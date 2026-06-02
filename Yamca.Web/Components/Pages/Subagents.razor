@@ -1,0 +1,269 @@
+@page "/subagents"
+@rendermode InteractiveServer
+@implements IDisposable
+@using Yamca.Agent.Settings
+@using Yamca.Agent.Tools
+
+<PageTitle>Subagents — yamca</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+
+@if (!_hydrated)
+{
+    <MudProgressCircular Indeterminate="true" />
+    <MudText Typo="Typo.body2" Class="ml-2 d-inline">Loading settings&hellip;</MudText>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.h6">Subagents</MudText>
+            <MudSpacer />
+            <MudTabs @bind-ActivePanelIndex="_tierIndex" Rounded="true" Color="Color.Primary">
+                <MudTabPanel Text="Project" />
+                <MudTabPanel Text="Global" />
+            </MudTabs>
+        </div>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            Named, headless agents the LLM can delegate to through the <code>subagent_run</code> tool.
+            Each subagent runs in its own session with the tools you select (all auto-allowed) plus its
+            own instructions, and reports back through <code>subagent_result</code>. Project subagents
+            override global ones of the same name.
+            @if (_tierIndex == 0)
+            {
+                <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
+            }
+            else { <text> Stored on disk in <code>@Keys.GlobalFile</code>.</text> }
+        </MudText>
+
+        @{ var rows = CurrentRows; }
+        @if (rows.Count == 0)
+        {
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)" Class="mb-2">
+                No subagents defined in this tier.
+            </MudText>
+        }
+        else
+        {
+            <MudExpansionPanels MultiExpansion="true" Class="mb-3">
+                @foreach (var row in rows)
+                {
+                    <MudExpansionPanel @key="row.Id">
+                        <TitleContent>
+                            <div class="d-flex align-center" style="gap: 8px;">
+                                <MudIcon Icon="@Icons.Material.Filled.Psychology" Size="Size.Small" />
+                                <MudText>@(string.IsNullOrWhiteSpace(row.Name) ? "(unnamed)" : row.Name)</MudText>
+                                @if (row.RequireApproval)
+                                {
+                                    <MudTooltip Text="Requires explicit approval each time it runs.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Color="Color.Warning" />
+                                    </MudTooltip>
+                                }
+                            </div>
+                        </TitleContent>
+                        <ChildContent>
+                            <MudTextField T="string" Label="Name" Value="@row.Name"
+                                          ValueChanged="@((string v) => OnFieldChanged(row, () => row.Name = (v ?? string.Empty).Trim()))"
+                                          DebounceInterval="400" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                          Class="mb-2" Placeholder="explorer" />
+                            <MudTextField T="string" Label="Description (shown to the calling agent)"
+                                          Value="@row.Description"
+                                          ValueChanged="@((string v) => OnFieldChanged(row, () => row.Description = v ?? string.Empty))"
+                                          DebounceInterval="400" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                          Class="mb-2" />
+                            <MudTextField T="string" Label="Instructions (the subagent's system prompt)"
+                                          Value="@row.Instructions"
+                                          ValueChanged="@((string v) => OnFieldChanged(row, () => row.Instructions = v ?? string.Empty))"
+                                          DebounceInterval="400" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                          Lines="5" Class="mb-2" />
+
+                            <MudSelect T="string" Label="Allowed tools" MultiSelection="true"
+                                       SelectedValues="@row.AllowedTools"
+                                       SelectedValuesChanged="@((IReadOnlyCollection<string> v) => OnAllowedToolsChanged(row, v))"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
+                                       MultiSelectionTextFunc="@(new Func<List<string>, string>(s => string.Join(", ", s)))">
+                                @foreach (var tool in _toolNames)
+                                {
+                                    <MudSelectItem T="string" Value="@tool">@tool</MudSelectItem>
+                                }
+                            </MudSelect>
+
+                            <div class="d-flex align-center flex-wrap" style="gap: 16px;">
+                                <MudSwitch T="bool" Value="@row.RestrictToWorkspace"
+                                           ValueChanged="@((bool v) => OnFieldChanged(row, () => row.RestrictToWorkspace = v))"
+                                           Color="Color.Primary" Label="Restrict to workspace" />
+                                <MudSwitch T="bool" Value="@row.RequireApproval"
+                                           ValueChanged="@((bool v) => OnFieldChanged(row, () => row.RequireApproval = v))"
+                                           Color="Color.Warning" Label="Require approval each run" />
+                            </div>
+
+                            <div class="d-flex align-center flex-wrap mt-2" style="gap: 16px;">
+                                <MudSelect T="Guid?" Label="Endpoint" Value="@row.EndpointId"
+                                           ValueChanged="@((Guid? v) => OnFieldChanged(row, () => row.EndpointId = v))"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 240px;"
+                                           Clearable="true">
+                                    <MudSelectItem T="Guid?" Value="@((Guid?)null)">Inherit from parent chat</MudSelectItem>
+                                    @foreach (var ep in Session.Endpoints.Items)
+                                    {
+                                        <MudSelectItem T="Guid?" Value="@((Guid?)ep.Id)">@ep.DisplayLabel</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                <MudNumericField T="int?" Label="Max iterations" Value="@row.MaxIterations"
+                                                 ValueChanged="@((int? v) => OnFieldChanged(row, () => row.MaxIterations = Normalize(v)))"
+                                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="100"
+                                                 Style="max-width: 160px;" Placeholder="default" Clearable="true" />
+                            </div>
+
+                            <div class="d-flex mt-3">
+                                <MudSpacer />
+                                <MudButton Variant="Variant.Text" Color="Color.Error"
+                                           StartIcon="@Icons.Material.Filled.Delete"
+                                           OnClick="@(() => RemoveRow(row))">
+                                    Delete subagent
+                                </MudButton>
+                            </div>
+                        </ChildContent>
+                    </MudExpansionPanel>
+                }
+            </MudExpansionPanels>
+        }
+
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" OnClick="AddRow">
+            Add subagent
+        </MudButton>
+    </MudPaper>
+}
+
+</MudContainer>
+
+@code {
+    [Inject] private SessionSettings Session { get; set; } = default!;
+    [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
+    [Inject] private SettingsLocation Keys { get; set; } = default!;
+    [Inject] private IToolRegistry Tools { get; set; } = default!;
+
+    // Tools that don't make sense to hand a subagent: the delegation tool itself (would let a
+    // subagent spawn subagents — also blocked at the runner) and the deferred-tool meta-tools
+    // (a subagent's set is curated and eager).
+    private static readonly HashSet<string> ExcludedTools =
+        new(StringComparer.Ordinal) { SubagentRunTool.ToolName, "lookup_tool", "call_tool" };
+
+    private bool _hydrated;
+    private int _tierIndex; // 0 = Project, 1 = Global
+    private IReadOnlyList<string> _toolNames = Array.Empty<string>();
+
+    private sealed class SubagentRow
+    {
+        public Guid Id { get; init; } = Guid.NewGuid();
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string Instructions { get; set; } = string.Empty;
+        public HashSet<string> AllowedTools { get; set; } = new(StringComparer.Ordinal);
+        public bool RestrictToWorkspace { get; set; } = true;
+        public bool RequireApproval { get; set; }
+        public Guid? EndpointId { get; set; }
+        public int? MaxIterations { get; set; }
+    }
+
+    private readonly List<SubagentRow> _projectRows = new();
+    private readonly List<SubagentRow> _globalRows = new();
+
+    private List<SubagentRow> CurrentRows => _tierIndex == 0 ? _projectRows : _globalRows;
+    private SettingsTier CurrentTier => _tierIndex == 0 ? SettingsTier.Project : SettingsTier.Global;
+
+    protected override void OnInitialized()
+    {
+        Session.Changed += OnSettingsChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Hydrator.HydrateAsync();
+        _toolNames = Tools.GetSettingsTools()
+            .Select(t => t.Name)
+            .Where(n => !ExcludedTools.Contains(n))
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+        SyncRowsFromSession();
+        _hydrated = true;
+        StateHasChanged();
+    }
+
+    private void OnSettingsChanged(SettingsTier _) => InvokeAsync(StateHasChanged);
+
+    private void SyncRowsFromSession()
+    {
+        SyncRows(Session.ProjectSubagents, _projectRows);
+        SyncRows(Session.GlobalSubagents, _globalRows);
+    }
+
+    private static void SyncRows(SubagentRegistry registry, List<SubagentRow> rows)
+    {
+        rows.Clear();
+        foreach (var a in registry.Agents)
+        {
+            rows.Add(new SubagentRow
+            {
+                Name = a.Name,
+                Description = a.Description,
+                Instructions = a.Instructions,
+                AllowedTools = new HashSet<string>(a.AllowedTools, StringComparer.Ordinal),
+                RestrictToWorkspace = a.RestrictToWorkspace,
+                RequireApproval = a.RequireApproval,
+                EndpointId = a.EndpointId,
+                MaxIterations = a.MaxIterations,
+            });
+        }
+    }
+
+    private void Persist()
+    {
+        var agents = CurrentRows
+            .Where(r => !string.IsNullOrWhiteSpace(r.Name))
+            .Select(r => new SubagentDefinition(
+                Id: Guid.NewGuid(),
+                Name: r.Name.Trim(),
+                Description: r.Description?.Trim() ?? string.Empty,
+                Instructions: r.Instructions ?? string.Empty,
+                AllowedTools: r.AllowedTools.OrderBy(n => n, StringComparer.Ordinal).ToList(),
+                RestrictToWorkspace: r.RestrictToWorkspace,
+                RequireApproval: r.RequireApproval,
+                EndpointId: r.EndpointId,
+                MaxIterations: r.MaxIterations))
+            .ToList();
+        Session.SetSubagents(CurrentTier, new SubagentRegistry(agents));
+    }
+
+    private void OnFieldChanged(SubagentRow row, Action apply)
+    {
+        apply();
+        Persist();
+    }
+
+    private void OnAllowedToolsChanged(SubagentRow row, IReadOnlyCollection<string> selected)
+    {
+        row.AllowedTools = new HashSet<string>(selected ?? Enumerable.Empty<string>(), StringComparer.Ordinal);
+        Persist();
+    }
+
+    private void AddRow()
+    {
+        CurrentRows.Add(new SubagentRow());
+        // No persist yet — an unnamed row is skipped on save until the user gives it a name.
+    }
+
+    private void RemoveRow(SubagentRow row)
+    {
+        CurrentRows.Remove(row);
+        Persist();
+    }
+
+    private static int? Normalize(int? value) =>
+        value is int v ? Math.Clamp(v, 1, 100) : null;
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSettingsChanged;
+    }
+}

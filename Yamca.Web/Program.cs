@@ -11,6 +11,7 @@ using Yamca.Agent.Mcp;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Settings.Persistence;
+using Yamca.Agent.Subagents;
 using Yamca.Agent.Tools;
 using Yamca.Agent.Tools.Board;
 using Yamca.Agent.Tools.CodeIntel;
@@ -209,6 +210,12 @@ builder.Services.AddScoped<ScriptRegistryLookup>();
 builder.Services.AddScoped<ITool, ExecuteRegisteredScriptTool>();
 builder.Services.AddScoped<ITool, ExecuteDiscoveredScriptTool>();
 builder.Services.AddScoped<ITool, ExecuteScriptTool>();
+
+// Subagents: subagent_run lets a chat delegate a task to a headless subagent session driven by
+// SubagentRunner. Both are scoped — the runner reads per-circuit settings and is bound with the
+// parent chat's completion client by ChatViewModel so subagents inherit the parent's endpoint.
+builder.Services.AddScoped<ISubagentRunner, SubagentRunner>();
+builder.Services.AddScoped<ITool, SubagentRunTool>();
 
 // MCP host: one registry per process, shared across all chat sessions. The web
 // layer hydrates it from mcp.json on first circuit and again whenever the

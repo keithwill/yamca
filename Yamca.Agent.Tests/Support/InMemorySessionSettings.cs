@@ -10,5 +10,8 @@ internal sealed class InMemorySessionSettings : ISessionSettings
     public string SystemPrompt { get; set; } = "You are a test assistant.";
     public ScriptRegistry ProjectScripts { get; set; } = ScriptRegistry.Empty;
     public ScriptRegistry GlobalScripts { get; set; } = ScriptRegistry.Empty;
+    public SubagentRegistry ProjectSubagents { get; set; } = SubagentRegistry.Empty;
+    public SubagentRegistry GlobalSubagents { get; set; } = SubagentRegistry.Empty;
     public DeferredToolsHint DeferredToolsHint { get; set; } = DeferredToolsHint.Names;
+    public int MaxToolIterations { get; set; } = 10;
 }

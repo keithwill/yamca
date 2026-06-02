@@ -4,6 +4,7 @@ using Yamca.Agent.Chat.Persistence;
 using Yamca.Agent.Git;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
+using Yamca.Agent.Subagents;
 using Yamca.Agent.Tools;
 using Yamca.Agent.Workspace;
 
@@ -27,6 +28,7 @@ public sealed class ChatViewModel : IDisposable
     private readonly LoadedToolSet _loadedTools;
     private readonly ContextCompactor _compactor;
     private readonly ChatStore _store;
+    private readonly ISubagentRunner _subagentRunner;
     private readonly SessionDiagnosticsLog _diagnostics = new();
 
     private AgentLoop? _loop;
@@ -57,7 +59,8 @@ public sealed class ChatViewModel : IDisposable
         EndpointHealthService endpointHealth,
         LoadedToolSet loadedTools,
         ContextCompactor compactor,
-        ChatStore store)
+        ChatStore store,
+        ISubagentRunner subagentRunner)
     {
         Id = id;
         _workspace = workspace;
@@ -73,6 +76,7 @@ public sealed class ChatViewModel : IDisposable
         _loadedTools = loadedTools;
         _compactor = compactor;
         _store = store;
+        _subagentRunner = subagentRunner;
     }
 
     public int Id { get; }
@@ -475,6 +479,10 @@ public sealed class ChatViewModel : IDisposable
         http.Timeout = Timeout.InfiniteTimeSpan;
 
         var completion = new OpenAIChatCompletionClient(http, modelId);
+
+        // Hand the subagent runner this chat's completion client so subagents launched from this
+        // session inherit its endpoint/model by default (the workspace flows through ToolContext).
+        _subagentRunner.Bind(completion);
 
         ChatSession session;
         if (_restoredMessages is { } restored)

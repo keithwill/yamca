@@ -23,7 +23,20 @@ public interface ISessionSettings
     /// <summary>Global-tier script registry — applies to every workspace.</summary>
     ScriptRegistry GlobalScripts { get; }
 
+    /// <summary>Project-tier subagent registry. Empty when none are configured for the
+    /// current workspace. Merged with <see cref="GlobalSubagents"/> at the use site, with
+    /// project entries overriding global entries of the same name.</summary>
+    SubagentRegistry ProjectSubagents { get; }
+
+    /// <summary>Global-tier subagent registry — applies to every workspace. Seeded with a
+    /// few low-risk built-ins on first run.</summary>
+    SubagentRegistry GlobalSubagents { get; }
+
     /// <summary>Controls how much of the deferred-tool catalog is included in the frozen
     /// session-start system message. Honored by <c>lookup_tool</c>'s session-start contribution.</summary>
     DeferredToolsHint DeferredToolsHint { get; }
+
+    /// <summary>Maximum LLM round-trips per turn. Used as the default iteration cap for a
+    /// subagent run when the subagent does not override it.</summary>
+    int MaxToolIterations { get; }
 }
