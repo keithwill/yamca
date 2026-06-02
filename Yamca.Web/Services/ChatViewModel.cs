@@ -27,6 +27,7 @@ public sealed class ChatViewModel : IDisposable
     private readonly LoadedToolSet _loadedTools;
     private readonly ContextCompactor _compactor;
     private readonly ChatStore _store;
+    private readonly SessionDiagnosticsLog _diagnostics = new();
 
     private AgentLoop? _loop;
     private CancellationTokenSource? _runCts;
@@ -75,6 +76,12 @@ public sealed class ChatViewModel : IDisposable
     }
 
     public int Id { get; }
+
+    /// <summary>In-memory diagnostic timeline for this session — model round-trips
+    /// (with <c>finish_reason</c>), tool execution, and lifecycle events. Surfaced in
+    /// the composer's "Diagnostic Log" dialog. Lives for the lifetime of the VM and is
+    /// reset by <see cref="Clear"/>.</summary>
+    public SessionDiagnosticsLog Diagnostics => _diagnostics;
 
     /// <summary>Stable identifier used as the persistence file name and to detect when a
     /// saved chat is already open. Distinct from the volatile 1–4 slot <see cref="Id"/>.
@@ -224,6 +231,8 @@ public sealed class ChatViewModel : IDisposable
 
         EnsureStarted();
 
+        _diagnostics.Log(DiagnosticCategory.Session, $"user message sent ({prompt.Length} chars)");
+
         var turn = new ChatTurn(prompt);
         Turns.Add(turn);
 
@@ -243,6 +252,7 @@ public sealed class ChatViewModel : IDisposable
         if (turn is null || !turn.MaxIterationsReached) return;
 
         turn.MaxIterationsReached = false;
+        _diagnostics.Log(DiagnosticCategory.Session, "continue (resume after iteration cap)");
         await DriveAsync(turn, ct => _loop.ContinueTurnAsync(ct)).ConfigureAwait(false);
     }
 
@@ -273,11 +283,13 @@ public sealed class ChatViewModel : IDisposable
         catch (OperationCanceledException)
         {
             turn.Error = "Cancelled.";
+            _diagnostics.Log(DiagnosticCategory.Session, "cancelled");
         }
         catch (Exception ex)
         {
             turn.Error = ex.Message;
             Error = ex.Message;
+            _diagnostics.Log(DiagnosticCategory.Error, $"exception: {ex.Message}");
         }
         finally
         {
@@ -332,6 +344,7 @@ public sealed class ChatViewModel : IDisposable
         if (IsRunning) Cancel();
         Turns.Clear();
         Approvals.Clear();
+        _diagnostics.Clear();
         _loop = null;     // forces a fresh ChatSession (system prompt re-rendered) on next send
         LockedEndpoint = null;  // a cleared chat is a fresh chat — re-pick endpoint on next send
         _lastReportedPromptTokens = null;
@@ -494,7 +507,8 @@ public sealed class ChatViewModel : IDisposable
         _loop = new AgentLoop(
             session, completion, _tools, _permissions, _availability, _approvals, _permissionStore, _workspace, _loadedTools,
             new AgentLoopOptions { MaxIterations = _settings.MaxToolIterations },
-            isYoloEnabled: () => YoloMode);
+            isYoloEnabled: () => YoloMode,
+            diagnostics: _diagnostics);
 
         StartApprovalConsumer();
         _ = DetectCapabilitiesAsync(endpoint);
@@ -597,7 +611,7 @@ public sealed class ChatViewModel : IDisposable
                 {
                     var t = new AssistantTextItem();
                     t.Append(msg.Content);
-                    turn.Items.Add(t);
+                    turn.AddItem(t);
                     current = t;
                 }
                 if (current is not null) current.IsComplete = true;
@@ -605,7 +619,7 @@ public sealed class ChatViewModel : IDisposable
 
             case ToolCallStartedEvent started:
                 turn.Activity = TurnActivity.RunningTools;
-                turn.Items.Add(new ToolCallItem
+                turn.AddItem(new ToolCallItem
                 {
                     CallId = started.CallId,
                     ToolName = started.ToolName,
@@ -632,7 +646,7 @@ public sealed class ChatViewModel : IDisposable
                 {
                     // Some denial paths (unknown tool, malformed JSON) skip the
                     // ToolCallStartedEvent and only emit the denied/result event.
-                    turn.Items.Add(new ToolCallItem
+                    turn.AddItem(new ToolCallItem
                     {
                         CallId = denied.CallId,
                         ToolName = denied.ToolName,
@@ -659,7 +673,7 @@ public sealed class ChatViewModel : IDisposable
     {
         if (turn.Items.LastOrDefault() is AssistantTextItem t && !t.IsComplete) return t;
         var fresh = new AssistantTextItem();
-        turn.Items.Add(fresh);
+        turn.AddItem(fresh);
         return fresh;
     }
 
@@ -670,7 +684,7 @@ public sealed class ChatViewModel : IDisposable
     {
         if (turn.Items.LastOrDefault() is ReasoningItem r && !r.IsComplete) return r;
         var fresh = new ReasoningItem();
-        turn.Items.Add(fresh);
+        turn.AddItem(fresh);
         return fresh;
     }
 
@@ -759,15 +773,15 @@ public sealed class ChatViewModel : IDisposable
                     case "text":
                         var text = new AssistantTextItem { IsComplete = pi.IsComplete };
                         text.Append(pi.Text);
-                        turn.Items.Add(text);
+                        turn.AddItem(text);
                         break;
                     case "reasoning":
                         var reasoning = new ReasoningItem { IsComplete = pi.IsComplete };
                         reasoning.Append(pi.Text);
-                        turn.Items.Add(reasoning);
+                        turn.AddItem(reasoning);
                         break;
                     case "tool":
-                        turn.Items.Add(new ToolCallItem
+                        turn.AddItem(new ToolCallItem
                         {
                             CallId = pi.CallId ?? "",
                             ToolName = pi.ToolName ?? "",

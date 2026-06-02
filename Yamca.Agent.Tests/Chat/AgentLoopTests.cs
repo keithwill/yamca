@@ -448,6 +448,52 @@ public class AgentLoopTests
         Assert.That(result.Content, Does.Contain("call_tool"));
     }
 
+    // --- diagnostics --------------------------------------------------------------
+
+    [Test]
+    public async Task Diagnostics_RecordsFinishReasonAndTurnLifecycle()
+    {
+        var diag = new SessionDiagnosticsLog();
+        var loop = new AgentLoop(
+            new ChatSession("sys"), _llm, _registry, _resolver, _availability, _approvals, _store, _ws.Workspace, _loaded,
+            new AgentLoopOptions { MaxIterations = 5 }, diagnostics: diag);
+
+        _llm.Enqueue(new ScriptedResponse("hello", Array.Empty<LlmToolCallRequest>(), "length"));
+
+        await Collect(loop.RunTurnAsync("hi"));
+
+        var messages = diag.Snapshot().Select(e => e.Message).ToList();
+        Assert.That(messages, Has.Some.Contains("model request"));
+        // The finish_reason the ChatStreamEvent stream drops must be captured here.
+        Assert.That(messages, Has.Some.Contains("finish_reason=length"));
+        Assert.That(messages, Has.Some.Contains("turn complete: assistant reply"));
+    }
+
+    [Test]
+    public async Task Diagnostics_RecordsToolInvocationAndResult()
+    {
+        var diag = new SessionDiagnosticsLog();
+        var loop = new AgentLoop(
+            new ChatSession("sys"), _llm, _registry, _resolver, _availability, _approvals, _store, _ws.Workspace, _loaded,
+            new AgentLoopOptions { MaxIterations = 5 }, diagnostics: diag);
+
+        _llm.EnqueueToolCall("call_1", "read_file", """{"path":"x"}""");
+        _llm.EnqueueText("done");
+
+        await Collect(loop.RunTurnAsync("read x"));
+
+        var tool = diag.Snapshot().Where(e => e.Category == DiagnosticCategory.Tool).Select(e => e.Message).ToList();
+        Assert.That(tool, Has.Some.Contains("read_file"), "tool invocation should be logged");
+    }
+
+    [Test]
+    public async Task Diagnostics_NullLog_DoesNotThrow()
+    {
+        // The default SetUp loop has no diagnostics sink — logging must be a no-op.
+        _llm.EnqueueText("ok");
+        Assert.DoesNotThrowAsync(async () => await Collect(_loop.RunTurnAsync("hi")));
+    }
+
     private static async Task<List<ChatStreamEvent>> Collect(IAsyncEnumerable<ChatStreamEvent> stream)
     {
         var list = new List<ChatStreamEvent>();

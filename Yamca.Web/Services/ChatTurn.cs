@@ -10,7 +10,26 @@ public sealed class ChatTurn
     }
 
     public string UserMessage { get; }
-    public List<ChatTurnItem> Items { get; } = new();
+
+    // The item list is written by the agent loop on a background continuation
+    // (Apply runs after `await ... ConfigureAwait(false)`) while the Blazor renderer
+    // enumerates it on the dispatcher. Without this gate, a streamed Add racing the
+    // render throws "Collection was modified". Reads return a snapshot so the renderer
+    // never enumerates the live list. Mirrors the per-item _gate on the text/reasoning
+    // buffers below.
+    private readonly List<ChatTurnItem> _items = new();
+    private readonly object _itemsGate = new();
+
+    public IReadOnlyList<ChatTurnItem> Items
+    {
+        get { lock (_itemsGate) return _items.ToArray(); }
+    }
+
+    internal void AddItem(ChatTurnItem item)
+    {
+        lock (_itemsGate) _items.Add(item);
+    }
+
     public bool IsRunning { get; internal set; } = true;
     public string? Error { get; internal set; }
 

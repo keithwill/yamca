@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.JSInterop
 @using System.Text
+@using Yamca.Agent.Chat
 @using Yamca.Agent.Settings
 @using Yamca.Agent.Workspace
 @using Yamca.Web.Components.Branching
@@ -85,6 +86,15 @@
                                            Disabled="@(Chat.IsBusy || Chat.Turns.Count == 0 || Chat.IsReadOnly)"
                                            OnClick="OpenCompactDialog"
                                            aria-label="Compact context" />
+                        </span>
+                    </MudTooltip>
+                    <MudTooltip Text="Diagnostic log — endpoint &amp; session events">
+                        <span>
+                            <MudIconButton Icon="@Icons.Material.Filled.BugReport"
+                                           Color="Color.Default" Variant="Variant.Text"
+                                           Size="Size.Small"
+                                           OnClick="OpenDiagnosticsDialog"
+                                           aria-label="Diagnostic log" />
                         </span>
                     </MudTooltip>
                     <MudTooltip Text="YOLO Mode - Permission checks are skipped">
@@ -214,6 +224,41 @@
         </DialogActions>
     </MudDialog>
 
+    <MudDialog @bind-Visible="_diagDialogOpen"
+               Options="@(new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true })">
+        <TitleContent>
+            <div class="d-flex align-center" style="gap: 6px; width: 100%;">
+                <MudIcon Icon="@Icons.Material.Filled.BugReport" Size="Size.Small" />
+                <MudText Typo="Typo.h6">Diagnostic log</MudText>
+                <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+                    @_diagEntries.Count @(_diagEntries.Count == 1 ? "entry" : "entries")
+                </MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small"
+                               Class="ml-auto" OnClick="CopyDiagnostics"
+                               Disabled="@(_diagEntries.Count == 0)" aria-label="Copy diagnostics" />
+                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                               OnClick="@(() => _diagDialogOpen = false)" aria-label="Close" />
+            </div>
+        </TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.caption" Class="mb-2" Style="color:var(--mud-palette-text-secondary)">
+                Most recent endpoint round-trips, tool calls, and session events for this chat
+                (newest last). In-memory only — cleared when the chat is reset.
+            </MudText>
+            @if (_diagEntries.Count == 0)
+            {
+                <MudText Typo="Typo.body2">No diagnostics recorded yet — send a message to populate the log.</MudText>
+            }
+            else
+            {
+                <pre style="white-space: pre-wrap; word-break: break-word; font-family: var(--mud-typography-body2-family); font-size: 0.8rem; margin: 0; max-height: 60vh; overflow: auto;">@FormatDiagnostics()</pre>
+            }
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _diagDialogOpen = false)">Close</MudButton>
+        </DialogActions>
+    </MudDialog>
+
     <div class="yamca-scroll" @ref="_scrollContainer">
         <MudContainer MaxWidth="MaxWidth.Large" Class="pa-2">
             @for (var i = 0; i < Chat.Turns.Count; i++)
@@ -278,6 +323,8 @@
     private bool _summaryDialogOpen;
     private bool _compactDialogOpen;
     private int _compactKeepTurns = 4;
+    private bool _diagDialogOpen;
+    private IReadOnlyList<DiagnosticEntry> _diagEntries = Array.Empty<DiagnosticEntry>();
 
     // Worktree change badge: refreshed on bind and whenever an agent turn finishes (which is when
     // the on-disk worktree may have changed). _wasRunningForDiff tracks the run transition; the
@@ -628,6 +675,34 @@
     {
         _compactKeepTurns = SessionConcrete.AutoCompactionKeepRecentTurns;
         _compactDialogOpen = true;
+    }
+
+    private void OpenDiagnosticsDialog()
+    {
+        _diagEntries = Chat.Diagnostics.Snapshot();
+        _diagDialogOpen = true;
+    }
+
+    private static string FormatDiagnostics(IReadOnlyList<DiagnosticEntry> entries)
+    {
+        var sb = new StringBuilder();
+        foreach (var e in entries)
+        {
+            sb.Append('[').Append(e.Seq.ToString("D4")).Append("] ")
+              .Append(e.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff")).Append("  ")
+              .Append(e.Category.ToString().ToUpperInvariant().PadRight(7)).Append("  ")
+              .AppendLine(e.Message);
+        }
+        return sb.ToString();
+    }
+
+    private string FormatDiagnostics() => FormatDiagnostics(_diagEntries);
+
+    private async Task CopyDiagnostics()
+    {
+        if (_diagEntries.Count == 0) return;
+        await SafeInvokeAsync("yamcaChat.copyText", FormatDiagnostics());
+        Snackbar.Add("Diagnostic log copied to clipboard.", Severity.Normal);
     }
 
     private async Task ConfirmCompactNow()

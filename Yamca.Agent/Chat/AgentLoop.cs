@@ -22,6 +22,7 @@ public sealed class AgentLoop
     private readonly LoadedToolSet _loadedTools;
     private readonly AgentLoopOptions _options;
     private readonly Func<bool> _isYoloEnabled;
+    private readonly SessionDiagnosticsLog? _diagnostics;
 
     public AgentLoop(
         ChatSession session,
@@ -34,7 +35,8 @@ public sealed class AgentLoop
         IWorkspace workspace,
         LoadedToolSet loadedTools,
         AgentLoopOptions? options = null,
-        Func<bool>? isYoloEnabled = null)
+        Func<bool>? isYoloEnabled = null,
+        SessionDiagnosticsLog? diagnostics = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(client);
@@ -57,6 +59,38 @@ public sealed class AgentLoop
         _loadedTools = loadedTools;
         _options = options ?? AgentLoopOptions.Default;
         _isYoloEnabled = isYoloEnabled ?? (static () => false);
+        _diagnostics = diagnostics;
+    }
+
+    private void Log(DiagnosticCategory category, string message) =>
+        _diagnostics?.Log(category, message);
+
+    /// <summary>Mirror the tool-related <see cref="ChatStreamEvent"/>s emitted by
+    /// <see cref="HandleToolCallAsync"/> into the diagnostic log, so the timeline
+    /// records every invocation, result, and denial alongside the model events.</summary>
+    private void LogToolEvent(ChatStreamEvent ev)
+    {
+        if (_diagnostics is null) return;
+        switch (ev)
+        {
+            case ToolCallStartedEvent s:
+                Log(DiagnosticCategory.Tool, $"▶ {s.ToolName}({Preview(s.ArgumentsJson)})");
+                break;
+            case ToolCallResultEvent r:
+                Log(r.IsError ? DiagnosticCategory.Error : DiagnosticCategory.Tool,
+                    $"{(r.IsError ? "✗" : "✓")} {r.ToolName}: {r.Content.Length} chars");
+                break;
+            case ToolDeniedEvent d:
+                Log(DiagnosticCategory.Error, $"⊘ denied {d.ToolName}: {Preview(d.Reason)}");
+                break;
+        }
+    }
+
+    private static string Preview(string? text, int max = 120)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        var oneLine = text.ReplaceLineEndings(" ").Trim();
+        return oneLine.Length <= max ? oneLine : oneLine[..max] + "…";
     }
 
     public ChatSession Session => _session;
@@ -95,6 +129,10 @@ public sealed class AgentLoop
             // indicator during the silent gap before the first token arrives.
             yield return ModelRequestStartedEvent.Instance;
 
+            Log(DiagnosticCategory.Request,
+                $"→ model request (iteration {iteration + 1}/{_options.MaxIterations}, " +
+                $"{_session.Messages.Count} msgs, {chatTools.Count} tools)");
+
             string content = "";
             IReadOnlyList<LlmToolCallRequest> toolCalls = Array.Empty<LlmToolCallRequest>();
 
@@ -113,14 +151,25 @@ public sealed class AgentLoop
                         yield return ReasoningCompleteEvent.Instance;
                         break;
                     case LlmToolCallStreamStarted:
+                        Log(DiagnosticCategory.Model, "tool-call generation started");
                         yield return ToolCallGenerationStartedEvent.Instance;
                         break;
                     case LlmUsageUpdate usage:
+                        Log(DiagnosticCategory.Usage,
+                            $"usage: prompt={usage.PromptTokens}, completion={usage.CompletionTokens}" +
+                            (usage.CachedTokens is int c ? $", cached={c}" : ""));
                         yield return new UsageUpdateEvent(usage.PromptTokens, usage.CompletionTokens, usage.CachedTokens);
                         break;
                     case LlmAssistantTurnComplete done:
                         content = done.Content;
                         toolCalls = done.ToolCalls;
+                        var names = done.ToolCalls.Count > 0
+                            ? " [" + string.Join(", ", done.ToolCalls.Select(t => t.ToolName)) + "]"
+                            : "";
+                        Log(DiagnosticCategory.Model,
+                            $"assistant turn complete: finish_reason={done.FinishReason ?? "(none)"}, " +
+                            $"content={done.Content.Length} chars, reasoning={done.Reasoning.Length} chars, " +
+                            $"tool_calls={done.ToolCalls.Count}{names}");
                         break;
                 }
             }
@@ -130,6 +179,7 @@ public sealed class AgentLoop
 
             if (toolCalls.Count == 0)
             {
+                Log(DiagnosticCategory.Session, "turn complete: assistant reply");
                 yield return new TurnCompleteEvent(TurnCompletionReason.AssistantReply);
                 yield break;
             }
@@ -139,10 +189,14 @@ public sealed class AgentLoop
                 cancellationToken.ThrowIfCancellationRequested();
 
                 await foreach (var ev in HandleToolCallAsync(call, cancellationToken).ConfigureAwait(false))
+                {
+                    LogToolEvent(ev);
                     yield return ev;
+                }
             }
         }
 
+        Log(DiagnosticCategory.Session, $"turn stopped: reached iteration cap ({_options.MaxIterations})");
         yield return new TurnCompleteEvent(TurnCompletionReason.MaxIterationsReached);
     }
 

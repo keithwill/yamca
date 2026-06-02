@@ -83,6 +83,20 @@ window.yamcaChat = (function () {
             if (!scrollContainer) return;
             const s = getState(scrollContainer);
             s.stick = true;
+        },
+        copyText: function (text) {
+            if (text == null) return;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                return navigator.clipboard.writeText(text);
+            }
+            // Fallback for non-secure contexts where the async clipboard API is unavailable.
+            const ta = document.createElement("textarea");
+            ta.value = text;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand("copy"); } finally { document.body.removeChild(ta); }
         }
     };
 })();
