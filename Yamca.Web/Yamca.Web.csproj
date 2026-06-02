@@ -57,4 +57,37 @@
     </ItemGroup>
   </Target>
 
+  <!-- Trim unused tree-sitter grammar binaries from the published tool. TreeSitter.DotNet
+       bundles ~30 grammars across 9 RIDs (~590 MB expanded), but we only parse languages
+       that have a registered ISymbolExtractor + ILanguageNodeProfile (see Program.cs and
+       LanguageRouter). Keep those plus the core runtime; delete the rest from the publish
+       output before it is packed into the tool. Runs after Publish (a pack prerequisite)
+       and before the nuspec is generated, so the dropped files never enter the package. -->
+  <Target Name="TrimUnusedTreeSitterGrammars" AfterTargets="Publish" BeforeTargets="GenerateNuspec">
+    <ItemGroup>
+      <!-- Every bundled grammar binary, across all RIDs (win/linux/osx, with/without 'lib'). -->
+      <_TsNative Include="$(PublishDir)runtimes\**\*tree-sitter*" />
+      <!-- The ones we actually parse, plus the core runtime. Each glob anchors on the '.'
+           before the extension, so e.g. *tree-sitter-c.* matches tree-sitter-c(.dll/.so/.dylib)
+           but never tree-sitter-cpp / -c-sharp / -css. Keep in lockstep with LanguageRouter
+           and the registered extractors. -->
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter.*" />          <!-- core runtime -->
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter-c.*" />
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter-cpp.*" />
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter-c-sharp.*" />
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter-java.*" />
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter-javascript.*" />
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter-typescript.*" />
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter-tsx.*" />
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter-python.*" />
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter-ruby.*" />
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter-php.*" />
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter-rust.*" />
+      <_TsKeep Include="$(PublishDir)runtimes\**\*tree-sitter-go.*" />
+      <_TsTrim Include="@(_TsNative)" Exclude="@(_TsKeep)" />
+    </ItemGroup>
+    <Delete Files="@(_TsTrim)" />
+    <Message Importance="high" Text="TreeSitter prune: kept @(_TsKeep->Count()) grammar binaries, removed @(_TsTrim->Count())." />
+  </Target>
+
 </Project>

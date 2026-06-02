@@ -4,8 +4,14 @@ namespace Yamca.Agent.Tools.CodeIntel;
 
 /// <summary>
 /// Maps file paths to tree-sitter language identifiers. The identifier is the same
-/// string accepted by <c>TreeSitter.Language(string)</c> — see the TreeSitter.DotNet
-/// runtimes directory for the canonical set.
+/// string accepted by <c>TreeSitter.Language(string)</c>.
+/// <para>
+/// Every language here must have both a registered <see cref="ISymbolExtractor"/> (see the
+/// DI wiring in <c>Program.cs</c>) and an <see cref="ILanguageNodeProfile"/>, and its grammar
+/// binary must survive the prune in <c>Yamca.Web.csproj</c>. Routing an extension whose
+/// grammar isn't bundled just dead-ends in <c>CodeScan</c>'s missing-grammar catch, so keep
+/// this set, the registered extractors, and the kept-grammar list in lockstep.
+/// </para>
 /// </summary>
 public static class LanguageRouter
 {
@@ -22,7 +28,6 @@ public static class LanguageRouter
         [".hxx"]  = "cpp",
         [".cs"]   = "c-sharp",
         [".java"] = "java",
-        [".scala"] = "scala",
         // Web
         [".js"]   = "javascript",
         [".jsx"]  = "javascript",
@@ -30,30 +35,13 @@ public static class LanguageRouter
         [".cjs"]  = "javascript",
         [".ts"]   = "typescript",
         [".tsx"]  = "tsx",
-        [".html"] = "html",
-        [".htm"]  = "html",
-        [".css"]  = "css",
         // Scripting
         [".py"]   = "python",
         [".rb"]   = "ruby",
         [".php"]  = "php",
-        [".sh"]   = "bash",
-        [".bash"] = "bash",
         // Systems
         [".rs"]   = "rust",
         [".go"]   = "go",
-        // Functional
-        [".hs"]   = "haskell",
-        [".ml"]   = "ocaml",
-        [".mli"]  = "ocaml",
-        [".jl"]   = "julia",
-        // Data
-        [".json"] = "json",
-        // Misc
-        [".ql"]   = "ql",
-        [".v"]    = "verilog",
-        [".sv"]   = "verilog",
-        [".agda"] = "agda",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>

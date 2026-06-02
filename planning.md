@@ -98,3 +98,16 @@ I reserve the right to have been wrong.
 Staging/committing the agent's work from within Yamca.
 
 **Why:** We rely on the user prompting the agent to commit, or on their IDE.
+
+### Code-intelligence tools (tree-sitter)
+The AST-aware tools — `code_search` / `code_find_*` / `code_edit_symbol`, backed by
+TreeSitter.DotNet (Yamca.Agent/Tools/CodeIntel) — are **shipped but on probation, and a
+candidate for removal.** In testing they confused a local LLM. We won't cut them until
+we're confident in their value, and the tools may need tweaks (prompt shape, output) first.
+
+**Why kept for now:** rather than carry their full footprint while undecided, a pack-time
+prune in `Yamca.Web.csproj` drops every grammar without a registered extractor + node
+profile (~590 MB → ~176 MB native, 13 languages, no capability loss). A guard test
+(`GrammarPackagingGuardTests`) keeps the router, extractors, profiles, and kept-grammar
+list in sync. The lever for a full cut is removing the TreeSitter.DotNet reference plus
+`Tools/CodeIntel`.

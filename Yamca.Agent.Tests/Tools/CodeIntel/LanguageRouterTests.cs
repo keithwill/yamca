@@ -14,8 +14,7 @@ public class LanguageRouterTests
     [TestCase("worker.mjs",      "javascript")]
     [TestCase("main.rs",         "rust")]
     [TestCase("main.go",         "go")]
-    [TestCase("script.sh",       "bash")]
-    [TestCase("README.HS",       "haskell")]    // case-insensitive
+    [TestCase("MAIN.RS",         "rust")]       // case-insensitive
     [TestCase("nested/dir/x.rb", "ruby")]
     public void KnownExtensions_RouteToExpectedLanguage(string path, string expected)
     {
@@ -27,6 +26,15 @@ public class LanguageRouterTests
     [TestCase("data.xml")]     // unsupported
     [TestCase("noext")]
     [TestCase("")]
+    // Languages whose grammars we deliberately don't bundle (no extractor/profile), so
+    // they must not route — see the kept-grammar list in Yamca.Web.csproj.
+    [TestCase("build.sh")]
+    [TestCase("Main.scala")]
+    [TestCase("page.html")]
+    [TestCase("styles.css")]
+    [TestCase("Lib.hs")]
+    [TestCase("config.json")]
+    [TestCase("chip.v")]
     public void UnsupportedPaths_ReturnNull(string path)
     {
         Assert.That(LanguageRouter.GetLanguageId(path), Is.Null);
