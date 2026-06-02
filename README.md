@@ -44,6 +44,21 @@ On startup Yamca prints the URL it is listening on, e.g.
 Yamca listening on http://127.0.0.1:51234  (workspace: C:\Repos\yamca)
 ```
 
+## Features
+
+Each feature has its own page under [`doc/`](https://github.com/keithwill/yamca/tree/main/doc)
+(links are absolute so they resolve on both GitHub and NuGet.org):
+
+- **[Dev Board](https://github.com/keithwill/yamca/blob/main/doc/dev-board.md)** — a Kanban board on a dedicated `yamca-board` branch that drives work through AI-assisted steps.
+- **[Chat Sessions](https://github.com/keithwill/yamca/blob/main/doc/chat-sessions.md)** — streaming, tool-using conversations (up to 4 at once), with persistence, compaction, and a split view.
+- **[Endpoints](https://github.com/keithwill/yamca/blob/main/doc/endpoints.md)** — OpenAI-compatible LLM backends (llama.cpp, vllm, OpenAI, OpenRouter, …) with health checks.
+- **[Tools & Permissions](https://github.com/keithwill/yamca/blob/main/doc/tools-and-permissions.md)** — the agent's file, search, execution, and code-intelligence tools, gated by an Allow/Ask/Deny permission model.
+- **[Worktrees](https://github.com/keithwill/yamca/blob/main/doc/worktrees.md)** — isolated git worktrees for branch work, and the RootPath vs. RepositoryRoot split.
+- **[MCP Servers](https://github.com/keithwill/yamca/blob/main/doc/mcp.md)** — Model Context Protocol servers that contribute additional tools to the agent.
+- **[Scripts](https://github.com/keithwill/yamca/blob/main/doc/scripts.md)** — registered vs. discovered scripts, with distinct execution permissions.
+- **[Custom Instructions](https://github.com/keithwill/yamca/blob/main/doc/custom-instructions.md)** — system prompt and instruction files folded into every session.
+- **[Settings & Backup](https://github.com/keithwill/yamca/blob/main/doc/settings-and-backup.md)** — Project vs. Global settings tiers, preferences, and global-settings export/import.
+
 ## Troubleshooting
 
 - **Port already in use** — Yamca defaults to port 9001. If 9001 is taken
