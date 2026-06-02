@@ -71,7 +71,7 @@ else
                                           ValueChanged="@((string v) => OnFieldChanged(row, () => row.Description = v ?? string.Empty))"
                                           DebounceInterval="400" Variant="Variant.Outlined" Margin="Margin.Dense"
                                           Class="mb-2" />
-                            <MudTextField T="string" Label="Instructions (the subagent's system prompt)"
+                            <MudTextField T="string" Label="Instructions (added to the subagent's system prompt)"
                                           Value="@row.Instructions"
                                           ValueChanged="@((string v) => OnFieldChanged(row, () => row.Instructions = v ?? string.Empty))"
                                           DebounceInterval="400" Variant="Variant.Outlined" Margin="Margin.Dense"

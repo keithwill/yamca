@@ -176,11 +176,15 @@ public sealed class SubagentRunner : ISubagentRunner
             ? "You are a focused subagent that completes a single delegated task."
             : def.Instructions.Trim();
 
-        var systemPrompt = baseInstructions +
-            "\n\nYou are running headless as a subagent — there is no user to talk to. When you " +
+        // The fixed preamble leads, so it forms a stable prefix shared by every subagent run —
+        // prefix-caching inference servers can reuse it regardless of which subagent (and which
+        // per-subagent instructions) follows. Keep this block byte-stable.
+        var systemPrompt =
+            "You are running headless as a subagent — there is no user to talk to. When you " +
             "have finished, call the subagent_result tool exactly once with your complete answer; " +
             "that is the only output the caller receives. Do not ask clarifying questions: make " +
-            "reasonable assumptions and proceed. Your responses are not rendered as Markdown.";
+            "reasonable assumptions and proceed. Your responses are not rendered as Markdown.\n\n" +
+            baseInstructions;
 
         // Let tools contribute their session-start state (e.g. the registered-scripts list), the
         // same way the parent chat builds its system message.

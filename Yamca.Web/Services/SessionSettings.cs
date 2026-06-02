@@ -295,12 +295,13 @@ public sealed class SessionSettings : ISessionSettings
             Description: "Read-only repository explorer. Delegate broad discovery questions to it: " +
                          "which files implement X, what conventions the project uses, how something is wired. " +
                          "Returns a concise written answer, not file dumps.",
+            // The shared subagent preamble (see SubagentRunner.BuildSession) already covers the
+            // headless context, the subagent_result handoff, and "don't ask, just assume" — so
+            // these instructions only carry the explorer-specific role and tool guidance.
             Instructions:
-                "You are a read-only repository explorer running as a subagent. Investigate the workspace " +
-                "with the read_file, list_directory, find_files, and grep tools to answer the caller's " +
-                "question, then deliver a concise, concrete answer (cite file paths) by calling the " +
-                "subagent_result tool. Do not ask the caller questions — make reasonable assumptions and " +
-                "answer. Never attempt to modify files.",
+                "You are a read-only repository explorer. Investigate the workspace with the read_file, " +
+                "list_directory, find_files, and grep tools to answer the caller's question, then deliver " +
+                "a concise, concrete answer that cites file paths. Never attempt to modify files.",
             AllowedTools: new[] { "read_file", "list_directory", "find_files", "grep" },
             RestrictToWorkspace: true);
 
