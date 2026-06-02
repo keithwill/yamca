@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Subagents;
@@ -9,7 +10,10 @@ namespace Yamca.Agent.Tools;
 /// <summary>Lets the parent LLM delegate a focused task to a configured subagent. The call
 /// appears as one ordinary tool call; behind it, a headless subagent session runs with its own
 /// instructions and curated, auto-allowed tools, and reports back through <c>subagent_result</c>.
-/// The available agents are advertised to the parent via <see cref="SessionStartMessage"/>.</summary>
+/// The available agents are advertised inline in this tool's <see cref="Description"/> and the
+/// <c>agent</c> parameter's enum/schema (rebuilt per round-trip from settings) so the model sees
+/// the catalog exactly where it decides to call the tool. When no subagents are configured the
+/// tool hides itself from the model entirely.</summary>
 public sealed class SubagentRunTool : ITool
 {
     public const string ToolName = "subagent_run";
@@ -27,23 +31,84 @@ public sealed class SubagentRunTool : ITool
 
     public string Name => ToolName;
 
-    public string Description =>
-        "Delegate a self-contained task to a configured subagent that runs in its own headless " +
-        "session with a curated tool set, and return its answer. Pass the subagent's 'agent' name " +
-        "and a complete 'prompt' describing the task. See the session-start note for the available " +
-        "subagents and what each is for.";
+    // The effective, merged catalog the parent sees (project overrides global by name).
+    private IReadOnlyList<SubagentDefinition> Agents =>
+        SubagentRegistry.Merge(_settings.GlobalSubagents, _settings.ProjectSubagents);
 
-    public string ParametersSchema => """
+    // Don't advertise an unusable tool: with no subagents configured there is nothing to
+    // delegate to, so keep it out of the prompt entirely (and out of the prefix cache).
+    public bool ExposedToLlm => Agents.Count > 0;
+
+    public string Description
     {
-      "type": "object",
-      "properties": {
-        "agent":  { "type": "string", "description": "Name of the configured subagent to run." },
-        "prompt": { "type": "string", "description": "Self-contained task/question for the subagent." }
-      },
-      "required": ["agent", "prompt"],
-      "additionalProperties": false
+        get
+        {
+            var sb = new StringBuilder(
+                "Delegate a self-contained task to a configured subagent that runs in its own headless " +
+                "session with a curated tool set, and return only its final answer. Prefer this for " +
+                "well-scoped, context-heavy subtasks (codebase exploration, search, review, research): the " +
+                "subagent's intermediate steps and tool output stay in its own session, so delegating keeps " +
+                "this conversation's context small. Pass the subagent's 'agent' name and a complete, " +
+                "self-contained 'prompt' — the subagent cannot see this conversation.");
+
+            var agents = Agents;
+            if (agents.Count > 0)
+            {
+                sb.Append(" Available subagents: ");
+                sb.Append(string.Join(", ", agents.Select(a => a.Name)));
+                sb.Append(" (see the 'agent' parameter for what each does).");
+            }
+            return sb.ToString();
+        }
     }
-    """;
+
+    public string ParametersSchema
+    {
+        get
+        {
+            var agents = Agents;
+
+            var agentProp = new JsonObject { ["type"] = "string" };
+            if (agents.Count > 0)
+            {
+                var choices = new JsonArray();
+                foreach (var a in agents) choices.Add(a.Name);
+                agentProp["enum"] = choices;
+
+                var desc = new StringBuilder("Which configured subagent to run. Options:");
+                foreach (var a in agents)
+                {
+                    desc.Append("\n- ").Append(a.Name);
+                    if (!string.IsNullOrWhiteSpace(a.Description))
+                        desc.Append(": ").Append(a.Description.Trim());
+                }
+                agentProp["description"] = desc.ToString();
+            }
+            else
+            {
+                agentProp["description"] = "Name of the configured subagent to run.";
+            }
+
+            var schema = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["agent"] = agentProp,
+                    ["prompt"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] =
+                            "Complete, self-contained task or question for the subagent. Include every " +
+                            "detail it needs — it cannot see this conversation, your files, or prior context.",
+                    },
+                },
+                ["required"] = new JsonArray("agent", "prompt"),
+                ["additionalProperties"] = false,
+            };
+            return schema.ToJsonString();
+        }
+    }
 
     public bool SupportsWorkspaceRestriction => false;
 
@@ -57,20 +122,5 @@ public sealed class SubagentRunTool : ITool
             return ToolResult.Error(promptError);
 
         return await _runner.RunAsync(agent, prompt, context, cancellationToken).ConfigureAwait(false);
-    }
-
-    public string? SessionStartMessage(ToolContext context)
-    {
-        var agents = SubagentRegistry.Merge(_settings.GlobalSubagents, _settings.ProjectSubagents);
-        if (agents.Count == 0) return null;
-
-        var sb = new StringBuilder("Subagents available via the subagent_run tool:");
-        foreach (var a in agents)
-        {
-            sb.Append("\n- ").Append(a.Name);
-            if (!string.IsNullOrWhiteSpace(a.Description))
-                sb.Append(": ").Append(a.Description.Trim());
-        }
-        return sb.ToString();
     }
 }
