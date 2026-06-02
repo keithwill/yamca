@@ -21,18 +21,18 @@ else
             <MudSpacer />
             <MudTabs @bind-ActivePanelIndex="_tierIndex" Rounded="true" Color="Color.Primary">
                 <MudTabPanel Text="Project" />
-                <MudTabPanel Text="Global" />
+                <MudTabPanel Text="User" />
             </MudTabs>
         </div>
         <MudText Typo="Typo.caption" Class="mb-3">
-            Project overrides Global. Unset (<em>inherit</em>) falls through to Global, then to the tool's default.
+            Project overrides User. Unset (<em>inherit</em>) falls through to User, then to the tool's default.
             <strong>Availability</strong> controls what the LLM sees: <em>Eager</em> = in every tool list,
             <em>Deferred</em> = discovered via <code>lookup_tool</code> and invoked via <code>call_tool</code> (schema stays out of the prompt prefix, preserving cache), <em>Hidden</em> = invisible.
             @if (_tierIndex == 0)
             {
                 <text>Stored on disk in <code>@Keys.ProjectFile</code>.</text>
             }
-            else { <text>Stored on disk in <code>@Keys.GlobalFile</code>.</text> }
+            else { <text>Stored on disk in <code>@Keys.UserFile</code>.</text> }
         </MudText>
 
         <MudTable Items="ToolRegistry.GetSettingsTools()" Hover="true" Dense="true" Class="mud-table-bordered">
@@ -125,8 +125,8 @@ else
             Controls how much of the deferred-tool catalog is added to the frozen session-start
             message. More detail makes the model likelier to reach for a deferred tool on its own,
             but every token here is paid on every turn of the session. <code>lookup_tool</code>
-            always lists the live catalog on demand regardless of this setting. Global; stored in
-            <code>@Keys.GlobalFile</code>.
+            always lists the live catalog on demand regardless of this setting. User; stored in
+            <code>@Keys.UserFile</code>.
         </MudText>
         <MudSelect T="DeferredToolsHint" Value="Session.DeferredToolsHint"
                    ValueChanged="@((DeferredToolsHint h) => Session.SetDeferredToolsHint(h))"
@@ -149,7 +149,7 @@ else
     [Inject] private SettingsLocation Keys { get; set; } = default!;
 
     private bool _hydrated;
-    private int _tierIndex; // 0 = Project, 1 = Global
+    private int _tierIndex; // 0 = Project, 1 = User
 
     private static string ToolDisplayName(string name) => name switch
     {
@@ -158,8 +158,8 @@ else
         _ => name,
     };
 
-    private SettingsTier CurrentTier => _tierIndex == 0 ? SettingsTier.Project : SettingsTier.Global;
-    private ToolSettingsMap CurrentMap => CurrentTier == SettingsTier.Project ? Session.Project : Session.Global;
+    private SettingsTier CurrentTier => _tierIndex == 0 ? SettingsTier.Project : SettingsTier.User;
+    private ToolSettingsMap CurrentMap => CurrentTier == SettingsTier.Project ? Session.Project : Session.User;
 
     protected override void OnInitialized()
     {

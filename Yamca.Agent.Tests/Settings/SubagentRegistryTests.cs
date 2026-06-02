@@ -9,12 +9,12 @@ public class SubagentRegistryTests
         new(Guid.NewGuid(), name, description, "instructions", new[] { "read_file" });
 
     [Test]
-    public void Merge_ProjectOverridesGlobalByName_CaseInsensitive()
+    public void Merge_ProjectOverridesUserByName_CaseInsensitive()
     {
-        var global = new SubagentRegistry(new[] { Agent("explorer", "global desc"), Agent("builder") });
+        var user = new SubagentRegistry(new[] { Agent("explorer", "user desc"), Agent("builder") });
         var project = new SubagentRegistry(new[] { Agent("Explorer", "project desc") });
 
-        var merged = SubagentRegistry.Merge(global, project);
+        var merged = SubagentRegistry.Merge(user, project);
 
         Assert.That(merged, Has.Count.EqualTo(2));
         var explorer = merged.Single(a => string.Equals(a.Name, "Explorer", StringComparison.OrdinalIgnoreCase));
@@ -23,12 +23,12 @@ public class SubagentRegistryTests
     }
 
     [Test]
-    public void Merge_AppendsProjectOnlyAgents_PreservingGlobalOrderFirst()
+    public void Merge_AppendsProjectOnlyAgents_PreservingUserOrderFirst()
     {
-        var global = new SubagentRegistry(new[] { Agent("a"), Agent("b") });
+        var user = new SubagentRegistry(new[] { Agent("a"), Agent("b") });
         var project = new SubagentRegistry(new[] { Agent("c") });
 
-        var merged = SubagentRegistry.Merge(global, project);
+        var merged = SubagentRegistry.Merge(user, project);
 
         Assert.That(merged.Select(a => a.Name), Is.EqualTo(new[] { "a", "b", "c" }));
     }
@@ -36,10 +36,10 @@ public class SubagentRegistryTests
     [Test]
     public void Resolve_IsCaseInsensitive_AndReturnsNullWhenMissing()
     {
-        var global = new SubagentRegistry(new[] { Agent("explorer") });
+        var user = new SubagentRegistry(new[] { Agent("explorer") });
         var project = SubagentRegistry.Empty;
 
-        Assert.That(SubagentRegistry.Resolve(global, project, "EXPLORER"), Is.Not.Null);
-        Assert.That(SubagentRegistry.Resolve(global, project, "missing"), Is.Null);
+        Assert.That(SubagentRegistry.Resolve(user, project, "EXPLORER"), Is.Not.Null);
+        Assert.That(SubagentRegistry.Resolve(user, project, "missing"), Is.Null);
     }
 }

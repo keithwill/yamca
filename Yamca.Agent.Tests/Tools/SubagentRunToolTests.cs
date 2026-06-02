@@ -21,7 +21,7 @@ public class SubagentRunToolTests
     }
 
     private void Define(params SubagentDefinition[] agents) =>
-        _settings.GlobalSubagents = new SubagentRegistry(agents);
+        _settings.UserSubagents = new SubagentRegistry(agents);
 
     private static SubagentDefinition Agent(string name, string description) =>
         new(Guid.NewGuid(), name, description, "Do the task.", Array.Empty<string>());

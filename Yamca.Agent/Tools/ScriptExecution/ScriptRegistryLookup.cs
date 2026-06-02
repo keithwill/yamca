@@ -5,7 +5,7 @@ namespace Yamca.Agent.Tools.ScriptExecution;
 
 /// <summary>
 /// Decides whether a resolved script path falls under the user's registered scripts
-/// or registered script directories (union of project + global tiers). Path comparisons
+/// or registered script directories (union of project + user tiers). Path comparisons
 /// honor the host OS case-sensitivity rules.
 /// </summary>
 public sealed class ScriptRegistryLookup
@@ -28,7 +28,7 @@ public sealed class ScriptRegistryLookup
         ArgumentException.ThrowIfNullOrEmpty(resolvedScriptPath);
         ArgumentNullException.ThrowIfNull(workspace);
 
-        foreach (var tier in new[] { _settings.ProjectScripts, _settings.GlobalScripts })
+        foreach (var tier in new[] { _settings.ProjectScripts, _settings.UserScripts })
         {
             foreach (var entry in tier.Registered)
             {
@@ -53,18 +53,18 @@ public sealed class ScriptRegistryLookup
     }
 
     public bool IsEmpty =>
-        _settings.ProjectScripts.IsEmpty && _settings.GlobalScripts.IsEmpty;
+        _settings.ProjectScripts.IsEmpty && _settings.UserScripts.IsEmpty;
 
     public IEnumerable<(RegisteredScript Entry, SettingsTierTag Tier)> AllRegistered()
     {
         foreach (var e in _settings.ProjectScripts.Registered) yield return (e, SettingsTierTag.Project);
-        foreach (var e in _settings.GlobalScripts.Registered)  yield return (e, SettingsTierTag.Global);
+        foreach (var e in _settings.UserScripts.Registered)  yield return (e, SettingsTierTag.User);
     }
 
     public IEnumerable<(RegisteredScriptDirectory Entry, SettingsTierTag Tier)> AllDirectories()
     {
         foreach (var d in _settings.ProjectScripts.Directories) yield return (d, SettingsTierTag.Project);
-        foreach (var d in _settings.GlobalScripts.Directories)  yield return (d, SettingsTierTag.Global);
+        foreach (var d in _settings.UserScripts.Directories)  yield return (d, SettingsTierTag.User);
     }
 
     private static bool TryResolveWithinWorkspace(IWorkspace ws, string requested, out string resolved)
@@ -92,4 +92,4 @@ public sealed class ScriptRegistryLookup
     }
 }
 
-public enum SettingsTierTag { Project, Global }
+public enum SettingsTierTag { Project, User }

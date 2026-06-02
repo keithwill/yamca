@@ -42,29 +42,29 @@ public class PermissionResolverTests
     }
 
     [Test]
-    public void GlobalOverrides_ToolDefault()
+    public void UserOverrides_ToolDefault()
     {
         var (resolver, settings) = NewResolver();
-        settings.Global = Map("read_file", level: PermissionLevel.Deny);
+        settings.User = Map("read_file", level: PermissionLevel.Deny);
 
         Assert.That(resolver.Resolve("read_file"), Is.EqualTo(PermissionLevel.Deny));
     }
 
     [Test]
-    public void ProjectOverrides_Global()
+    public void ProjectOverrides_User()
     {
         var (resolver, settings) = NewResolver();
-        settings.Global = Map("write_file", level: PermissionLevel.Allow);
+        settings.User = Map("write_file", level: PermissionLevel.Allow);
         settings.Project = Map("write_file", level: PermissionLevel.Deny);
 
         Assert.That(resolver.Resolve("write_file"), Is.EqualTo(PermissionLevel.Deny));
     }
 
     [Test]
-    public void ProjectUnset_FallsThroughToGlobal()
+    public void ProjectUnset_FallsThroughToUser()
     {
         var (resolver, settings) = NewResolver();
-        settings.Global = Map("write_file", level: PermissionLevel.Allow);
+        settings.User = Map("write_file", level: PermissionLevel.Allow);
         settings.Project = Map("write_file"); // no Permission set
 
         Assert.That(resolver.Resolve("write_file"), Is.EqualTo(PermissionLevel.Allow));
@@ -88,11 +88,11 @@ public class PermissionResolverTests
     }
 
     [Test]
-    public void RestrictToWorkspace_ProjectOverridesGlobalOverridesDefault()
+    public void RestrictToWorkspace_ProjectOverridesUserOverridesDefault()
     {
         var (resolver, settings) = NewResolver();
 
-        settings.Global = Map("write_file", restrict: false);
+        settings.User = Map("write_file", restrict: false);
         Assert.That(resolver.RestrictToWorkspace("write_file"), Is.False);
 
         settings.Project = Map("write_file", restrict: true);

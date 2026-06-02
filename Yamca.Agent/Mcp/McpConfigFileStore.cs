@@ -3,11 +3,11 @@ using Yamca.Agent.Settings.Persistence;
 namespace Yamca.Agent.Mcp;
 
 /// <summary>Reads and writes the MCP server list blob at <c>&lt;userConfigDir&gt;/mcp.json</c>,
-/// alongside the global settings file. The server list isn't repo-scoped (it's process-wide,
+/// alongside the user settings file. The server list isn't repo-scoped (it's process-wide,
 /// shared by every chat session) and its configs can carry secrets in env vars, so it lives in
 /// the OS per-user config directory rather than the LLM-reachable workspace.
 ///
-/// Deliberately dumb, exactly like <see cref="GlobalSettingsStore"/> and
+/// Deliberately dumb, exactly like <see cref="UserSettingsStore"/> and
 /// <see cref="ProjectSettingsStore"/>: the store shuttles an opaque JSON string to and from
 /// disk and never inspects its shape — <see cref="McpServerConfigJson"/> remains the single
 /// source of truth for the blob contract.

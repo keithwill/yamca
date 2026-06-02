@@ -40,7 +40,7 @@ public class SubagentRunnerTests
     private ToolContext ParentContext(bool restrict = false) => new(_ws.Workspace, restrict);
 
     private void DefineAgent(SubagentDefinition def) =>
-        _settings.GlobalSubagents = new SubagentRegistry(new[] { def });
+        _settings.UserSubagents = new SubagentRegistry(new[] { def });
 
     private static SubagentDefinition Agent(
         string name,

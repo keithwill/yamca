@@ -1,6 +1,6 @@
 namespace Yamca.Agent.Permissions;
 
-/// <summary>Persists an approval decision back to project- or global-tier settings
+/// <summary>Persists an approval decision back to project- or user-tier settings
 /// so subsequent calls to the same tool do not re-prompt. Implementations are
 /// responsible for keeping <see cref="Settings.ISessionSettings"/> in sync so that
 /// <see cref="IPermissionResolver"/> sees the new value immediately.</summary>

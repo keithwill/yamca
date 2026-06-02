@@ -4,23 +4,23 @@ namespace Yamca.Web.Services;
 
 /// <summary>Hydrates and persists <see cref="SessionSettings"/> across its two tiers, both
 /// of which now live on disk: the project tier under the repo's <c>.yamca</c>
-/// (<see cref="ProjectSettingsStore"/>) and the global tier — which carries API keys and
+/// (<see cref="ProjectSettingsStore"/>) and the user tier — which carries API keys and
 /// isn't repo-scoped — under the OS per-user config directory
-/// (<see cref="GlobalSettingsStore"/>). Pulls both on page load and writes the affected tier
+/// (<see cref="UserSettingsStore"/>). Pulls both on page load and writes the affected tier
 /// back when <see cref="SessionSettings.Changed"/> fires.</summary>
 public sealed class SettingsHydrator : IDisposable
 {
     private readonly SessionSettings _settings;
-    private readonly GlobalSettingsStore _globalStore;
+    private readonly UserSettingsStore _userStore;
     private readonly ProjectSettingsStore _projectStore;
 
     private bool _hydrated;
     private bool _persistOnChange;
 
-    public SettingsHydrator(SessionSettings settings, GlobalSettingsStore globalStore, ProjectSettingsStore projectStore)
+    public SettingsHydrator(SessionSettings settings, UserSettingsStore userStore, ProjectSettingsStore projectStore)
     {
         _settings = settings;
-        _globalStore = globalStore;
+        _userStore = userStore;
         _projectStore = projectStore;
         _settings.Changed += OnChanged;
     }
@@ -39,7 +39,7 @@ public sealed class SettingsHydrator : IDisposable
         _persistOnChange = false;
         try
         {
-            _settings.HydrateGlobal(_globalStore.Load());
+            _settings.HydrateUser(_userStore.Load());
             _settings.HydrateProject(_projectStore.Load());
         }
         finally
@@ -58,7 +58,7 @@ public sealed class SettingsHydrator : IDisposable
         if (tier == SettingsTier.Project)
             _projectStore.Save(_settings.SerializeProject());
         else
-            _globalStore.Save(_settings.SerializeGlobal());
+            _userStore.Save(_settings.SerializeUser());
     }
 
     public void Dispose()

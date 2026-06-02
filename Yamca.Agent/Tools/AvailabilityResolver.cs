@@ -21,7 +21,7 @@ public sealed class AvailabilityResolver : IAvailabilityResolver
 
         Availability requested;
         if (_settings.Project.Get(toolName)?.Availability is { } p) requested = p;
-        else if (_settings.Global.Get(toolName)?.Availability is { } g) requested = g;
+        else if (_settings.User.Get(toolName)?.Availability is { } g) requested = g;
         else requested = tool?.DefaultAvailability ?? Availability.Eager;
 
         if (tool is null) return requested;

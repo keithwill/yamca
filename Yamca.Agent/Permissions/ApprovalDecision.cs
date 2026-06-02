@@ -6,8 +6,8 @@ public enum ApprovalPersistence
     None,
     /// <summary>Save the decision into the project-tier tool settings.</summary>
     Project,
-    /// <summary>Save the decision into the global-tier tool settings.</summary>
-    Global,
+    /// <summary>Save the decision into the user-tier tool settings.</summary>
+    User,
 }
 
 public sealed record ApprovalDecision(bool Approved, ApprovalPersistence Persistence);

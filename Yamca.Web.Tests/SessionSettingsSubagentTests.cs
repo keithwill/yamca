@@ -11,31 +11,31 @@ public class SessionSettingsSubagentTests
     public void FirstRun_SeedsExplorerSubagent()
     {
         var settings = new SessionSettings();
-        settings.HydrateGlobal(null); // first run
+        settings.HydrateUser(null); // first run
 
-        Assert.That(settings.GlobalSubagents.Agents.Select(a => a.Name), Does.Contain("explorer"));
-        var explorer = settings.GlobalSubagents.Agents.Single(a => a.Name == "explorer");
+        Assert.That(settings.UserSubagents.Agents.Select(a => a.Name), Does.Contain("explorer"));
+        var explorer = settings.UserSubagents.Agents.Single(a => a.Name == "explorer");
         Assert.That(explorer.AllowedTools, Does.Contain("grep"));
         Assert.That(explorer.AllowedTools, Has.None.StartsWith("code_"));
     }
 
     [Test]
-    public void GlobalSubagents_SurviveSerializeRoundTrip()
+    public void UserSubagents_SurviveSerializeRoundTrip()
     {
         var settings = new SessionSettings();
-        settings.HydrateGlobal("{}"); // not first run → starts empty
+        settings.HydrateUser("{}"); // not first run → starts empty
         var agent = new SubagentDefinition(
             Guid.NewGuid(), "reviewer", "reviews code", "Be thorough.",
             new[] { "read_file", "grep" },
             RestrictToWorkspace: false, RequireApproval: true,
             EndpointId: Guid.NewGuid(), MaxIterations: 25);
-        settings.SetSubagents(SettingsTier.Global, new SubagentRegistry(new[] { agent }));
+        settings.SetSubagents(SettingsTier.User, new SubagentRegistry(new[] { agent }));
 
-        var json = settings.SerializeGlobal();
+        var json = settings.SerializeUser();
         var reloaded = new SessionSettings();
-        reloaded.HydrateGlobal(json);
+        reloaded.HydrateUser(json);
 
-        var got = reloaded.GlobalSubagents.Agents.Single();
+        var got = reloaded.UserSubagents.Agents.Single();
         Assert.That(got.Name, Is.EqualTo("reviewer"));
         Assert.That(got.AllowedTools, Is.EqualTo(new[] { "read_file", "grep" }));
         Assert.That(got.RestrictToWorkspace, Is.False);

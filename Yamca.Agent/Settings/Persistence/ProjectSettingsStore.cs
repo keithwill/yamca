@@ -10,7 +10,7 @@ namespace Yamca.Agent.Settings.Persistence;
 /// Deliberately dumb: the store shuttles an opaque JSON string to and from disk and never
 /// inspects its shape — <c>SessionSettings.SerializeProject()</c>/<c>HydrateProject()</c>
 /// remain the single source of truth for the project blob contract. The project tier holds
-/// no secrets (API keys live in the global tier, which persists to the user config dir).
+/// no secrets (API keys live in the user tier, which persists to the user config dir).
 ///
 /// All operations are no-ops outside a git repository (see <see cref="IsEnabled"/>) so we
 /// never scatter local state into a non-repo workspace. Reads/writes are serialized through

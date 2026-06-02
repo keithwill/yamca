@@ -86,7 +86,7 @@ public sealed class LookupToolTool : ITool
     /// <summary>Frozen catalog snapshot folded into the single session-start system message.
     /// Computed once per fresh <see cref="ChatSession"/> (never per iteration), so it gives the
     /// model the "these tools exist" cue without ever mutating the prompt prefix mid-session. How
-    /// much of the catalog is included is governed by the global
+    /// much of the catalog is included is governed by the user-tier
     /// <see cref="ISessionSettings.DeferredToolsHint"/> so the user can trade discoverability
     /// against up-front context size.</summary>
     public string? SessionStartMessage(ToolContext context)

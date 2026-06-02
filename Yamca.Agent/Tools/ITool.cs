@@ -18,7 +18,7 @@ public interface ITool
     /// </summary>
     bool SupportsWorkspaceRestriction { get; }
 
-    /// <summary>Default permission when neither project nor global settings override it.</summary>
+    /// <summary>Default permission when neither project nor user settings override it.</summary>
     PermissionLevel DefaultPermission { get; }
 
     /// <summary>True (default) = include in the tool list sent to the LLM.</summary>

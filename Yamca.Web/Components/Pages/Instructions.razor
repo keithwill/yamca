@@ -29,7 +29,7 @@ else
             <MudSpacer />
             <MudTabs @bind-ActivePanelIndex="_instrTierIndex" Rounded="true" Color="Color.Primary">
                 <MudTabPanel Text="Project" />
-                <MudTabPanel Text="Global" />
+                <MudTabPanel Text="User" />
             </MudTabs>
         </div>
         <MudText Typo="Typo.caption" Class="mb-3">
@@ -38,15 +38,15 @@ else
             {
                 <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
             }
-            else { <text> Stored on disk in <code>@Keys.GlobalFile</code>.</text> }
+            else { <text> Stored on disk in <code>@Keys.UserFile</code>.</text> }
         </MudText>
 
         @if (_instrTierIndex == 0)
         {
-            <MudSwitch T="bool" Value="Session.ProjectInheritsGlobalInstructions"
-                       ValueChanged="@((bool v) => Session.SetProjectInheritsGlobalInstructions(v))"
+            <MudSwitch T="bool" Value="Session.ProjectInheritsUserInstructions"
+                       ValueChanged="@((bool v) => Session.SetProjectInheritsUserInstructions(v))"
                        Color="Color.Primary" Class="mb-2"
-                       Label="Inherit Global instruction files" />
+                       Label="Inherit User instruction files" />
         }
 
         @{
@@ -152,7 +152,7 @@ else
     [Inject] private WorkspaceBrowser Browser { get; set; } = default!;
 
     private bool _hydrated;
-    private int _instrTierIndex; // 0 = Project, 1 = Global
+    private int _instrTierIndex; // 0 = Project, 1 = User
 
     private bool _pickerOpen;
     private InstructionRow? _pickerRow;
@@ -166,9 +166,9 @@ else
     }
 
     private readonly List<InstructionRow> _projectRows = new();
-    private readonly List<InstructionRow> _globalRows = new();
-    private List<InstructionRow> CurrentRows => _instrTierIndex == 0 ? _projectRows : _globalRows;
-    private SettingsTier CurrentInstructionTier => _instrTierIndex == 0 ? SettingsTier.Project : SettingsTier.Global;
+    private readonly List<InstructionRow> _userRows = new();
+    private List<InstructionRow> CurrentRows => _instrTierIndex == 0 ? _projectRows : _userRows;
+    private SettingsTier CurrentInstructionTier => _instrTierIndex == 0 ? SettingsTier.Project : SettingsTier.User;
 
     protected override void OnInitialized()
     {
@@ -191,9 +191,9 @@ else
         _projectRows.Clear();
         foreach (var p in Session.ProjectInstructionFiles)
             _projectRows.Add(new InstructionRow { Path = p });
-        _globalRows.Clear();
-        foreach (var p in Session.GlobalInstructionFiles)
-            _globalRows.Add(new InstructionRow { Path = p });
+        _userRows.Clear();
+        foreach (var p in Session.UserInstructionFiles)
+            _userRows.Add(new InstructionRow { Path = p });
     }
 
     private void PersistCurrentTier()

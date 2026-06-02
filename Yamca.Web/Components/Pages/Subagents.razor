@@ -21,19 +21,19 @@ else
             <MudSpacer />
             <MudTabs @bind-ActivePanelIndex="_tierIndex" Rounded="true" Color="Color.Primary">
                 <MudTabPanel Text="Project" />
-                <MudTabPanel Text="Global" />
+                <MudTabPanel Text="User" />
             </MudTabs>
         </div>
         <MudText Typo="Typo.caption" Class="mb-3">
             Named, headless agents the LLM can delegate to through the <code>subagent_run</code> tool.
             Each subagent runs in its own session with the tools you select (all auto-allowed) plus its
             own instructions, and reports back through <code>subagent_result</code>. Project subagents
-            override global ones of the same name.
+            override user ones of the same name.
             @if (_tierIndex == 0)
             {
                 <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
             }
-            else { <text> Stored on disk in <code>@Keys.GlobalFile</code>.</text> }
+            else { <text> Stored on disk in <code>@Keys.UserFile</code>.</text> }
         </MudText>
 
         @{ var rows = CurrentRows; }
@@ -149,7 +149,7 @@ else
         new(StringComparer.Ordinal) { SubagentRunTool.ToolName, "lookup_tool", "call_tool" };
 
     private bool _hydrated;
-    private int _tierIndex; // 0 = Project, 1 = Global
+    private int _tierIndex; // 0 = Project, 1 = User
     private IReadOnlyList<string> _toolNames = Array.Empty<string>();
 
     private sealed class SubagentRow
@@ -166,10 +166,10 @@ else
     }
 
     private readonly List<SubagentRow> _projectRows = new();
-    private readonly List<SubagentRow> _globalRows = new();
+    private readonly List<SubagentRow> _userRows = new();
 
-    private List<SubagentRow> CurrentRows => _tierIndex == 0 ? _projectRows : _globalRows;
-    private SettingsTier CurrentTier => _tierIndex == 0 ? SettingsTier.Project : SettingsTier.Global;
+    private List<SubagentRow> CurrentRows => _tierIndex == 0 ? _projectRows : _userRows;
+    private SettingsTier CurrentTier => _tierIndex == 0 ? SettingsTier.Project : SettingsTier.User;
 
     protected override void OnInitialized()
     {
@@ -195,7 +195,7 @@ else
     private void SyncRowsFromSession()
     {
         SyncRows(Session.ProjectSubagents, _projectRows);
-        SyncRows(Session.GlobalSubagents, _globalRows);
+        SyncRows(Session.UserSubagents, _userRows);
     }
 
     private static void SyncRows(SubagentRegistry registry, List<SubagentRow> rows)

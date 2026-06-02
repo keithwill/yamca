@@ -1,7 +1,7 @@
 namespace Yamca.Agent.Settings.Persistence;
 
 /// <summary>Resolves the OS per-user config directory that yamca stores non-repo-scoped
-/// state in (global settings, the MCP server list). Honors a <c>YAMCA_CONFIG_DIR</c>
+/// state in (user settings, the MCP server list). Honors a <c>YAMCA_CONFIG_DIR</c>
 /// override (power users + tests); otherwise uses
 /// <see cref="Environment.SpecialFolder.ApplicationData"/> (which maps to <c>%APPDATA%</c>
 /// on Windows and <c>$XDG_CONFIG_HOME</c>/<c>~/.config</c> on Unix), falling back to a

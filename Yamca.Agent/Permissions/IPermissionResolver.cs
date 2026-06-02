@@ -3,7 +3,7 @@ namespace Yamca.Agent.Permissions;
 public interface IPermissionResolver
 {
     /// <summary>
-    /// Resolve the effective permission for a tool by merging project → global → tool default.
+    /// Resolve the effective permission for a tool by merging project → user → tool default.
     /// </summary>
     PermissionLevel Resolve(string toolName);
 

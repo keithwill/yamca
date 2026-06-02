@@ -3,7 +3,7 @@ using Yamca.Agent.Settings.Persistence;
 namespace Yamca.Agent.Tests.Settings;
 
 [TestFixture]
-public class GlobalSettingsStoreTests
+public class UserSettingsStoreTests
 {
     private string _configDir = null!;
 
@@ -11,7 +11,7 @@ public class GlobalSettingsStoreTests
     public void SetUp()
     {
         var baseDir = Path.GetFullPath(Path.GetTempPath());
-        _configDir = Path.Combine(baseDir, "yamca-tests", "global-" + Guid.NewGuid().ToString("N"));
+        _configDir = Path.Combine(baseDir, "yamca-tests", "user-" + Guid.NewGuid().ToString("N"));
     }
 
     [TearDown]
@@ -21,9 +21,9 @@ public class GlobalSettingsStoreTests
         catch { /* best-effort */ }
     }
 
-    private GlobalSettingsStore NewStore() => new(_configDir);
+    private UserSettingsStore NewStore() => new(_configDir);
 
-    private string SettingsPath => Path.Combine(_configDir, "global.json");
+    private string SettingsPath => Path.Combine(_configDir, "user.json");
 
     [Test]
     public void Save_ThenLoad_RoundTripsBlob()
@@ -87,7 +87,7 @@ public class GlobalSettingsStoreTests
             var custom = Path.Combine(Path.GetTempPath(), "yamca-override-" + Guid.NewGuid().ToString("N"));
             Environment.SetEnvironmentVariable(varName, custom);
 
-            Assert.That(GlobalSettingsStore.ResolveDefaultDirectory(), Is.EqualTo(custom));
+            Assert.That(UserSettingsStore.ResolveDefaultDirectory(), Is.EqualTo(custom));
         }
         finally
         {
@@ -104,7 +104,7 @@ public class GlobalSettingsStoreTests
         {
             Environment.SetEnvironmentVariable(varName, null);
 
-            var dir = GlobalSettingsStore.ResolveDefaultDirectory();
+            var dir = UserSettingsStore.ResolveDefaultDirectory();
 
             Assert.That(dir, Is.Not.Empty);
             Assert.That(Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),

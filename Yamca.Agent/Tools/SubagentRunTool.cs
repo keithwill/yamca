@@ -31,9 +31,9 @@ public sealed class SubagentRunTool : ITool
 
     public string Name => ToolName;
 
-    // The effective, merged catalog the parent sees (project overrides global by name).
+    // The effective, merged catalog the parent sees (project overrides user by name).
     private IReadOnlyList<SubagentDefinition> Agents =>
-        SubagentRegistry.Merge(_settings.GlobalSubagents, _settings.ProjectSubagents);
+        SubagentRegistry.Merge(_settings.UserSubagents, _settings.ProjectSubagents);
 
     // Don't advertise an unusable tool: with no subagents configured there is nothing to
     // delegate to, so keep it out of the prompt entirely (and out of the prefix cache).

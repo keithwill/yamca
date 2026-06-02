@@ -10,7 +10,7 @@ public sealed record RegisteredScript(string Path, string? Description);
 public sealed record RegisteredScriptDirectory(string Path, string? Description);
 
 /// <summary>User-curated list of scripts the LLM is permitted to run via the
-/// <c>execute_registered_script</c> tool. Stored per tier (global + project) on
+/// <c>execute_registered_script</c> tool. Stored per tier (user + project) on
 /// disk and merged at use site.</summary>
 public sealed class ScriptRegistry
 {

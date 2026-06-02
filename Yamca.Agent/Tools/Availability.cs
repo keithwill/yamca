@@ -3,7 +3,7 @@ namespace Yamca.Agent.Tools;
 /// <summary>
 /// Controls whether a tool's schema is sent to the LLM, reached on demand via the
 /// <c>lookup_tool</c>/<c>call_tool</c> dispatcher, or suppressed entirely. The effective value is resolved per call by
-/// <c>IAvailabilityResolver</c> walking Project → Global → tool default, then clamped
+/// <c>IAvailabilityResolver</c> walking Project → User → tool default, then clamped
 /// by the tool's <see cref="ITool.MandatoryEager"/> / <see cref="ITool.CanBeHidden"/> flags.
 /// </summary>
 public enum Availability

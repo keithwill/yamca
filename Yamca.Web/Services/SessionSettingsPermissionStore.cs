@@ -19,8 +19,8 @@ internal sealed class SessionSettingsPermissionStore : IPermissionStore
     {
         if (tier == ApprovalPersistence.None) return;
 
-        var stier = tier == ApprovalPersistence.Project ? SettingsTier.Project : SettingsTier.Global;
-        var map = stier == SettingsTier.Project ? _settings.Project : _settings.Global;
+        var stier = tier == ApprovalPersistence.Project ? SettingsTier.Project : SettingsTier.User;
+        var map = stier == SettingsTier.Project ? _settings.Project : _settings.User;
         var existing = map.Get(toolName) ?? new ToolPermissionSettings();
         _settings.SetToolEntry(stier, toolName, existing with { Permission = decision });
     }

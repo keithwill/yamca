@@ -63,7 +63,7 @@ public sealed class SubagentRunner : ISubagentRunner
     {
         ArgumentNullException.ThrowIfNull(parentContext);
 
-        var def = SubagentRegistry.Resolve(_settings.GlobalSubagents, _settings.ProjectSubagents, agentName);
+        var def = SubagentRegistry.Resolve(_settings.UserSubagents, _settings.ProjectSubagents, agentName);
         if (def is null)
             return ToolResult.Error($"Unknown subagent '{agentName}'. {AvailableAgentsHint()}");
 
@@ -247,7 +247,7 @@ public sealed class SubagentRunner : ISubagentRunner
 
     private string AvailableAgentsHint()
     {
-        var merged = SubagentRegistry.Merge(_settings.GlobalSubagents, _settings.ProjectSubagents);
+        var merged = SubagentRegistry.Merge(_settings.UserSubagents, _settings.ProjectSubagents);
         if (merged.Count == 0) return "No subagents are configured.";
         return "Available subagents: " + string.Join(", ", merged.Select(a => a.Name)) + ".";
     }

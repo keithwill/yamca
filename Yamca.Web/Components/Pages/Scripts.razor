@@ -19,7 +19,7 @@ else
             <MudSpacer />
             <MudTabs @bind-ActivePanelIndex="_scriptTierIndex" Rounded="true" Color="Color.Primary">
                 <MudTabPanel Text="Project" />
-                <MudTabPanel Text="Global" />
+                <MudTabPanel Text="User" />
             </MudTabs>
         </div>
         <MudText Typo="Typo.caption" Class="mb-3">
@@ -28,7 +28,7 @@ else
             {
                 <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
             }
-            else { <text> Stored on disk in <code>@Keys.GlobalFile</code>.</text> }
+            else { <text> Stored on disk in <code>@Keys.UserFile</code>.</text> }
         </MudText>
 
         <MudText Typo="Typo.subtitle2" Class="mt-2 mb-1">Files</MudText>
@@ -126,7 +126,7 @@ else
     [Inject] private IWorkspace Workspace { get; set; } = default!;
 
     private bool _hydrated;
-    private int _scriptTierIndex; // 0 = Project, 1 = Global
+    private int _scriptTierIndex; // 0 = Project, 1 = User
 
     private sealed class ScriptRow
     {
@@ -137,12 +137,12 @@ else
 
     private readonly List<ScriptRow> _projectScriptFiles = new();
     private readonly List<ScriptRow> _projectScriptDirs = new();
-    private readonly List<ScriptRow> _globalScriptFiles = new();
-    private readonly List<ScriptRow> _globalScriptDirs = new();
+    private readonly List<ScriptRow> _userScriptFiles = new();
+    private readonly List<ScriptRow> _userScriptDirs = new();
 
-    private List<ScriptRow> CurrentScriptFileRows => _scriptTierIndex == 0 ? _projectScriptFiles : _globalScriptFiles;
-    private List<ScriptRow> CurrentScriptDirectoryRows => _scriptTierIndex == 0 ? _projectScriptDirs : _globalScriptDirs;
-    private SettingsTier CurrentScriptTier => _scriptTierIndex == 0 ? SettingsTier.Project : SettingsTier.Global;
+    private List<ScriptRow> CurrentScriptFileRows => _scriptTierIndex == 0 ? _projectScriptFiles : _userScriptFiles;
+    private List<ScriptRow> CurrentScriptDirectoryRows => _scriptTierIndex == 0 ? _projectScriptDirs : _userScriptDirs;
+    private SettingsTier CurrentScriptTier => _scriptTierIndex == 0 ? SettingsTier.Project : SettingsTier.User;
 
     protected override void OnInitialized()
     {
@@ -163,7 +163,7 @@ else
     private void SyncRowsFromSession()
     {
         SyncScriptRows(Session.ProjectScripts, _projectScriptFiles, _projectScriptDirs);
-        SyncScriptRows(Session.GlobalScripts, _globalScriptFiles, _globalScriptDirs);
+        SyncScriptRows(Session.UserScripts, _userScriptFiles, _userScriptDirs);
     }
 
     private static void SyncScriptRows(ScriptRegistry registry, List<ScriptRow> files, List<ScriptRow> dirs)

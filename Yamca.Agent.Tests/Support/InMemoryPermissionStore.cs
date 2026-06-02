@@ -22,13 +22,13 @@ internal sealed class InMemoryPermissionStore : IPermissionStore
 
         if (tier == ApprovalPersistence.None) return;
 
-        var source = tier == ApprovalPersistence.Project ? _settings.Project : _settings.Global;
+        var source = tier == ApprovalPersistence.Project ? _settings.Project : _settings.User;
         var next = new Dictionary<string, ToolPermissionSettings>(source.Entries, StringComparer.Ordinal);
         var existing = source.Get(toolName) ?? new ToolPermissionSettings();
         next[toolName] = existing with { Permission = decision };
         var map = new ToolSettingsMap(next);
 
         if (tier == ApprovalPersistence.Project) _settings.Project = map;
-        else _settings.Global = map;
+        else _settings.User = map;
     }
 }

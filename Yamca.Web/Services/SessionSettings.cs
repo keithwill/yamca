@@ -10,18 +10,18 @@ namespace Yamca.Web.Services;
 /// <summary>
 /// Concrete <see cref="ISessionSettings"/> implementation backing one Blazor circuit.
 /// Mutations raise <see cref="Changed"/> so the host can persist the affected tier to
-/// disk (global tier via <c>GlobalSettingsStore</c>, project tier via <c>ProjectSettingsStore</c>).
+/// disk (user tier via <c>UserSettingsStore</c>, project tier via <c>ProjectSettingsStore</c>).
 /// </summary>
 public sealed class SessionSettings : ISessionSettings
 {
     private const string DefaultSystemPrompt =
         "You are a coding assistant.";
 
-    public static readonly IReadOnlyList<string> DefaultGlobalInstructionFiles =
+    public static readonly IReadOnlyList<string> DefaultUserInstructionFiles =
         new[] { "AGENTS.md", "CLAUDE.md", "GEMINI.md" };
 
     public ToolSettingsMap Project { get; private set; } = ToolSettingsMap.Empty;
-    public ToolSettingsMap Global { get; private set; } = ToolSettingsMap.Empty;
+    public ToolSettingsMap User { get; private set; } = ToolSettingsMap.Empty;
     public EndpointsSettings Endpoints { get; private set; } = EndpointsSettings.CreateDefault();
     public string SystemPrompt { get; private set; } = DefaultSystemPrompt;
     public bool MarkdownEnabled { get; private set; } = true;
@@ -35,14 +35,14 @@ public sealed class SessionSettings : ISessionSettings
 
     public DeferredToolsHint DeferredToolsHint { get; private set; } = DeferredToolsHint.Names;
 
-    public IReadOnlyList<string> GlobalInstructionFiles { get; private set; } = DefaultGlobalInstructionFiles;
+    public IReadOnlyList<string> UserInstructionFiles { get; private set; } = DefaultUserInstructionFiles;
     public IReadOnlyList<string> ProjectInstructionFiles { get; private set; } = Array.Empty<string>();
-    public bool ProjectInheritsGlobalInstructions { get; private set; } = true;
+    public bool ProjectInheritsUserInstructions { get; private set; } = true;
 
-    public ScriptRegistry GlobalScripts { get; private set; } = ScriptRegistry.Empty;
+    public ScriptRegistry UserScripts { get; private set; } = ScriptRegistry.Empty;
     public ScriptRegistry ProjectScripts { get; private set; } = ScriptRegistry.Empty;
 
-    public SubagentRegistry GlobalSubagents { get; private set; } = SubagentRegistry.Empty;
+    public SubagentRegistry UserSubagents { get; private set; } = SubagentRegistry.Empty;
     public SubagentRegistry ProjectSubagents { get; private set; } = SubagentRegistry.Empty;
 
     /// <summary>Fired when the named tier has been mutated. The handler is expected
@@ -59,7 +59,7 @@ public sealed class SessionSettings : ISessionSettings
         var items = Endpoints.Items.Append(endpoint).ToList();
         var defaultId = Endpoints.Items.Count == 0 ? endpoint.Id : Endpoints.DefaultId;
         Endpoints = new EndpointsSettings(items, defaultId);
-        Changed?.Invoke(SettingsTier.Global);
+        Changed?.Invoke(SettingsTier.User);
     }
 
     /// <summary>Replace the endpoint with the matching <see cref="EndpointSettings.Id"/>.
@@ -76,7 +76,7 @@ public sealed class SessionSettings : ISessionSettings
         var items = Endpoints.Items.ToList();
         items[idx] = endpoint;
         Endpoints = Endpoints with { Items = items };
-        Changed?.Invoke(SettingsTier.Global);
+        Changed?.Invoke(SettingsTier.User);
     }
 
     /// <summary>Remove the endpoint with the given id. Refuses to remove the last
@@ -89,7 +89,7 @@ public sealed class SessionSettings : ISessionSettings
         if (items.Count == Endpoints.Items.Count) return; // nothing matched
         var defaultId = Endpoints.DefaultId == id ? items[0].Id : Endpoints.DefaultId;
         Endpoints = new EndpointsSettings(items, defaultId);
-        Changed?.Invoke(SettingsTier.Global);
+        Changed?.Invoke(SettingsTier.User);
     }
 
     public void SetDefaultEndpoint(Guid id)
@@ -97,34 +97,34 @@ public sealed class SessionSettings : ISessionSettings
         if (Endpoints.DefaultId == id) return;
         if (Endpoints.FindById(id) is null) return;
         Endpoints = Endpoints with { DefaultId = id };
-        Changed?.Invoke(SettingsTier.Global);
+        Changed?.Invoke(SettingsTier.User);
     }
 
     public void SetSystemPrompt(string systemPrompt)
     {
         SystemPrompt = systemPrompt ?? string.Empty;
-        Changed?.Invoke(SettingsTier.Global);
+        Changed?.Invoke(SettingsTier.User);
     }
 
     public void SetMarkdownEnabled(bool enabled)
     {
         if (MarkdownEnabled == enabled) return;
         MarkdownEnabled = enabled;
-        Changed?.Invoke(SettingsTier.Global);
+        Changed?.Invoke(SettingsTier.User);
     }
 
     public void SetReasoningDisplay(ReasoningDisplay display)
     {
         if (ReasoningDisplay == display) return;
         ReasoningDisplay = display;
-        Changed?.Invoke(SettingsTier.Global);
+        Changed?.Invoke(SettingsTier.User);
     }
 
     public void SetAutoCompactionEnabled(bool enabled)
     {
         if (AutoCompactionEnabled == enabled) return;
         AutoCompactionEnabled = enabled;
-        Changed?.Invoke(SettingsTier.Global);
+        Changed?.Invoke(SettingsTier.User);
     }
 
     public void SetAutoCompactionThresholdPercent(int percent)
@@ -132,7 +132,7 @@ public sealed class SessionSettings : ISessionSettings
         var clamped = Math.Clamp(percent, 1, 95);
         if (AutoCompactionThresholdPercent == clamped) return;
         AutoCompactionThresholdPercent = clamped;
-        Changed?.Invoke(SettingsTier.Global);
+        Changed?.Invoke(SettingsTier.User);
     }
 
     public void SetAutoCompactionKeepRecentTurns(int turns)
@@ -140,7 +140,7 @@ public sealed class SessionSettings : ISessionSettings
         var clamped = Math.Clamp(turns, 1, 50);
         if (AutoCompactionKeepRecentTurns == clamped) return;
         AutoCompactionKeepRecentTurns = clamped;
-        Changed?.Invoke(SettingsTier.Global);
+        Changed?.Invoke(SettingsTier.User);
     }
 
     public void SetMaxToolIterations(int iterations)
@@ -148,14 +148,14 @@ public sealed class SessionSettings : ISessionSettings
         var clamped = Math.Clamp(iterations, 1, 100);
         if (MaxToolIterations == clamped) return;
         MaxToolIterations = clamped;
-        Changed?.Invoke(SettingsTier.Global);
+        Changed?.Invoke(SettingsTier.User);
     }
 
     public void SetDeferredToolsHint(DeferredToolsHint hint)
     {
         if (DeferredToolsHint == hint) return;
         DeferredToolsHint = hint;
-        Changed?.Invoke(SettingsTier.Global);
+        Changed?.Invoke(SettingsTier.User);
     }
 
     public void SetInstructionFiles(SettingsTier tier, IReadOnlyList<string> paths)
@@ -164,15 +164,15 @@ public sealed class SessionSettings : ISessionSettings
         var normalized = paths.Select(p => p?.Trim() ?? string.Empty).ToArray();
 
         if (tier == SettingsTier.Project) ProjectInstructionFiles = normalized;
-        else GlobalInstructionFiles = normalized;
+        else UserInstructionFiles = normalized;
 
         Changed?.Invoke(tier);
     }
 
-    public void SetProjectInheritsGlobalInstructions(bool inherits)
+    public void SetProjectInheritsUserInstructions(bool inherits)
     {
-        if (ProjectInheritsGlobalInstructions == inherits) return;
-        ProjectInheritsGlobalInstructions = inherits;
+        if (ProjectInheritsUserInstructions == inherits) return;
+        ProjectInheritsUserInstructions = inherits;
         Changed?.Invoke(SettingsTier.Project);
     }
 
@@ -180,7 +180,7 @@ public sealed class SessionSettings : ISessionSettings
     {
         ArgumentNullException.ThrowIfNull(registry);
         if (tier == SettingsTier.Project) ProjectScripts = registry;
-        else GlobalScripts = registry;
+        else UserScripts = registry;
         Changed?.Invoke(tier);
     }
 
@@ -190,7 +190,7 @@ public sealed class SessionSettings : ISessionSettings
     public void AddRegisteredScript(SettingsTier tier, RegisteredScript entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
-        var current = tier == SettingsTier.Project ? ProjectScripts : GlobalScripts;
+        var current = tier == SettingsTier.Project ? ProjectScripts : UserScripts;
         var registered = current.Registered
             .Where(e => !string.Equals(e.Path, entry.Path, StringComparison.Ordinal))
             .Append(entry)
@@ -202,7 +202,7 @@ public sealed class SessionSettings : ISessionSettings
     {
         ArgumentNullException.ThrowIfNull(registry);
         if (tier == SettingsTier.Project) ProjectSubagents = registry;
-        else GlobalSubagents = registry;
+        else UserSubagents = registry;
         Changed?.Invoke(tier);
     }
 
@@ -211,7 +211,7 @@ public sealed class SessionSettings : ISessionSettings
     {
         ArgumentException.ThrowIfNullOrEmpty(toolName);
 
-        var source = tier == SettingsTier.Project ? Project : Global;
+        var source = tier == SettingsTier.Project ? Project : User;
         var next = new Dictionary<string, ToolPermissionSettings>(source.Entries, StringComparer.Ordinal);
 
         if (entry is null)
@@ -221,7 +221,7 @@ public sealed class SessionSettings : ISessionSettings
 
         var map = new ToolSettingsMap(next);
         if (tier == SettingsTier.Project) Project = map;
-        else Global = map;
+        else User = map;
 
         Changed?.Invoke(tier);
     }
@@ -236,12 +236,12 @@ public sealed class SessionSettings : ISessionSettings
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    /// <summary>Hydrate the global tier from a JSON blob read off disk.
+    /// <summary>Hydrate the user tier from a JSON blob read off disk.
     /// Missing fields fall back to defaults. Silently ignores malformed input.</summary>
-    public void HydrateGlobal(string? json)
+    public void HydrateUser(string? json)
     {
         var firstRun = string.IsNullOrWhiteSpace(json);
-        var blob = TryDeserialize<GlobalBlob>(json) ?? new GlobalBlob();
+        var blob = TryDeserialize<UserBlob>(json) ?? new UserBlob();
 
         Endpoints = EndpointsFromBlob(blob);
 
@@ -256,18 +256,18 @@ public sealed class SessionSettings : ISessionSettings
         MaxToolIterations = blob.MaxToolIterations is int mi
             ? Math.Clamp(mi, 1, 100) : AgentLoopOptions.Default.MaxIterations;
         DeferredToolsHint = blob.DeferredToolsHint ?? DeferredToolsHint.Names;
-        Global = firstRun ? DefaultGlobalToolSettings() : MapFromDto(blob.Tools);
-        GlobalInstructionFiles = firstRun
-            ? DefaultGlobalInstructionFiles
+        User = firstRun ? DefaultUserToolSettings() : MapFromDto(blob.Tools);
+        UserInstructionFiles = firstRun
+            ? DefaultUserInstructionFiles
             : (blob.InstructionFiles?.ToArray() ?? Array.Empty<string>());
-        GlobalScripts = ScriptsFromDto(blob.Scripts);
-        GlobalSubagents = firstRun ? DefaultGlobalSubagents() : SubagentsFromDto(blob.Subagents);
+        UserScripts = ScriptsFromDto(blob.Scripts);
+        UserSubagents = firstRun ? DefaultUserSubagents() : SubagentsFromDto(blob.Subagents);
     }
 
-    // Seeded only on first run, alongside DefaultGlobalToolSettings. A read-only "explorer"
+    // Seeded only on first run, alongside DefaultUserToolSettings. A read-only "explorer"
     // that answers broad questions about the repo. Deliberately excludes the code_* tools so
     // it leans on plain read/list/find/grep. Mutating and execute tools are omitted entirely.
-    private static SubagentRegistry DefaultGlobalSubagents()
+    private static SubagentRegistry DefaultUserSubagents()
     {
         var explorer = new SubagentDefinition(
             Id: Guid.NewGuid(),
@@ -287,10 +287,10 @@ public sealed class SessionSettings : ISessionSettings
         return new SubagentRegistry(new[] { explorer });
     }
 
-    // Seeded only when no Global blob has ever been written to disk.
+    // Seeded only when no User blob has ever been written to disk.
     // Once the user has stored anything, their choices — including explicit "inherit"
     // (a removed entry) — are respected verbatim.
-    private static ToolSettingsMap DefaultGlobalToolSettings()
+    private static ToolSettingsMap DefaultUserToolSettings()
     {
         static ToolPermissionSettings Workspace(PermissionLevel p) =>
             new() { Permission = p, RestrictToWorkspace = true };
@@ -312,14 +312,14 @@ public sealed class SessionSettings : ISessionSettings
         var blob = TryDeserialize<ProjectBlob>(json) ?? new ProjectBlob();
         Project = MapFromDto(blob.Tools);
         ProjectInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
-        ProjectInheritsGlobalInstructions = blob.InheritsGlobalInstructions ?? true;
+        ProjectInheritsUserInstructions = blob.InheritsUserInstructions ?? true;
         ProjectScripts = ScriptsFromDto(blob.Scripts);
         ProjectSubagents = SubagentsFromDto(blob.Subagents);
     }
 
-    public string SerializeGlobal()
+    public string SerializeUser()
     {
-        var blob = new GlobalBlob
+        var blob = new UserBlob
         {
             Endpoints = EndpointsToDto(Endpoints, includeApiKeys: true),
             DefaultEndpointId = Endpoints.DefaultId,
@@ -331,10 +331,10 @@ public sealed class SessionSettings : ISessionSettings
             AutoCompactionKeepRecentTurns = AutoCompactionKeepRecentTurns,
             MaxToolIterations = MaxToolIterations,
             DeferredToolsHint = DeferredToolsHint,
-            Tools = MapToDto(Global),
-            InstructionFiles = NonEmpty(GlobalInstructionFiles),
-            Scripts = ScriptsToDto(GlobalScripts),
-            Subagents = SubagentsToDto(GlobalSubagents),
+            Tools = MapToDto(User),
+            InstructionFiles = NonEmpty(UserInstructionFiles),
+            Scripts = ScriptsToDto(UserScripts),
+            Subagents = SubagentsToDto(UserSubagents),
         };
         return JsonSerializer.Serialize(blob, JsonOptions);
     }
@@ -350,15 +350,15 @@ public sealed class SessionSettings : ISessionSettings
     private const string ExportFormat = "yamca.settings";
     private const int ExportVersion = 1;
 
-    public string ExportGlobal(bool includeApiKey)
+    public string ExportUser(bool includeApiKey)
     {
         var envelope = new SettingsExportEnvelope
         {
             Format = ExportFormat,
             Version = ExportVersion,
-            Tier = "global",
+            Tier = "user",
             ExportedAt = DateTimeOffset.UtcNow,
-            Global = new GlobalBlob
+            User = new UserBlob
             {
                 Endpoints = EndpointsToDto(Endpoints, includeApiKeys: includeApiKey),
                 DefaultEndpointId = Endpoints.DefaultId,
@@ -370,10 +370,10 @@ public sealed class SessionSettings : ISessionSettings
                 AutoCompactionKeepRecentTurns = AutoCompactionKeepRecentTurns,
                 MaxToolIterations = MaxToolIterations,
                 DeferredToolsHint = DeferredToolsHint,
-                Tools = MapToDto(Global),
-                InstructionFiles = NonEmpty(GlobalInstructionFiles),
-                Scripts = ScriptsToDto(GlobalScripts),
-                Subagents = SubagentsToDto(GlobalSubagents),
+                Tools = MapToDto(User),
+                InstructionFiles = NonEmpty(UserInstructionFiles),
+                Scripts = ScriptsToDto(UserScripts),
+                Subagents = SubagentsToDto(UserSubagents),
             },
         };
         return JsonSerializer.Serialize(envelope, ExportJsonOptions);
@@ -385,7 +385,7 @@ public sealed class SessionSettings : ISessionSettings
         public static ImportResult Fail(string error) => new(false, error);
     }
 
-    public ImportResult ImportGlobal(string? json)
+    public ImportResult ImportUser(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
             return ImportResult.Fail("File is empty.");
@@ -406,15 +406,15 @@ public sealed class SessionSettings : ISessionSettings
             return ImportResult.Fail($"Unrecognized file format (expected \"{ExportFormat}\").");
         if (envelope.Version != ExportVersion)
             return ImportResult.Fail($"Unsupported export version {envelope.Version} (this build expects {ExportVersion}).");
-        if (envelope.Global is null)
-            return ImportResult.Fail("File is missing the \"global\" section.");
+        if (envelope.User is null)
+            return ImportResult.Fail("File is missing the \"user\" section.");
 
-        ApplyGlobalBlob(envelope.Global);
-        Changed?.Invoke(SettingsTier.Global);
+        ApplyUserBlob(envelope.User);
+        Changed?.Invoke(SettingsTier.User);
         return ImportResult.Ok();
     }
 
-    private void ApplyGlobalBlob(GlobalBlob blob)
+    private void ApplyUserBlob(UserBlob blob)
     {
         Endpoints = EndpointsFromBlob(blob);
         SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
@@ -428,10 +428,10 @@ public sealed class SessionSettings : ISessionSettings
         MaxToolIterations = blob.MaxToolIterations is int mi
             ? Math.Clamp(mi, 1, 100) : AgentLoopOptions.Default.MaxIterations;
         DeferredToolsHint = blob.DeferredToolsHint ?? DeferredToolsHint.Names;
-        Global = MapFromDto(blob.Tools);
-        GlobalInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
-        GlobalScripts = ScriptsFromDto(blob.Scripts);
-        GlobalSubagents = SubagentsFromDto(blob.Subagents);
+        User = MapFromDto(blob.Tools);
+        UserInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
+        UserScripts = ScriptsFromDto(blob.Scripts);
+        UserSubagents = SubagentsFromDto(blob.Subagents);
     }
 
     public string SerializeProject()
@@ -440,7 +440,7 @@ public sealed class SessionSettings : ISessionSettings
         {
             Tools = MapToDto(Project),
             InstructionFiles = NonEmpty(ProjectInstructionFiles),
-            InheritsGlobalInstructions = ProjectInheritsGlobalInstructions ? null : false,
+            InheritsUserInstructions = ProjectInheritsUserInstructions ? null : false,
             Scripts = ScriptsToDto(ProjectScripts),
             Subagents = SubagentsToDto(ProjectSubagents),
         };
@@ -493,7 +493,7 @@ public sealed class SessionSettings : ISessionSettings
 
     // --- DTOs --------------------------------------------------------------------
 
-    private sealed class GlobalBlob
+    private sealed class UserBlob
     {
         public List<EndpointDto>? Endpoints { get; set; }
         public Guid? DefaultEndpointId { get; set; }
@@ -515,7 +515,7 @@ public sealed class SessionSettings : ISessionSettings
     {
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
         public List<string>? InstructionFiles { get; set; }
-        public bool? InheritsGlobalInstructions { get; set; }
+        public bool? InheritsUserInstructions { get; set; }
         public ScriptsDto? Scripts { get; set; }
         public List<SubagentDto>? Subagents { get; set; }
     }
@@ -529,7 +529,7 @@ public sealed class SessionSettings : ISessionSettings
         public string? Model { get; set; }
     }
 
-    private static EndpointsSettings EndpointsFromBlob(GlobalBlob blob)
+    private static EndpointsSettings EndpointsFromBlob(UserBlob blob)
     {
         if (blob.Endpoints is not { Count: > 0 } list)
             return EndpointsSettings.CreateDefault();
@@ -567,7 +567,7 @@ public sealed class SessionSettings : ISessionSettings
         public int Version { get; set; }
         public string? Tier { get; set; }
         public DateTimeOffset? ExportedAt { get; set; }
-        public GlobalBlob? Global { get; set; }
+        public UserBlob? User { get; set; }
     }
 
     private sealed class ToolEntryDto

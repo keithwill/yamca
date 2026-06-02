@@ -4,7 +4,7 @@ using Yamca.Agent.Tools;
 namespace Yamca.Agent.Settings;
 
 /// <summary>
-/// Per-tool override values stored in either the project or global settings tier.
+/// Per-tool override values stored in either the project or user settings tier.
 /// Nullable fields denote "not set — fall through to the next tier".
 /// </summary>
 public sealed record ToolPermissionSettings

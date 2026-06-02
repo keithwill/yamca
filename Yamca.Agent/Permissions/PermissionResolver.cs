@@ -19,7 +19,7 @@ public sealed class PermissionResolver : IPermissionResolver
     public PermissionLevel Resolve(string toolName)
     {
         if (_settings.Project.Get(toolName)?.Permission is { } p) return p;
-        if (_settings.Global.Get(toolName)?.Permission is { } g) return g;
+        if (_settings.User.Get(toolName)?.Permission is { } g) return g;
 
         return _tools.Get(toolName)?.DefaultPermission ?? PermissionLevel.Ask;
     }
@@ -27,7 +27,7 @@ public sealed class PermissionResolver : IPermissionResolver
     public bool RestrictToWorkspace(string toolName)
     {
         if (_settings.Project.Get(toolName)?.RestrictToWorkspace is { } p) return p;
-        if (_settings.Global.Get(toolName)?.RestrictToWorkspace is { } g) return g;
+        if (_settings.User.Get(toolName)?.RestrictToWorkspace is { } g) return g;
 
         return _tools.Get(toolName)?.SupportsWorkspaceRestriction ?? false;
     }

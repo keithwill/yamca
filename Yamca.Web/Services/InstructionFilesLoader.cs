@@ -17,8 +17,8 @@ public sealed class InstructionFilesLoader
         var ordered = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        if (settings.ProjectInheritsGlobalInstructions)
-            AddPaths(ordered, seen, settings.GlobalInstructionFiles);
+        if (settings.ProjectInheritsUserInstructions)
+            AddPaths(ordered, seen, settings.UserInstructionFiles);
 
         AddPaths(ordered, seen, settings.ProjectInstructionFiles);
 

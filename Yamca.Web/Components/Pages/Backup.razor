@@ -16,18 +16,18 @@ else
     <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
         <MudText Typo="Typo.h6" Class="mb-2">Backup</MudText>
         <MudText Typo="Typo.caption" Class="mb-3">
-            Export your Global settings to a JSON file, or restore them from one. Project settings (stored per workspace on disk in <code>@Keys.ProjectFile</code>) are not included.
+            Export your User settings to a JSON file, or restore them from one. Project settings (stored per workspace on disk in <code>@Keys.ProjectFile</code>) are not included.
         </MudText>
         <div class="d-flex align-center" style="gap: 8px;">
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.FileDownload"
                        OnClick="OpenExportDialog">
-                Export Global settings&hellip;
+                Export User settings&hellip;
             </MudButton>
             <MudFileUpload T="IBrowserFile" Accept=".json,application/json" FilesChanged="OnImportFileChanged">
                 <CustomContent Context="fileUpload">
                     <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.FileUpload"
                                OnClick="@(() => fileUpload.OpenFilePickerAsync())">
-                        Import Global settings&hellip;
+                        Import User settings&hellip;
                     </MudButton>
                 </CustomContent>
                 <SelectedTemplate></SelectedTemplate>
@@ -36,10 +36,10 @@ else
     </MudPaper>
 
     <MudDialog @bind-Visible="_exportDialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
-        <TitleContent>Export Global settings</TitleContent>
+        <TitleContent>Export User settings</TitleContent>
         <DialogContent>
             <MudText Typo="Typo.body2" Class="mb-2">
-                Includes endpoint, system prompt, Markdown toggle, tool permissions, and global instruction files.
+                Includes endpoint, system prompt, Markdown toggle, tool permissions, and user instruction files.
             </MudText>
             <MudCheckBox T="bool" Value="_exportIncludeApiKey"
                          ValueChanged="@((bool v) => _exportIncludeApiKey = v)"
@@ -59,10 +59,10 @@ else
     </MudDialog>
 
     <MudDialog @bind-Visible="_importDialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
-        <TitleContent>Replace Global settings?</TitleContent>
+        <TitleContent>Replace User settings?</TitleContent>
         <DialogContent>
             <MudText Typo="Typo.body2">
-                Replace your Global settings with the contents of <code>@_importFileName</code>? This overwrites your endpoint, system prompt, tool permissions, and instruction files. Project settings are unaffected.
+                Replace your User settings with the contents of <code>@_importFileName</code>? This overwrites your endpoint, system prompt, tool permissions, and instruction files. Project settings are unaffected.
             </MudText>
         </DialogContent>
         <DialogActions>
@@ -115,7 +115,7 @@ else
 
     private async Task DownloadExport()
     {
-        var json = Session.ExportGlobal(_exportIncludeApiKey);
+        var json = Session.ExportUser(_exportIncludeApiKey);
         var filename = $"yamca-settings-{DateTime.Now:yyyyMMdd-HHmm}.json";
         _exportDialogOpen = false;
         try
@@ -162,14 +162,14 @@ else
     {
         if (_importJson is null) { _importDialogOpen = false; return; }
 
-        var result = Session.ImportGlobal(_importJson);
+        var result = Session.ImportUser(_importJson);
         _importDialogOpen = false;
         _importJson = null;
         _importFileName = null;
 
         if (result.Success)
         {
-            Snackbar.Add("Global settings imported.", Severity.Success);
+            Snackbar.Add("User settings imported.", Severity.Success);
         }
         else
         {
