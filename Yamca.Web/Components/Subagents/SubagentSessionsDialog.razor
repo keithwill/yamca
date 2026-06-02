@@ -1,0 +1,153 @@
+@using Yamca.Web.Services
+@implements IDisposable
+@inject SubagentSessionRegistry Registry
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center" style="gap: 6px; width: 100%;">
+            <MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="Size.Small" />
+            <MudText Typo="Typo.h6">Subagent sessions</MudText>
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+                @_sessions.Count @(_sessions.Count == 1 ? "run" : "runs")
+            </MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Small"
+                           Class="ml-auto" OnClick="ClearAll"
+                           Disabled="@(_sessions.Count == 0)" aria-label="Clear sessions" />
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                           OnClick="Close" aria-label="Close" />
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_sessions.Count == 0)
+        {
+            <MudText Typo="Typo.body2">
+                No subagent runs yet — when the agent delegates a task with <code>subagent_run</code>,
+                it will appear here and you can watch it work.
+            </MudText>
+        }
+        else
+        {
+            <div class="yamca-subagent-dialog">
+                <div class="yamca-subagent-list">
+                    @foreach (var s in _sessions)
+                    {
+                        <div class="yamca-subagent-list-item @(ReferenceEquals(s, _selected) ? "selected" : "")"
+                             @onclick="@(() => Select(s))">
+                            <MudIcon Icon="@StatusIcon(s)" Color="@StatusColor(s)" Size="Size.Small" />
+                            <div class="yamca-subagent-list-text">
+                                <span class="yamca-subagent-list-name">@s.AgentName</span>
+                                <span class="yamca-subagent-list-sub">@s.StartedAt.LocalDateTime.ToString("HH:mm:ss")</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="yamca-subagent-detail">
+                    @if (_selected is not null)
+                    {
+                        <SubagentTranscriptView Session="_selected" @key="_selected.RunId" />
+                    }
+                </div>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .yamca-subagent-dialog { display: flex; gap: 12px; min-height: 50vh; }
+    .yamca-subagent-list {
+        flex: 0 0 200px;
+        border-right: 1px solid var(--mud-palette-lines-default);
+        overflow: auto;
+        max-height: 70vh;
+    }
+    .yamca-subagent-list-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        cursor: pointer;
+        border-radius: 4px;
+    }
+    .yamca-subagent-list-item:hover { background: var(--mud-palette-action-default-hover); }
+    .yamca-subagent-list-item.selected { background: var(--mud-palette-action-default-selected); }
+    .yamca-subagent-list-text { display: flex; flex-direction: column; min-width: 0; }
+    .yamca-subagent-list-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .yamca-subagent-list-sub { font-size: 0.72rem; color: var(--mud-palette-text-secondary); }
+    .yamca-subagent-detail { flex: 1 1 auto; overflow: auto; max-height: 70vh; min-width: 0; }
+</style>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>When set, pre-select the run launched by this parent tool-call id (the
+    /// subagent_run card the user clicked). Otherwise default to the running / most recent run.</summary>
+    [Parameter] public string? InitialCallId { get; set; }
+
+    /// <summary>When set, list only runs launched by this chat session. The toolbar entry
+    /// passes the current chat's id; the card entry leaves it null and the owner is inferred
+    /// from the selected run.</summary>
+    [Parameter] public string? OwnerId { get; set; }
+
+    private IReadOnlyList<SubagentLiveSession> _sessions = Array.Empty<SubagentLiveSession>();
+    private SubagentLiveSession? _selected;
+    private string? _ownerFilter;
+
+    protected override void OnInitialized()
+    {
+        Registry.Changed += OnRegistryChanged;
+
+        // Card entry: infer the owning chat from the clicked run so the list stays scoped to it.
+        var initial = InitialCallId is not null ? Registry.ByCallId(InitialCallId) : null;
+        _ownerFilter = OwnerId ?? initial?.OwnerId;
+
+        Refresh();
+        _selected = initial
+            ?? _sessions.FirstOrDefault(s => s.Status == SubagentRunStatus.Running)
+            ?? _sessions.FirstOrDefault();
+    }
+
+    private void OnRegistryChanged() => InvokeAsync(() =>
+    {
+        Refresh();
+        StateHasChanged();
+    });
+
+    private void Refresh()
+    {
+        var all = _ownerFilter is not null ? Registry.SessionsFor(_ownerFilter) : Registry.Sessions;
+        // Newest first so an in-flight run sits at the top of the list.
+        _sessions = all.Reverse().ToArray();
+        if (_selected is not null && !_sessions.Contains(_selected))
+            _selected = _sessions.FirstOrDefault();
+    }
+
+    private void Select(SubagentLiveSession s) => _selected = s;
+
+    private void ClearAll()
+    {
+        if (_ownerFilter is not null) Registry.ClearFor(_ownerFilter);
+        else Registry.Clear();
+        _selected = null;
+    }
+
+    private static string StatusIcon(SubagentLiveSession s) => s.Status switch
+    {
+        SubagentRunStatus.Succeeded => Icons.Material.Filled.CheckCircle,
+        SubagentRunStatus.Failed => Icons.Material.Filled.Error,
+        _ => Icons.Material.Filled.HourglassEmpty,
+    };
+
+    private static Color StatusColor(SubagentLiveSession s) => s.Status switch
+    {
+        SubagentRunStatus.Succeeded => Color.Success,
+        SubagentRunStatus.Failed => Color.Error,
+        _ => Color.Info,
+    };
+
+    private void Close() => MudDialog.Close();
+
+    public void Dispose() => Registry.Changed -= OnRegistryChanged;
+}

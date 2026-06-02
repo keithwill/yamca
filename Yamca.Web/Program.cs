@@ -217,6 +217,11 @@ builder.Services.AddScoped<ITool, ExecuteScriptTool>();
 builder.Services.AddScoped<ISubagentRunner, SubagentRunner>();
 builder.Services.AddScoped<ITool, SubagentRunTool>();
 
+// Live subagent transcripts: the runner mirrors each run's event stream into this per-circuit
+// registry via ISubagentObserver; the UI reads the same instance to render a read-only view.
+builder.Services.AddScoped<SubagentSessionRegistry>();
+builder.Services.AddScoped<ISubagentObserver>(sp => sp.GetRequiredService<SubagentSessionRegistry>());
+
 // MCP host: one registry per process, shared across all chat sessions. The web
 // layer hydrates it from mcp.json on first circuit and again whenever the
 // user edits the MCP server list in settings.

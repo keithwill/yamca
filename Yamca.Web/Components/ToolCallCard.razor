@@ -1,4 +1,9 @@
 @using System.Text.Json
+@using Yamca.Agent.Tools
+@using Yamca.Web.Components.Subagents
+@using Yamca.Web.Services
+@inject SubagentSessionRegistry Subagents
+@inject IDialogService Dialogs
 
 <div class="tool-call @(_expanded ? "expanded" : "")">
     <div class="tool-call-header" @onclick="Toggle">
@@ -16,6 +21,15 @@
         else if (Item.State != ToolCallState.Succeeded)
         {
             <span class="tool-call-state state-@Item.State.ToString().ToLowerInvariant()">@StateLabel</span>
+        }
+        @if (IsSubagentCall)
+        {
+            <span @onclick:stopPropagation="true">
+                <MudTooltip Text="View subagent session">
+                    <MudIconButton Icon="@Icons.Material.Filled.AccountTree" Size="Size.Small"
+                                   OnClick="OpenSubagentSession" aria-label="View subagent session" />
+                </MudTooltip>
+            </span>
         }
         <MudIcon Icon="@(_expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
                  Size="Size.Small" Class="tool-call-chevron" />
@@ -88,6 +102,15 @@
 
     // Surface file changes by default — the diff is the point. Other tool cards stay collapsed.
     protected override void OnInitialized() => _expanded = FileChangeArgs.IsDiffTool(Item.ToolName);
+
+    private bool IsSubagentCall => Item.ToolName == SubagentRunTool.ToolName;
+
+    private async Task OpenSubagentSession()
+    {
+        var parameters = new DialogParameters { ["InitialCallId"] = Item.CallId };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true };
+        await Dialogs.ShowAsync<SubagentSessionsDialog>("Subagent sessions", parameters, options);
+    }
 
     private void Toggle() => _expanded = !_expanded;
 

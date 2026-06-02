@@ -22,6 +22,7 @@ public sealed class SubagentRunner : ISubagentRunner
     private readonly IServiceProvider _services;
     private readonly IApprovalCoordinator _approvals;
     private readonly IHttpClientFactory _httpFactory;
+    private readonly ISubagentObserver _observer;
 
     private IChatCompletionClient? _parentClient;
 
@@ -34,7 +35,8 @@ public sealed class SubagentRunner : ISubagentRunner
         ISessionSettings settings,
         IServiceProvider services,
         IApprovalCoordinator approvals,
-        IHttpClientFactory httpFactory)
+        IHttpClientFactory httpFactory,
+        ISubagentObserver? observer = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(services);
@@ -44,6 +46,7 @@ public sealed class SubagentRunner : ISubagentRunner
         _services = services;
         _approvals = approvals;
         _httpFactory = httpFactory;
+        _observer = observer ?? NoopSubagentObserver.Instance;
     }
 
     public void Bind(IChatCompletionClient parentClient)
@@ -119,31 +122,48 @@ public sealed class SubagentRunner : ISubagentRunner
             new AgentLoopOptions { MaxIterations = maxIterations },
             isYoloEnabled: static () => true);
 
-        var lastAssistant = "";
-        TurnCompletionReason? reason = null;
+        // Mirror the run to any observer (the UI) so it can be watched live. The run id keys
+        // the live session; the parent tool-call id (when present) lets the UI open the matching
+        // transcript from the subagent_run card. OnCompleted always fires (see finally).
+        var runId = Guid.NewGuid().ToString("n");
+        _observer.OnStarted(new SubagentRunInfo(
+            runId, parentContext.CallId, parentContext.OwnerId, def.Name, prompt, DateTimeOffset.Now));
 
-        await foreach (var ev in loop.RunTurnAsync(prompt, cancellationToken).ConfigureAwait(false))
+        var outcome = ToolResult.Error(FailureMessage(def.Name, null, ""));
+        try
         {
-            switch (ev)
+            var lastAssistant = "";
+            TurnCompletionReason? reason = null;
+
+            await foreach (var ev in loop.RunTurnAsync(prompt, cancellationToken).ConfigureAwait(false))
             {
-                case ToolCallResultEvent r when r.ToolName == SubagentResultTool.ToolName && !r.IsError:
-                    // The subagent reported back — stop the loop here rather than letting it
-                    // burn further iterations, and hand the payload to the caller.
-                    return ToolResult.Ok(sink.Result ?? "");
-                case AssistantMessageEvent a when !string.IsNullOrWhiteSpace(a.Content):
-                    lastAssistant = a.Content;
-                    break;
-                case TurnCompleteEvent c:
-                    reason = c.Reason;
-                    break;
+                _observer.OnEvent(runId, ev);
+                switch (ev)
+                {
+                    case ToolCallResultEvent r when r.ToolName == SubagentResultTool.ToolName && !r.IsError:
+                        // The subagent reported back — stop the loop here rather than letting it
+                        // burn further iterations, and hand the payload to the caller.
+                        outcome = ToolResult.Ok(sink.Result ?? "");
+                        return outcome;
+                    case AssistantMessageEvent a when !string.IsNullOrWhiteSpace(a.Content):
+                        lastAssistant = a.Content;
+                        break;
+                    case TurnCompleteEvent c:
+                        reason = c.Reason;
+                        break;
+                }
             }
+
+            // Defensive: if the result landed but we somehow fell out of the loop, still return it.
+            outcome = sink.HasResult
+                ? ToolResult.Ok(sink.Result ?? "")
+                : ToolResult.Error(FailureMessage(def.Name, reason, lastAssistant));
+            return outcome;
         }
-
-        // Defensive: if the result landed but we somehow fell out of the loop, still return it.
-        if (sink.HasResult)
-            return ToolResult.Ok(sink.Result ?? "");
-
-        return ToolResult.Error(FailureMessage(def.Name, reason, lastAssistant));
+        finally
+        {
+            _observer.OnCompleted(runId, outcome.IsError, outcome.Content);
+        }
     }
 
     private ChatSession BuildSession(

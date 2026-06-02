@@ -6,6 +6,7 @@
 @using Yamca.Agent.Settings
 @using Yamca.Agent.Workspace
 @using Yamca.Web.Components.Branching
+@using Yamca.Web.Components.Subagents
 @using WorkspaceImpl = Yamca.Agent.Workspace.Workspace
 
 <div class="yamca-page">
@@ -95,6 +96,16 @@
                                            Size="Size.Small"
                                            OnClick="OpenDiagnosticsDialog"
                                            aria-label="Diagnostic log" />
+                        </span>
+                    </MudTooltip>
+                    <MudTooltip Text="Subagent sessions — watch delegated tasks">
+                        <span>
+                            <MudIconButton Icon="@Icons.Material.Filled.AccountTree"
+                                           Color="Color.Default" Variant="Variant.Text"
+                                           Size="Size.Small"
+                                           Disabled="@(!Subagents.HasAnyFor(SubagentOwnerId))"
+                                           OnClick="OpenSubagentSessions"
+                                           aria-label="Subagent sessions" />
                         </span>
                     </MudTooltip>
                     <MudTooltip Text="YOLO Mode - Permission checks are skipped">
@@ -306,6 +317,7 @@
     [Inject] private ISessionSettings Session { get; set; } = default!;
     [Inject] private SessionSettings SessionConcrete { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private SubagentSessionRegistry Subagents { get; set; } = default!;
 
     [Parameter, EditorRequired] public ChatViewModel Chat { get; set; } = default!;
     [Parameter] public bool ShowHeader { get; set; }
@@ -374,6 +386,15 @@
         }
         return false;
     }
+
+    protected override void OnInitialized()
+    {
+        // The subagent registry is per-circuit (shared across chat tiles); refresh the toolbar
+        // badge whenever a run starts, streams, or finishes.
+        Subagents.Changed += OnSubagentsChanged;
+    }
+
+    private void OnSubagentsChanged() => InvokeAsync(StateHasChanged);
 
     protected override void OnParametersSet()
     {
@@ -683,6 +704,17 @@
         _diagDialogOpen = true;
     }
 
+    // The runner stamps each subagent run with the launching chat's id (ChatViewModel.Id via
+    // AgentLoopOptions.OwnerId); match that here so this tile only sees its own runs.
+    private string SubagentOwnerId => Chat.Id.ToString();
+
+    private async Task OpenSubagentSessions()
+    {
+        var parameters = new DialogParameters { ["OwnerId"] = SubagentOwnerId };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true };
+        await Dialogs.ShowAsync<SubagentSessionsDialog>("Subagent sessions", parameters, options);
+    }
+
     private static string FormatDiagnostics(IReadOnlyList<DiagnosticEntry> entries)
     {
         var sb = new StringBuilder();
@@ -747,5 +779,6 @@
     public void Dispose()
     {
         if (_subscribed is not null) _subscribed.Changed -= OnChanged;
+        Subagents.Changed -= OnSubagentsChanged;
     }
 }

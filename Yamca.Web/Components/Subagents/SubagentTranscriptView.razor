@@ -1,0 +1,79 @@
+@using Yamca.Web.Services
+
+<div class="yamca-subagent-transcript">
+    <div class="yamca-subagent-head">
+        <MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="Size.Small" />
+        <span class="yamca-subagent-name">@Session.AgentName</span>
+        @switch (Session.Status)
+        {
+            case SubagentRunStatus.Running:
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Info"
+                                     Style="width:14px;height:14px;" />
+                <span class="yamca-subagent-status">running</span>
+                break;
+            case SubagentRunStatus.Succeeded:
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                <span class="yamca-subagent-status">done</span>
+                break;
+            case SubagentRunStatus.Failed:
+                <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Small" />
+                <span class="yamca-subagent-status">failed</span>
+                break;
+        }
+        <span class="yamca-subagent-spacer"></span>
+        <span class="yamca-subagent-time" title="@Session.StartedAt.LocalDateTime.ToString("F")">
+            @Session.StartedAt.LocalDateTime.ToString("HH:mm:ss")@(Session.Duration is { } d ? $" · {Format(d)}" : "")
+        </span>
+    </div>
+
+    <div class="yamca-subagent-body">
+        <ChatTurnView Turn="Session.Turn" OnContinue="NoOp" />
+
+        @if (Session.Status != SubagentRunStatus.Running && !string.IsNullOrEmpty(Session.Result))
+        {
+            <MudText Typo="Typo.caption" Class="mt-2" Style="color:var(--mud-palette-text-secondary)">
+                @(Session.Status == SubagentRunStatus.Failed ? "Failure" : "Result returned to parent")
+            </MudText>
+            <pre class="yamca-subagent-result @(Session.Status == SubagentRunStatus.Failed ? "is-error" : "")">@Session.Result</pre>
+        }
+    </div>
+</div>
+
+<style>
+    .yamca-subagent-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 2px 8px 2px;
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+        margin-bottom: 8px;
+    }
+    .yamca-subagent-name { font-weight: 600; }
+    .yamca-subagent-status { font-size: 0.75rem; text-transform: uppercase; color: var(--mud-palette-text-secondary); }
+    .yamca-subagent-spacer { flex: 1; }
+    .yamca-subagent-time { font-size: 0.75rem; color: var(--mud-palette-text-secondary); white-space: nowrap; }
+    .yamca-subagent-result {
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: var(--mud-typography-body2-family);
+        font-size: 0.8rem;
+        margin: 2px 0 0 0;
+        max-height: 40vh;
+        overflow: auto;
+        padding: 8px;
+        border-radius: 4px;
+        background: var(--mud-palette-background-grey);
+    }
+    .yamca-subagent-result.is-error { color: var(--mud-palette-error); }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public SubagentLiveSession Session { get; set; } = default!;
+
+    private static readonly EventCallback NoOp = EventCallback.Empty;
+
+    private static string Format(TimeSpan d) =>
+        d.TotalSeconds < 1 ? $"{d.TotalMilliseconds:0} ms"
+        : d.TotalMinutes < 1 ? $"{d.TotalSeconds:0.0} s"
+        : $"{(int)d.TotalMinutes}m {d.Seconds}s";
+}
