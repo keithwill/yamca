@@ -206,6 +206,26 @@ public sealed class SessionSettings : ISessionSettings
         Changed?.Invoke(tier);
     }
 
+    /// <summary>Reset every user-tier setting to the values it would be seeded with on
+    /// first run, while leaving the configured endpoints untouched. Mirrors the
+    /// <c>firstRun</c> branch of <see cref="HydrateUser"/>.</summary>
+    public void ResetUserToDefaults()
+    {
+        SystemPrompt = DefaultSystemPrompt;
+        MarkdownEnabled = true;
+        ReasoningDisplay = ReasoningDisplay.Collapsed;
+        AutoCompactionEnabled = false;
+        AutoCompactionThresholdPercent = 75;
+        AutoCompactionKeepRecentTurns = 4;
+        MaxToolIterations = AgentLoopOptions.Default.MaxIterations;
+        DeferredToolsHint = DeferredToolsHint.Names;
+        User = DefaultUserToolSettings();
+        UserInstructionFiles = DefaultUserInstructionFiles;
+        UserScripts = ScriptRegistry.Empty;
+        UserSubagents = DefaultUserSubagents();
+        Changed?.Invoke(SettingsTier.User);
+    }
+
     /// <summary>Replace a single tool entry in the given tier, or pass <c>null</c> to remove.</summary>
     public void SetToolEntry(SettingsTier tier, string toolName, ToolPermissionSettings? entry)
     {

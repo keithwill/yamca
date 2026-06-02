@@ -35,6 +35,32 @@ else
         </div>
     </MudPaper>
 
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-2">Reset</MudText>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            Restore your User settings to their original defaults. Your configured endpoints (and any API keys) are left alone.
+        </MudText>
+        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.RestartAlt"
+                   OnClick="@(() => _resetDialogOpen = true)">
+            Reset Defaults&hellip;
+        </MudButton>
+    </MudPaper>
+
+    <MudDialog @bind-Visible="_resetDialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
+        <TitleContent>Reset User settings to defaults?</TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.body2">
+                This restores your system prompt, Markdown and reasoning preferences, auto-compaction, tool permissions,
+                instruction files, registered scripts, and subagents to the values they're seeded with on first run.
+                Your configured endpoints and API keys are not changed. This cannot be undone.
+            </MudText>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _resetDialogOpen = false)">Cancel</MudButton>
+            <MudButton Color="Color.Error" Variant="Variant.Filled" OnClick="ConfirmReset">Reset Defaults</MudButton>
+        </DialogActions>
+    </MudDialog>
+
     <MudDialog @bind-Visible="_exportDialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
         <TitleContent>Export User settings</TitleContent>
         <DialogContent>
@@ -89,6 +115,8 @@ else
     private bool _importDialogOpen;
     private string? _importFileName;
     private string? _importJson;
+
+    private bool _resetDialogOpen;
 
     private const long MaxImportBytes = 256 * 1024;
 
@@ -175,6 +203,13 @@ else
         {
             Snackbar.Add($"Import failed: {result.Error}", Severity.Error);
         }
+    }
+
+    private void ConfirmReset()
+    {
+        _resetDialogOpen = false;
+        Session.ResetUserToDefaults();
+        Snackbar.Add("User settings reset to defaults.", Severity.Success);
     }
 
     public void Dispose()
