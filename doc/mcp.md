@@ -11,7 +11,7 @@ prefix (preserving prompt-cache hits). The LLM discovers a tool with
 `lookup_tool` and invokes it via `call_tool`. See
 [tools-and-permissions.md](tools-and-permissions.md) for the availability model.
 
-MCP tools resolve permissions through the same Project → Global → default chain
+MCP tools resolve permissions through the same Project → User → default chain
 as built-in tools.
 
 ## Configuration

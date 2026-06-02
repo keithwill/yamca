@@ -53,7 +53,7 @@ an error. (May be reconsidered later.)
 badly. The value isn't worth that failure mode today.
 
 ### Per-conversation export
-Exporting a single chat to markdown/JSON (distinct from the global Backup).
+Exporting a single chat to markdown/JSON (distinct from the User-settings Backup).
 
 **Why:** Chat sessions are already persisted as files on disk under `.yamca/chat`,
 so they are usable as backups as-is. Rather than a bespoke exporter, we'd prefer

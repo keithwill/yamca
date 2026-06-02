@@ -30,16 +30,16 @@ Each tool resolves to one of three levels (`PermissionLevel`):
   else is set).
 - **Deny** — the tool is refused.
 
-Resolution is layered: **Project** setting wins, else **Global**, else the
-tool's built-in `DefaultPermission`. So you can loosen or tighten a tool globally
-and still override it per project.
+Resolution is layered: **Project** setting wins, else **User**, else the
+tool's built-in `DefaultPermission`. So you can loosen or tighten a tool across
+all workspaces and still override it per project.
 
 ### Workspace restriction
 
 File-touching tools can be restricted to the workspace sandbox. When
 `RestrictToWorkspace` is on, paths are clamped to the session's `RootPath` and an
 attempt to escape it is refused (`PathOutsideWorkspaceException`). This resolves
-with the same Project → Global → tool-default precedence.
+with the same Project → User → tool-default precedence.
 
 ## Availability
 
@@ -51,8 +51,8 @@ Separately from permissions, **availability** controls what the LLM even *sees*:
   prompt-cache hits. MCP tools are always deferred.
 - **Hidden** — invisible to the model.
 
-Like permissions, availability is set per **Project** or **Global** tier, with
-Project overriding Global, and unset (*inherit*) falling through to the tool's
+Like permissions, availability is set per **Project** or **User** tier, with
+Project overriding User, and unset (*inherit*) falling through to the tool's
 default.
 
 ## Approval flow
@@ -65,4 +65,4 @@ the request includes a diff so you can see the change before it lands.
 
 - [scripts.md](scripts.md) — registered vs. discovered scripts and their distinct permissions
 - [mcp.md](mcp.md) — tools contributed by MCP servers
-- [settings-and-backup.md](settings-and-backup.md) — Project vs. Global settings tiers
+- [settings-and-backup.md](settings-and-backup.md) — Project vs. User settings tiers

@@ -37,12 +37,12 @@ of a server that isn't running yet or is listening on a different port.
 
 ## Storage
 
-Endpoints are **global** settings, stored on disk in the global settings file
-(shared across all workspaces). They are included in the Global settings export
+Endpoints are **user** settings, stored on disk in the user settings file
+(shared across all workspaces). They are included in the User settings export
 (see [settings-and-backup.md](settings-and-backup.md)) — mind the API keys when
 sharing an export.
 
 ## See also
 
 - [chat-sessions.md](chat-sessions.md) — how an endpoint is selected per session
-- [settings-and-backup.md](settings-and-backup.md) — global settings & export
+- [settings-and-backup.md](settings-and-backup.md) — user settings & export

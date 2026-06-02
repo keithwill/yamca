@@ -30,12 +30,12 @@ Each registered entry is a **workspace-relative** path:
 - An optional **description** is shown to the LLM at session start so it can pick
   the right entry for a task.
 
-## Project vs. Global tiers
+## Project vs. User tiers
 
 Registered scripts come in two tiers, switchable on the page:
 
 - **Project** — stored in the project settings file, specific to this workspace.
-- **Global** — stored in the global settings file, available everywhere.
+- **User** — stored in the user settings file, available everywhere.
 
 ## Execution
 
@@ -46,4 +46,4 @@ than a full interpreter command line.
 ## See also
 
 - [tools-and-permissions.md](tools-and-permissions.md) — per-tool permissions for the execute tools
-- [settings-and-backup.md](settings-and-backup.md) — Project vs. Global settings tiers
+- [settings-and-backup.md](settings-and-backup.md) — Project vs. User settings tiers

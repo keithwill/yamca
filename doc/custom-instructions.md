@@ -25,16 +25,16 @@ start.
 - **Missing files are silently skipped**, so you can list optional conventions
   files without breaking sessions that don't have them.
 
-### Project vs. Global tiers
+### Project vs. User tiers
 
 Instruction files come in two tiers:
 
 - **Project** — stored in the project settings file, specific to this workspace
   (good for repo-specific files like a contributing guide).
-- **Global** — stored in the global settings file, applied across all
+- **User** — stored in the user settings file, applied across all
   workspaces.
 
 ## See also
 
 - [chat-sessions.md](chat-sessions.md) — how the system message is assembled
-- [settings-and-backup.md](settings-and-backup.md) — Project vs. Global settings tiers
+- [settings-and-backup.md](settings-and-backup.md) — Project vs. User settings tiers

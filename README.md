@@ -57,13 +57,13 @@ Each feature has its own page under [`doc/`](https://github.com/keithwill/yamca/
 - **[MCP Servers](https://github.com/keithwill/yamca/blob/main/doc/mcp.md)** — Model Context Protocol servers that contribute additional tools to the agent.
 - **[Scripts](https://github.com/keithwill/yamca/blob/main/doc/scripts.md)** — registered vs. discovered scripts, with distinct execution permissions.
 - **[Custom Instructions](https://github.com/keithwill/yamca/blob/main/doc/custom-instructions.md)** — system prompt and instruction files folded into every session.
-- **[Settings & Backup](https://github.com/keithwill/yamca/blob/main/doc/settings-and-backup.md)** — Project vs. Global settings tiers, preferences, and global-settings export/import.
+- **[Settings & Backup](https://github.com/keithwill/yamca/blob/main/doc/settings-and-backup.md)** — Project vs. User settings tiers, preferences, and user-settings export/import.
 
 ## Troubleshooting
 
 - **Port already in use** — Yamca defaults to port 9001. If 9001 is taken
   Yamca exits with an error; pass `--port <n>` to pick a different one.
-  Settings persist on disk — global settings and the MCP server list in your
+  Settings persist on disk — user settings and the MCP server list in your
   OS user-config directory, project settings under the repo's `.yamca` — so
   they survive a port change and are shared across browsers.
 - **Browser did not open** — visit the URL printed on startup, or pass
