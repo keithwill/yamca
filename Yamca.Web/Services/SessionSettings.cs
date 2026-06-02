@@ -208,9 +208,13 @@ public sealed class SessionSettings : ISessionSettings
 
     /// <summary>Reset every user-tier setting to the values it would be seeded with on
     /// first run, while leaving the configured endpoints untouched. Mirrors the
-    /// <c>firstRun</c> branch of <see cref="HydrateUser"/>.</summary>
-    public void ResetUserToDefaults()
+    /// <c>firstRun</c> branch of <see cref="HydrateUser"/>. The curated seed is then
+    /// expanded to a full, explicit map via <see cref="MaterializeUserToolDefaults"/> so
+    /// the User tier never carries an "inherit" (unset) per-tool value.</summary>
+    public void ResetUserToDefaults(IEnumerable<ITool> settingsTools)
     {
+        ArgumentNullException.ThrowIfNull(settingsTools);
+
         SystemPrompt = DefaultSystemPrompt;
         MarkdownEnabled = true;
         ReasoningDisplay = ReasoningDisplay.Collapsed;
@@ -220,10 +224,53 @@ public sealed class SessionSettings : ISessionSettings
         MaxToolIterations = AgentLoopOptions.Default.MaxIterations;
         DeferredToolsHint = DeferredToolsHint.Names;
         User = DefaultUserToolSettings();
+        MaterializeUserToolDefaults(settingsTools);
         UserInstructionFiles = DefaultUserInstructionFiles;
         UserScripts = ScriptRegistry.Empty;
         UserSubagents = DefaultUserSubagents();
         Changed?.Invoke(SettingsTier.User);
+    }
+
+    /// <summary>Fill in any unset User-tier per-tool field with the owning tool's built-in
+    /// default, so the User tier carries an explicit value for every settings tool. With this
+    /// done there is no "inherit" left at the User tier — the permission/availability resolvers
+    /// resolve as Project-over-User, and the tool default is only ever a defensive last resort.
+    /// Returns true if the map changed, so the caller can persist the normalized result.</summary>
+    /// <remarks>Materializing makes a User-tier value "sticky": once written it no longer tracks
+    /// future changes to a tool's shipped default. The Backup page's "Reset Defaults" re-seeds.
+    /// Existing explicit values (including the curated first-run seed) are never overwritten.</remarks>
+    public bool MaterializeUserToolDefaults(IEnumerable<ITool> settingsTools)
+    {
+        ArgumentNullException.ThrowIfNull(settingsTools);
+
+        var next = new Dictionary<string, ToolPermissionSettings>(User.Entries, StringComparer.Ordinal);
+        var changed = false;
+
+        foreach (var tool in settingsTools)
+        {
+            next.TryGetValue(tool.Name, out var current);
+
+            var filled = new ToolPermissionSettings
+            {
+                Permission = current?.Permission ?? tool.DefaultPermission,
+                Availability = current?.Availability ?? tool.DefaultAvailability,
+                // Only tools that support workspace restriction expose the control; the rest
+                // render as "n/a", so leave their flag unset rather than inventing a value.
+                RestrictToWorkspace = tool.SupportsWorkspaceRestriction
+                    ? current?.RestrictToWorkspace ?? true
+                    : current?.RestrictToWorkspace,
+            };
+
+            if (current is null || current != filled)
+            {
+                next[tool.Name] = filled;
+                changed = true;
+            }
+        }
+
+        if (!changed) return false;
+        User = new ToolSettingsMap(next);
+        return true;
     }
 
     /// <summary>Replace a single tool entry in the given tier, or pass <c>null</c> to remove.</summary>

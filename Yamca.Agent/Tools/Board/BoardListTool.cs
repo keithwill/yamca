@@ -40,6 +40,8 @@ public sealed class BoardListTool : ITool
 
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
+    public bool Deferred => true;
+
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
         var boardRoot = await _boardWorktree.EnsureAsync(cancellationToken);

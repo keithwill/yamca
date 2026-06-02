@@ -45,6 +45,8 @@ public sealed class ExecuteDiscoveredScriptTool : ITool
 
     public PermissionLevel DefaultPermission => PermissionLevel.Ask;
 
+    public bool Deferred => true;
+
     public bool ExposedToLlm => false;
 
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)

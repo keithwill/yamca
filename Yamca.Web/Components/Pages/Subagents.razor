@@ -149,7 +149,7 @@ else
         new(StringComparer.Ordinal) { SubagentRunTool.ToolName, "lookup_tool", "call_tool" };
 
     private bool _hydrated;
-    private int _tierIndex; // 0 = Project, 1 = User
+    private int _tierIndex = 1; // 0 = Project, 1 = User (User shown by default)
     private IReadOnlyList<string> _toolNames = Array.Empty<string>();
 
     private sealed class SubagentRow

@@ -34,6 +34,8 @@ public sealed class CodeSurroundingContextTool : ITool
 
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
+    public bool Deferred => true;
+
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
         if (!ToolArguments.TryGetString(arguments, "path", out var requested, out var argError))

@@ -54,10 +54,10 @@ public class ToolRegistryTests
 
         var chatTools = registry.GetChatTools(availability);
 
-        // delete_file and execute_command are deferred — should not appear in the prefix list.
+        // delete_file is deferred — should not appear in the prefix list.
         Assert.That(chatTools.Select(t => t.Name), Is.EquivalentTo(new[]
         {
-            "read_file", "write_file", "list_directory"
+            "read_file", "write_file", "list_directory", "execute_command"
         }));
         foreach (var t in chatTools)
         {
@@ -80,7 +80,6 @@ public class ToolRegistryTests
 
         Assert.That(after, Is.EqualTo(before));
         Assert.That(after, Does.Not.Contain("delete_file"));
-        Assert.That(after, Does.Not.Contain("execute_command"));
     }
 
     [Test]
@@ -91,7 +90,7 @@ public class ToolRegistryTests
 
         Assert.That(registry.GetDeferredTools(availability).Select(t => t.Name), Is.EquivalentTo(new[]
         {
-            "delete_file", "execute_command"
+            "delete_file"
         }));
     }
 
@@ -141,8 +140,8 @@ public class ToolRegistryTests
 
         Assert.That(registry.Get("read_file")!.DefaultPermission, Is.EqualTo(PermissionLevel.Allow));
         Assert.That(registry.Get("list_directory")!.DefaultPermission, Is.EqualTo(PermissionLevel.Allow));
-        Assert.That(registry.Get("write_file")!.DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
-        Assert.That(registry.Get("delete_file")!.DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
+        Assert.That(registry.Get("write_file")!.DefaultPermission, Is.EqualTo(PermissionLevel.Allow));
+        Assert.That(registry.Get("delete_file")!.DefaultPermission, Is.EqualTo(PermissionLevel.Allow));
         Assert.That(registry.Get("execute_command")!.DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
     }
 

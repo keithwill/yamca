@@ -126,7 +126,7 @@ else
     [Inject] private IWorkspace Workspace { get; set; } = default!;
 
     private bool _hydrated;
-    private int _scriptTierIndex; // 0 = Project, 1 = User
+    private int _scriptTierIndex = 1; // 0 = Project, 1 = User (User shown by default)
 
     private sealed class ScriptRow
     {

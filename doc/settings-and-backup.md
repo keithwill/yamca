@@ -14,9 +14,12 @@ at two levels:
 - **User** — stored in the user settings file in your user config directory.
   Applies across every workspace.
 
-Where both can apply, **Project overrides User**, and an unset/*inherit* value
-falls through to User and then to the built-in default. Endpoints and MCP
-servers are user-only.
+Where both can apply, **Project overrides User**, and a Project value left as
+unset/*inherit* falls through to User. For tool permissions the User tier is
+seeded with each tool's built-in default on load, so it always holds an explicit
+value (no inherit at the User level — see
+[tools-and-permissions.md](tools-and-permissions.md)). Endpoints and MCP servers
+are user-only.
 
 ## Preferences
 
