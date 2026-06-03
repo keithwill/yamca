@@ -135,7 +135,7 @@ public sealed class SubagentRunner : ISubagentRunner
             var lastAssistant = "";
             TurnCompletionReason? reason = null;
 
-            await foreach (var ev in loop.RunTurnAsync(prompt, cancellationToken).ConfigureAwait(false))
+            await foreach (var ev in loop.RunTurnAsync(prompt, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
                 _observer.OnEvent(runId, ev);
                 switch (ev)

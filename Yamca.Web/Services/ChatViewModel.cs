@@ -227,20 +227,22 @@ public sealed class ChatViewModel : IDisposable
     /// <c>InvokeAsync(StateHasChanged)</c> to re-render on the renderer dispatcher.</summary>
     public event Action? Changed;
 
-    public async Task SendAsync(string prompt)
+    public async Task SendAsync(string prompt, IReadOnlyList<ChatImage>? images = null)
     {
         if (IsRunning) return;
         if (IsReadOnly) return;
-        if (string.IsNullOrWhiteSpace(prompt)) return;
+        if (string.IsNullOrWhiteSpace(prompt) && images is not { Count: > 0 }) return;
 
         EnsureStarted();
 
-        _diagnostics.Log(DiagnosticCategory.Session, $"user message sent ({prompt.Length} chars)");
+        var imageCount = images?.Count ?? 0;
+        _diagnostics.Log(DiagnosticCategory.Session,
+            $"user message sent ({prompt.Length} chars" + (imageCount > 0 ? $", {imageCount} image(s)" : "") + ")");
 
-        var turn = new ChatTurn(prompt);
+        var turn = new ChatTurn(prompt, images);
         Turns.Add(turn);
 
-        await DriveAsync(turn, ct => _loop!.RunTurnAsync(prompt, ct)).ConfigureAwait(false);
+        await DriveAsync(turn, ct => _loop!.RunTurnAsync(prompt, images, ct)).ConfigureAwait(false);
     }
 
     /// <summary>Resume the most recent turn after it stopped at the tool-call iteration
@@ -620,7 +622,12 @@ public sealed class ChatViewModel : IDisposable
 
     private static PersistedTurn MapTurn(ChatTurn turn)
     {
-        var pt = new PersistedTurn { UserMessage = turn.UserMessage, Error = turn.Error };
+        var pt = new PersistedTurn
+        {
+            UserMessage = turn.UserMessage,
+            Error = turn.Error,
+            Images = turn.Images.Count > 0 ? turn.Images.ToList() : null,
+        };
         foreach (var item in turn.Items)
         {
             pt.Items.Add(item switch
@@ -656,7 +663,7 @@ public sealed class ChatViewModel : IDisposable
         Turns.Clear();
         foreach (var pt in doc.Turns)
         {
-            var turn = new ChatTurn(pt.UserMessage) { IsRunning = false, Error = pt.Error };
+            var turn = new ChatTurn(pt.UserMessage, pt.Images) { IsRunning = false, Error = pt.Error };
             foreach (var pi in pt.Items)
             {
                 switch (pi.Kind)

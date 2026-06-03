@@ -83,11 +83,18 @@ public sealed class ChatSession
     /// Updated synchronously as messages are appended.</summary>
     public int EstimatedInputTokens => (_estimatedChars + 3) / 4;
 
-    public void AppendUser(string content)
+    /// <summary>Flat char-equivalent allowance added to the token estimate per attached
+    /// image. Real image token cost is computed server-side from resolution/tiles; this is
+    /// only a coarse nudge so the auto-compaction heuristic isn't blind to image payloads.</summary>
+    private const int ImageCharEstimate = 1000;
+
+    public void AppendUser(string content, IReadOnlyList<ChatImage>? images = null)
     {
         ArgumentNullException.ThrowIfNull(content);
-        _messages.Add(new ChatMessage(ChatRole.User, content));
+        _messages.Add(new ChatMessage(ChatRole.User, content, Images: images));
         _estimatedChars += content.Length;
+        if (images is not null)
+            _estimatedChars += images.Count * ImageCharEstimate;
     }
 
     public void AppendAssistant(string content, IReadOnlyList<LlmToolCallRequest> toolCalls)
@@ -177,6 +184,8 @@ public sealed class ChatSession
                 foreach (var tc in m.ToolCalls)
                     total += tc.Name.Length + tc.ArgumentsJson.Length;
             }
+            if (m.Images is { Count: > 0 })
+                total += m.Images.Count * ImageCharEstimate;
         }
         _estimatedChars = total;
     }

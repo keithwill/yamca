@@ -97,10 +97,11 @@ public sealed class AgentLoop
 
     public IAsyncEnumerable<ChatStreamEvent> RunTurnAsync(
         string userMessage,
+        IReadOnlyList<ChatImage>? images = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(userMessage);
-        _session.AppendUser(userMessage);
+        _session.AppendUser(userMessage, images);
         return RunLoopAsync(cancellationToken);
     }
 

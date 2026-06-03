@@ -227,6 +227,41 @@ public class OpenAIChatCompletionClientTests
     }
 
     [Test]
+    public async Task RequestBody_SerializesUserImagesAsContentParts()
+    {
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(SseResponse(Sse(
+            """{"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}"""))));
+        var client = new OpenAIChatCompletionClient(ClientFor(handler), "my-model");
+
+        var msgs = new[]
+        {
+            new ChatMessage(ChatRole.System, "sys"),
+            new ChatMessage(ChatRole.User, "describe this", Images: new[]
+            {
+                new ChatImage("image/png", "QUJD"),
+            }),
+        };
+
+        await Collect(client.StreamAsync(msgs, Array.Empty<ChatTool>(), CancellationToken.None));
+
+        using var doc = JsonDocument.Parse(handler.RequestBodies[0]);
+        var jsonMsgs = doc.RootElement.GetProperty("messages");
+
+        // The system message (no images) stays a plain string.
+        Assert.That(jsonMsgs[0].GetProperty("content").ValueKind, Is.EqualTo(JsonValueKind.String));
+
+        // The user message with an image becomes a content-parts array: text then image_url.
+        var content = jsonMsgs[1].GetProperty("content");
+        Assert.That(content.ValueKind, Is.EqualTo(JsonValueKind.Array));
+        Assert.That(content.GetArrayLength(), Is.EqualTo(2));
+        Assert.That(content[0].GetProperty("type").GetString(), Is.EqualTo("text"));
+        Assert.That(content[0].GetProperty("text").GetString(), Is.EqualTo("describe this"));
+        Assert.That(content[1].GetProperty("type").GetString(), Is.EqualTo("image_url"));
+        Assert.That(content[1].GetProperty("image_url").GetProperty("url").GetString(),
+            Is.EqualTo("data:image/png;base64,QUJD"));
+    }
+
+    [Test]
     public async Task UsageChunk_EmitsLlmUsageUpdate()
     {
         // OpenAI/vLLM emit a terminal frame with empty choices + a usage block

@@ -17,6 +17,21 @@ public class ChatSessionTests
     }
 
     [Test]
+    public void AppendUser_StoresAttachedImagesOnTheMessage()
+    {
+        var session = new ChatSession("you are a test");
+        var image = new ChatImage("image/png", "QUJD");
+
+        session.AppendUser("look at this", new[] { image });
+
+        var msg = session.Messages[^1];
+        Assert.That(msg.Role, Is.EqualTo(ChatRole.User));
+        Assert.That(msg.Content, Is.EqualTo("look at this"));
+        Assert.That(msg.Images, Has.Count.EqualTo(1));
+        Assert.That(msg.Images![0].Base64Data, Is.EqualTo("QUJD"));
+    }
+
+    [Test]
     public void WorkspaceConstructor_KeepsPromptStableAndIncludesWorkspaceContext()
     {
         using var ws = new TempWorkspace();

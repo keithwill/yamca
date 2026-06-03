@@ -585,6 +585,31 @@ h1:focus {
     max-width: 80%;
 }
 
+/* Thumbnail of an attached image in a composer chip. */
+.yamca-attach-thumb {
+    height: 20px;
+    width: 20px;
+    object-fit: cover;
+    border-radius: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+/* Thumbnails of attached images shown in the sent user turn. */
+.yamca-user-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.yamca-user-image {
+    max-height: 160px;
+    max-width: 100%;
+    border-radius: 6px;
+    border: 1px solid var(--mud-palette-lines-default, gray);
+}
+
 .yamca-markdown > :first-child { margin-top: 0; }
 .yamca-markdown > :last-child { margin-bottom: 0; }
 .yamca-markdown p { margin: 0 0 0.6em 0; }
