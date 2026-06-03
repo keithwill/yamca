@@ -1,15 +1,21 @@
 using System.Text;
+using Yamca.Agent.Chat;
 
 namespace Yamca.Web.Services;
 
 public sealed class ChatTurn
 {
-    public ChatTurn(string userMessage)
+    public ChatTurn(string userMessage, IReadOnlyList<ChatImage>? images = null)
     {
         UserMessage = userMessage;
+        Images = images ?? Array.Empty<ChatImage>();
     }
 
     public string UserMessage { get; }
+
+    /// <summary>Images the user attached to this turn, rendered as thumbnails in the
+    /// user bubble. Empty for turns without image attachments.</summary>
+    public IReadOnlyList<ChatImage> Images { get; }
 
     // The item list is written by the agent loop on a background continuation
     // (Apply runs after `await ... ConfigureAwait(false)`) while the Blazor renderer

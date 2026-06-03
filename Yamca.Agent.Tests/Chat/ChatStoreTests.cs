@@ -93,6 +93,29 @@ public class ChatStoreTests
     }
 
     [Test]
+    public void Save_ThenLoad_RoundTripsAttachedImages()
+    {
+        Enable();
+        var store = NewStore();
+        var doc = SampleChat();
+        var image = new ChatImage("image/png", "QUJD");
+        // Canonical LLM context: image rides along on the user message.
+        doc.Messages[1] = new ChatMessage(ChatRole.User, doc.Title, Images: new[] { image });
+        // Display side: image is stored on the turn for thumbnail redisplay.
+        doc.Turns[0].Images = new List<ChatImage> { image };
+
+        store.Save(doc);
+        var loaded = store.Load(doc.Id);
+
+        Assert.That(loaded, Is.Not.Null);
+        Assert.That(loaded!.Messages[1].Images, Has.Count.EqualTo(1));
+        Assert.That(loaded.Messages[1].Images![0].MimeType, Is.EqualTo("image/png"));
+        Assert.That(loaded.Messages[1].Images![0].Base64Data, Is.EqualTo("QUJD"));
+        Assert.That(loaded.Turns[0].Images, Has.Count.EqualTo(1));
+        Assert.That(loaded.Turns[0].Images![0].Base64Data, Is.EqualTo("QUJD"));
+    }
+
+    [Test]
     public void Save_DoesNotPersistApiKey()
     {
         // The model has no field for a secret; this guards that the snapshot type stays

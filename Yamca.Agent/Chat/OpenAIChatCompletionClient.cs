@@ -223,7 +223,7 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient
             }
             msgDtos.Add(new MessageDto(
                 Role: RoleString(m.Role),
-                Content: m.Content,
+                Content: BuildContent(m),
                 ToolCallId: m.ToolCallId,
                 ToolCalls: tcs));
         }
@@ -246,6 +246,24 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient
             msgDtos,
             toolDtos,
             StreamOptions: new StreamOptionsDto(IncludeUsage: true));
+    }
+
+    /// <summary>Build the <c>content</c> field for a message. Messages without images
+    /// keep the plain-string form (maximal compatibility); a message carrying images is
+    /// emitted as an OpenAI content-parts array — the text first (omitted when empty),
+    /// then one <c>image_url</c> part per image as a base64 data URI.</summary>
+    private static object? BuildContent(ChatMessage m)
+    {
+        if (m.Images is not { Count: > 0 })
+            return m.Content;
+
+        var parts = new List<object>(m.Images.Count + 1);
+        if (!string.IsNullOrEmpty(m.Content))
+            parts.Add(new TextPartDto("text", m.Content));
+        foreach (var img in m.Images)
+            parts.Add(new ImagePartDto("image_url",
+                new ImageUrlDto($"data:{img.MimeType};base64,{img.Base64Data}")));
+        return parts;
     }
 
     private static bool TryReadUsage(JsonElement root, out LlmUsageUpdate update)
@@ -313,9 +331,15 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient
 
     private sealed record MessageDto(
         string Role,
-        string? Content,
+        object? Content,
         string? ToolCallId,
         IReadOnlyList<ToolCallDto>? ToolCalls);
+
+    private sealed record TextPartDto(string Type, string Text);
+
+    private sealed record ImagePartDto(string Type, ImageUrlDto ImageUrl);
+
+    private sealed record ImageUrlDto(string Url);
 
     private sealed record ToolCallDto(string Id, string Type, FunctionCallDto Function);
 

@@ -60,6 +60,11 @@ public sealed class PersistedTurn
 {
     public string UserMessage { get; set; } = "";
     public string? Error { get; set; }
+
+    /// <summary>Images the user attached to this turn, for redisplaying thumbnails on
+    /// reload. Null/absent for turns without image attachments (and in older files).</summary>
+    public List<ChatImage>? Images { get; set; }
+
     public List<PersistedTurnItem> Items { get; set; } = new();
 }
 

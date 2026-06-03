@@ -160,12 +160,24 @@
                     }
                     @foreach (var att in _attachments)
                     {
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                                 Icon="@Icons.Material.Filled.InsertDriveFile"
-                                 OnClose="@(() => RemoveAttachment(att))"
-                                 title="@($"{att.FileName} — {att.Text.Length:N0} chars")">
-                            @att.FileName
-                        </MudChip>
+                        @if (att.IsImage)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                     OnClose="@(() => RemoveAttachment(att))"
+                                     title="@att.FileName">
+                                <img src="@att.DataUrl" alt="@att.FileName" class="yamca-attach-thumb" />
+                                @att.FileName
+                            </MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                     Icon="@Icons.Material.Filled.InsertDriveFile"
+                                     OnClose="@(() => RemoveAttachment(att))"
+                                     title="@($"{att.FileName} — {att.Text!.Length:N0} chars")">
+                                @att.FileName
+                            </MudChip>
+                        }
                     }
                 </div>
                 <div class="yamca-composer-right">
@@ -349,9 +361,16 @@
     private const string AttachAccept =
         ".txt,.md,.markdown,.json,.xml,.yml,.yaml,.csv,.tsv,.log," +
         ".cs,.csproj,.razor,.cshtml,.html,.htm,.css,.scss,.js,.ts,.tsx,.jsx," +
-        ".py,.go,.rs,.java,.kt,.rb,.php,.sh,.ps1,.psm1,.sql,.toml,.ini,.cfg,.conf";
+        ".py,.go,.rs,.java,.kt,.rb,.php,.sh,.ps1,.psm1,.sql,.toml,.ini,.cfg,.conf," +
+        ".png,.jpg,.jpeg,.gif,.webp";
 
-    private sealed record Attachment(string FileName, string Text);
+    // A text attachment sets Text; an image attachment sets Image. Image attachments are
+    // sent to the model as image data (data URI), text attachments are inlined into the prompt.
+    private sealed record Attachment(string FileName, string? Text, ChatImage? Image)
+    {
+        public bool IsImage => Image is not null;
+        public string DataUrl => Image is null ? "" : $"data:{Image.MimeType};base64,{Image.Base64Data}";
+    }
 
     private string ComposerClass => Chat.YoloMode ? "yamca-composer yamca-composer-yolo" : "yamca-composer";
 
@@ -616,17 +635,21 @@
         if (string.IsNullOrWhiteSpace(_prompt) && _attachments.Count == 0) return;
 
         var p = ComposePrompt(_prompt, _attachments);
+        var images = _attachments.Where(a => a.IsImage).Select(a => a.Image!).ToList();
         _prompt = "";
         _attachments.Clear();
         _attachError = null;
-        await Chat.SendAsync(p);
+        await Chat.SendAsync(p, images);
     }
 
+    // Only text attachments are inlined into the prompt; image attachments are sent
+    // separately as image data (see OnSend).
     private static string ComposePrompt(string userText, IReadOnlyList<Attachment> attachments)
     {
-        if (attachments.Count == 0) return userText;
+        var textAttachments = attachments.Where(a => !a.IsImage).ToList();
+        if (textAttachments.Count == 0) return userText;
         var sb = new StringBuilder();
-        foreach (var a in attachments)
+        foreach (var a in textAttachments)
         {
             sb.Append("Attached file: ").AppendLine(a.FileName);
             sb.AppendLine("```");
@@ -651,10 +674,22 @@
             }
             try
             {
-                using var stream = file.OpenReadStream(MaxAttachmentBytes);
-                using var reader = new StreamReader(stream);
-                var text = await reader.ReadToEndAsync();
-                _attachments.Add(new Attachment(file.Name, text));
+                if (IsImageFile(file))
+                {
+                    using var stream = file.OpenReadStream(MaxAttachmentBytes);
+                    using var ms = new MemoryStream();
+                    await stream.CopyToAsync(ms);
+                    var base64 = Convert.ToBase64String(ms.ToArray());
+                    var mime = string.IsNullOrWhiteSpace(file.ContentType) ? "image/png" : file.ContentType;
+                    _attachments.Add(new Attachment(file.Name, Text: null, Image: new ChatImage(mime, base64)));
+                }
+                else
+                {
+                    using var stream = file.OpenReadStream(MaxAttachmentBytes);
+                    using var reader = new StreamReader(stream);
+                    var text = await reader.ReadToEndAsync();
+                    _attachments.Add(new Attachment(file.Name, text, Image: null));
+                }
             }
             catch (Exception ex)
             {
@@ -662,6 +697,17 @@
             }
         }
         StateHasChanged();
+    }
+
+    private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
+
+    private static bool IsImageFile(IBrowserFile file)
+    {
+        if (file.ContentType is { Length: > 0 } ct &&
+            ct.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            return true;
+        var ext = Path.GetExtension(file.Name);
+        return ImageExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase);
     }
 
     private void RemoveAttachment(Attachment a)
