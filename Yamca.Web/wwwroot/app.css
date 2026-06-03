@@ -77,6 +77,15 @@ h1:focus {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
+/* Drag-and-drop target feedback: dashed primary outline while a file drag hovers
+   the composer (toggled from JS — see yamcaChat.initDrop). */
+.yamca-composer-dragover,
+.yamca-composer-dragover:focus-within {
+    border-color: var(--mud-palette-primary);
+    border-style: dashed;
+    box-shadow: 0 0 0 1px var(--mud-palette-primary);
+}
+
 /* YOLO mode: warning-tinted composer so the user can't miss that prompts are skipped. */
 .yamca-composer-yolo,
 .yamca-composer-yolo:focus-within {

@@ -457,6 +457,7 @@
         {
             _selfRef = DotNetObjectReference.Create(this);
             await SafeInvokeAsync("yamcaChat.initPaste", _composer, _selfRef);
+            await SafeInvokeAsync("yamcaChat.initDrop", _composer, _selfRef, AttachAccept);
         }
 
         // Auto-send a seeded board-step prompt now that the session is bound and rendered.
@@ -714,15 +715,54 @@
     // Invoked from JS when an image is pasted into the composer. Funnels the pasted
     // image into the same attachment path as the file picker (see OnFilesChanged).
     [JSInvokable]
-    public async Task OnImagePasted(string mimeType, string base64)
+    public Task OnImagePasted(string mimeType, string base64)
+    {
+        var mime = string.IsNullOrWhiteSpace(mimeType) ? "image/png" : mimeType;
+        var subtype = mime.Contains('/') ? mime[(mime.IndexOf('/') + 1)..] : "png";
+        var name = $"pasted-{DateTime.Now:yyyyMMdd-HHmmss}.{subtype}";
+        return AddImageAttachmentAsync(name, mimeType, base64);
+    }
+
+    // Invoked from JS when an image file is dropped onto the composer. Keeps the
+    // original file name (paste has none, so it synthesizes one — see OnImagePasted).
+    [JSInvokable]
+    public Task OnImageDropped(string fileName, string mimeType, string base64)
+        => AddImageAttachmentAsync(fileName, mimeType, base64);
+
+    // Invoked from JS when a (non-image) file is dropped onto the composer. JS has
+    // already read the text; mirror OnFilesChanged's size cap here.
+    [JSInvokable]
+    public async Task OnTextFileDropped(string fileName, string text)
+    {
+        if (Chat.IsBusy || Chat.IsReadOnly) return;
+        if (Encoding.UTF8.GetByteCount(text) > MaxAttachmentBytes)
+        {
+            _attachError = $"\"{fileName}\" is larger than {MaxAttachmentBytes / 1024} KB and was skipped.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        _attachments.Add(new Attachment(fileName, text, Image: null));
+        _attachError = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Invoked from JS when a dropped file's type isn't in the accept list (the OS file
+    // manager can't pre-filter a drag the way the file picker does).
+    [JSInvokable]
+    public async Task OnFileDropRejected(string fileName)
+    {
+        if (Chat.IsBusy || Chat.IsReadOnly) return;
+        _attachError = $"\"{fileName}\" isn't a supported attachment type and was skipped.";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AddImageAttachmentAsync(string fileName, string mimeType, string base64)
     {
         if (Chat.IsBusy || Chat.IsReadOnly) return;
         if (string.IsNullOrEmpty(base64)) return;
 
         var mime = string.IsNullOrWhiteSpace(mimeType) ? "image/png" : mimeType;
-        var subtype = mime.Contains('/') ? mime[(mime.IndexOf('/') + 1)..] : "png";
-        var name = $"pasted-{DateTime.Now:yyyyMMdd-HHmmss}.{subtype}";
-        _attachments.Add(new Attachment(name, Text: null, Image: new ChatImage(mime, base64)));
+        _attachments.Add(new Attachment(fileName, Text: null, Image: new ChatImage(mime, base64)));
         _attachError = null;
         await InvokeAsync(StateHasChanged);
     }

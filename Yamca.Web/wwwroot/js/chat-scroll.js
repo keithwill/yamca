@@ -72,6 +72,63 @@ window.yamcaChat = (function () {
         }
     }
 
+    const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
+
+    function extOf(name) {
+        const i = name.lastIndexOf(".");
+        return i >= 0 ? name.substring(i).toLowerCase() : "";
+    }
+
+    function isImageFile(file) {
+        if (file.type && file.type.indexOf("image/") === 0) return true;
+        return IMAGE_EXTS.indexOf(extOf(file.name)) >= 0;
+    }
+
+    function parseAccept(acceptCsv) {
+        const set = new Set();
+        if (acceptCsv) {
+            for (const part of acceptCsv.split(",")) {
+                const ext = part.trim().toLowerCase();
+                if (ext) set.add(ext);
+            }
+        }
+        return set;
+    }
+
+    // True only for a file drag — ignores text selections, links, etc. so the
+    // composer doesn't light up for non-file drags.
+    function dragHasFiles(event) {
+        const dt = event.dataTransfer;
+        if (!dt || !dt.types) return false;
+        for (const t of dt.types) if (t === "Files") return true;
+        return false;
+    }
+
+    async function handleDrop(event, dotNetRef, acceptSet) {
+        const dt = event.dataTransfer;
+        const files = dt && dt.files;
+        if (!files || files.length === 0) return;
+        for (const file of files) {
+            const image = isImageFile(file);
+            if (!image && acceptSet.size > 0 && !acceptSet.has(extOf(file.name))) {
+                await dotNetRef.invokeMethodAsync("OnFileDropRejected", file.name);
+                continue;
+            }
+            try {
+                if (image) {
+                    const buffer = await file.arrayBuffer();
+                    const base64 = bytesToBase64(new Uint8Array(buffer));
+                    await dotNetRef.invokeMethodAsync("OnImageDropped", file.name, file.type || "image/png", base64);
+                } else {
+                    const text = await file.text();
+                    await dotNetRef.invokeMethodAsync("OnTextFileDropped", file.name, text);
+                }
+            } catch (e) {
+                // File unreadable or circuit gone — skip this one.
+            }
+        }
+    }
+
     function findScrollerFor(anchor) {
         // The anchor lives at the bottom of the .yamca-scroll container; walk up.
         let el = anchor;
@@ -132,6 +189,56 @@ window.yamcaChat = (function () {
             if (s.pasteHandler) composer.removeEventListener("paste", s.pasteHandler);
             s.pasteAttached = false;
             s.pasteHandler = null;
+        },
+        initDrop: function (composer, dotNetRef, acceptCsv) {
+            if (!composer || !dotNetRef) return;
+            const s = getState(composer);
+            if (s.dropAttached) return;
+            s.dropAttached = true;
+            const acceptSet = parseAccept(acceptCsv);
+            // dragenter/dragleave can fire repeatedly as the pointer crosses child
+            // elements; a depth counter keeps the highlight stable until the drag
+            // truly leaves the composer.
+            let depth = 0;
+            const clear = function () { depth = 0; composer.classList.remove("yamca-composer-dragover"); };
+            s.dropHandlers = {
+                dragenter: function (e) {
+                    if (!dragHasFiles(e)) return;
+                    e.preventDefault();
+                    depth++;
+                    composer.classList.add("yamca-composer-dragover");
+                },
+                dragover: function (e) {
+                    if (!dragHasFiles(e)) return;
+                    e.preventDefault(); // required for the drop event to fire
+                    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+                },
+                dragleave: function (e) {
+                    if (!dragHasFiles(e)) return;
+                    depth = Math.max(0, depth - 1);
+                    if (depth === 0) composer.classList.remove("yamca-composer-dragover");
+                },
+                drop: function (e) {
+                    if (!dragHasFiles(e)) return;
+                    e.preventDefault(); // stop the browser from opening the dropped file
+                    clear();
+                    handleDrop(e, dotNetRef, acceptSet);
+                }
+            };
+            for (const type in s.dropHandlers) {
+                composer.addEventListener(type, s.dropHandlers[type]);
+            }
+        },
+        disposeDrop: function (composer) {
+            if (!composer) return;
+            const s = getState(composer);
+            if (s.dropHandlers) {
+                for (const type in s.dropHandlers) {
+                    composer.removeEventListener(type, s.dropHandlers[type]);
+                }
+            }
+            s.dropAttached = false;
+            s.dropHandlers = null;
         },
         copyText: function (text) {
             if (text == null) return;
