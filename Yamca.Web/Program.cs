@@ -115,7 +115,11 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 builder.WebHost.UseUrls($"http://127.0.0.1:{bindPort}");
 
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents()
+    // Pasted images arrive as a single base64 JS->.NET argument that exceeds SignalR's
+    // 32 KB default and would tear down the circuit. yamca runs on localhost for a single
+    // user, so there's no transport budget to defend — disable the message-size cap.
+    .AddHubOptions(o => o.MaximumReceiveMessageSize = null);
 
 builder.Services.AddMudServices();
 

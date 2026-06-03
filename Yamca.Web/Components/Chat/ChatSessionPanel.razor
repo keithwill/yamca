@@ -29,7 +29,7 @@
     }
 
     <div class="yamca-input-dock">
-        <div class="@ComposerClass">
+        <div class="@ComposerClass" @ref="_composer">
             @if (Chat.YoloMode)
             {
                 <div class="yamca-yolo-banner">
@@ -339,6 +339,8 @@
     private string _prompt = "";
     private ElementReference _scrollAnchor;
     private ElementReference _scrollContainer;
+    private ElementReference _composer;
+    private DotNetObjectReference<ChatSessionPanel>? _selfRef;
     private readonly List<Attachment> _attachments = new();
     private string? _attachError;
     private bool _wasCompacting;
@@ -357,7 +359,10 @@
     private bool _wasRunningForDiff;
     private bool _diffStatLoading;
 
-    private const long MaxAttachmentBytes = 2 * 1024 * 1024; // 2 MB per file
+    // Cap text attachments so a huge file can't bloat the prompt/context. Images are
+    // not capped here — yamca runs on localhost (no transport budget to defend), and
+    // the model endpoint rejects images it can't handle (surfaced as a chat error).
+    private const long MaxAttachmentBytes = 2 * 1024 * 1024; // 2 MB per text file
     private const string AttachAccept =
         ".txt,.md,.markdown,.json,.xml,.yml,.yaml,.csv,.tsv,.log," +
         ".cs,.csproj,.razor,.cshtml,.html,.htm,.css,.scss,.js,.ts,.tsx,.jsx," +
@@ -447,6 +452,12 @@
     {
         await SafeInvokeAsync("yamcaChat.init", _scrollContainer);
         await SafeInvokeAsync("yamcaChat.scrollIfSticky", _scrollAnchor);
+
+        if (firstRender)
+        {
+            _selfRef = DotNetObjectReference.Create(this);
+            await SafeInvokeAsync("yamcaChat.initPaste", _composer, _selfRef);
+        }
 
         // Auto-send a seeded board-step prompt now that the session is bound and rendered.
         if (_pendingAutoSend)
@@ -667,16 +678,17 @@
         _attachError = null;
         foreach (var file in files)
         {
-            if (file.Size > MaxAttachmentBytes)
+            var isImage = IsImageFile(file);
+            if (!isImage && file.Size > MaxAttachmentBytes)
             {
                 _attachError = $"\"{file.Name}\" is larger than {MaxAttachmentBytes / 1024} KB and was skipped.";
                 continue;
             }
             try
             {
-                if (IsImageFile(file))
+                if (isImage)
                 {
-                    using var stream = file.OpenReadStream(MaxAttachmentBytes);
+                    using var stream = file.OpenReadStream(long.MaxValue);
                     using var ms = new MemoryStream();
                     await stream.CopyToAsync(ms);
                     var base64 = Convert.ToBase64String(ms.ToArray());
@@ -697,6 +709,22 @@
             }
         }
         StateHasChanged();
+    }
+
+    // Invoked from JS when an image is pasted into the composer. Funnels the pasted
+    // image into the same attachment path as the file picker (see OnFilesChanged).
+    [JSInvokable]
+    public async Task OnImagePasted(string mimeType, string base64)
+    {
+        if (Chat.IsBusy || Chat.IsReadOnly) return;
+        if (string.IsNullOrEmpty(base64)) return;
+
+        var mime = string.IsNullOrWhiteSpace(mimeType) ? "image/png" : mimeType;
+        var subtype = mime.Contains('/') ? mime[(mime.IndexOf('/') + 1)..] : "png";
+        var name = $"pasted-{DateTime.Now:yyyyMMdd-HHmmss}.{subtype}";
+        _attachments.Add(new Attachment(name, Text: null, Image: new ChatImage(mime, base64)));
+        _attachError = null;
+        await InvokeAsync(StateHasChanged);
     }
 
     private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
@@ -826,5 +854,6 @@
     {
         if (_subscribed is not null) _subscribed.Changed -= OnChanged;
         Subagents.Changed -= OnSubagentsChanged;
+        _selfRef?.Dispose();
     }
 }

@@ -38,6 +38,40 @@ window.yamcaChat = (function () {
         scroller.addEventListener("scroll", () => onUserScroll(scroller, s), { passive: true });
     }
 
+    function bytesToBase64(bytes) {
+        // Chunked conversion avoids exceeding the argument-count limit of
+        // String.fromCharCode on large screenshots.
+        let binary = "";
+        const CHUNK = 0x8000;
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+        }
+        return btoa(binary);
+    }
+
+    async function handlePaste(event, dotNetRef) {
+        const items = event.clipboardData && event.clipboardData.items;
+        if (!items) return;
+        const blobs = [];
+        for (const item of items) {
+            if (item.kind === "file" && item.type && item.type.indexOf("image/") === 0) {
+                const file = item.getAsFile();
+                if (file) blobs.push(file);
+            }
+        }
+        if (blobs.length === 0) return; // let normal text paste proceed
+        event.preventDefault();
+        for (const blob of blobs) {
+            try {
+                const buffer = await blob.arrayBuffer();
+                const base64 = bytesToBase64(new Uint8Array(buffer));
+                await dotNetRef.invokeMethodAsync("OnImagePasted", blob.type || "image/png", base64);
+            } catch (e) {
+                // Blob unreadable or circuit gone — skip this image.
+            }
+        }
+    }
+
     function findScrollerFor(anchor) {
         // The anchor lives at the bottom of the .yamca-scroll container; walk up.
         let el = anchor;
@@ -83,6 +117,21 @@ window.yamcaChat = (function () {
             if (!scrollContainer) return;
             const s = getState(scrollContainer);
             s.stick = true;
+        },
+        initPaste: function (composer, dotNetRef) {
+            if (!composer || !dotNetRef) return;
+            const s = getState(composer);
+            if (s.pasteAttached) return;
+            s.pasteAttached = true;
+            s.pasteHandler = function (event) { handlePaste(event, dotNetRef); };
+            composer.addEventListener("paste", s.pasteHandler);
+        },
+        disposePaste: function (composer) {
+            if (!composer) return;
+            const s = getState(composer);
+            if (s.pasteHandler) composer.removeEventListener("paste", s.pasteHandler);
+            s.pasteAttached = false;
+            s.pasteHandler = null;
         },
         copyText: function (text) {
             if (text == null) return;
