@@ -331,9 +331,17 @@ public sealed class SessionSettings : ISessionSettings
         UserSubagents = firstRun ? DefaultUserSubagents() : SubagentsFromDto(blob.Subagents);
     }
 
-    // Seeded only on first run, alongside DefaultUserToolSettings. A read-only "explorer"
-    // that answers broad questions about the repo. Deliberately excludes the code_* tools so
-    // it leans on plain read/list/find/grep. Mutating and execute tools are omitted entirely.
+    // Seeded only on first run, alongside DefaultUserToolSettings.
+    //
+    // "explorer" — a read-only investigator that answers broad questions about the repo.
+    // Deliberately excludes the code_* tools so it leans on plain read/list/find/grep.
+    // Mutating and execute tools are omitted entirely.
+    //
+    // "code" — a mutating implementer that takes a ready-to-go plan, applies the edits
+    // (leaning on the code_* symbol tools), updates unit tests, builds/tests via any
+    // registered script it has, and returns a summary. Its instructions are deliberately
+    // tool-agnostic about how to build/test: it reasons from whatever tools it's been given,
+    // so a user can later grant execute_command without editing the prompt.
     private static SubagentRegistry DefaultUserSubagents()
     {
         var explorer = new SubagentDefinition(
@@ -352,7 +360,38 @@ public sealed class SessionSettings : ISessionSettings
             AllowedTools: new[] { "read_file", "list_directory", "find_files", "grep" },
             RestrictToWorkspace: true);
 
-        return new SubagentRegistry(new[] { explorer });
+        var code = new SubagentDefinition(
+            Id: Guid.NewGuid(),
+            Name: "code",
+            Description: "Implements a ready-to-go plan. Delegate to it once a change has been analyzed " +
+                         "and is ready to write: it applies the code edits, updates unit tests, builds and " +
+                         "tests if able, and returns a summary of what changed plus any deviations from the " +
+                         "plan. Give it a concrete, self-contained implementation brief.",
+            // The shared preamble already covers the headless context, the subagent_result handoff,
+            // and "don't ask, just assume". These instructions carry only the role and behavioral
+            // contract — and deliberately do NOT name build/test tools, so the agent reasons from
+            // whatever tools it has and the prompt stays stable if the user grants more later.
+            Instructions:
+                "You implement a change that has already been analyzed and described. Apply the code edits " +
+                "the plan calls for and add or update " +
+                "unit tests to cover the change.\n\n" +
+                "After making your changes, use whatever tools you have to build the project and run the " +
+                "relevant tests, and iterate until they pass. If you have no tool available to build or test, " +
+                "say so explicitly in your result so the caller can take over.\n\n" +
+                "If you cannot implement the request in a way that matches how it was described, do not " +
+                "improvise a different solution: return a result stating that you did not implement it and " +
+                "explaining why.\n\n" +
+                "Your result must summarize what changed (the files and symbols you touched), report the " +
+                "build/test outcome with the actual evidence, and call out any deviations from the plan or " +
+                "caveats implied by the choices you made.",
+            AllowedTools: new[]
+            {
+                "read_file", "write_file", "edit_file", "delete_file", "list_directory", "find_files", "grep",
+                "execute_registered_script",
+            },
+            RestrictToWorkspace: true);
+
+        return new SubagentRegistry(new[] { explorer, code });
     }
 
     // Seeded only when no User blob has ever been written to disk.
