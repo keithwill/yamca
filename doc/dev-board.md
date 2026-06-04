@@ -33,13 +33,19 @@ A card is a single markdown file living in its current column's directory, with
 YAML frontmatter (`id`, `title`, optional `priority` and `branch`) and a
 markdown body.
 
-- **Create** — the `+` button on the first column adds a card.
+- **Create** — the `+` button on the first column adds a card. The new-card
+  dialog includes a branch field that defaults to the id-prefixed slug of the
+  title (tracking the title as you type, until you edit the branch yourself).
+  Every card is therefore born with a `branch:` already decided.
 - **Priority** — `high` / `normal` / `low`; cards sort high → normal → low
   within a column. High/low priority is shown on the card.
 - **Subtasks** — GitHub-style `- [ ]` / `- [x]` checklist lines in the body
   render as a done/total count on the card.
-- **Branch binding** — when a step runs, the card is bound to a git branch via
-  `branch:` frontmatter, so all steps for that card share one branch.
+- **Branch** — the `branch:` frontmatter names the git branch the card lives on,
+  shared by all its steps. It is editable from the card detail dialog on any
+  card not yet bound to a live worktree — including cards in resting columns —
+  and a change is saved on close. Choosing a branch does **not** create a
+  worktree; that waits for the first step run or chat opened on the card.
 - **Edit** — open a card to edit its title and description inline.
 
 ## Moving cards
@@ -63,12 +69,16 @@ AI chat session:
 The play button appears on cards in work columns when at least one endpoint is
 configured. Up to 4 concurrent chat sessions are supported.
 
-## Branch-bound actions
+## Branch actions
 
-When a card's branch has a live worktree, the card detail dialog offers:
+- **Open chat** — start an interactive session on the card's branch for
+  follow-up work or conflict resolution. Offered for any card with a branch
+  defined (and a free chat slot); the branch and its worktree are created on
+  demand when none exists yet.
 
-- **Open chat** — start an interactive session on the card's branch worktree
-  for follow-up work or conflict resolution.
+When a card's branch has a live worktree, the card detail dialog additionally
+offers:
+
 - **Merge** — merge the card's branch back into the base branch (reusing the
   standard branch-merge dialog), with optional worktree cleanup.
 

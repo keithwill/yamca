@@ -1,12 +1,14 @@
 @namespace Yamca.Web.Components.Board
 @using Yamca.Agent.Board
+@using Yamca.Web.Services
+@inject GitService Git
 
 <MudDialog>
     <DialogContent>
-        <MudTextField @bind-Value="_title" T="string"
+        <MudTextField @bind-Value="Title" T="string"
                       Label="Card title"
                       Variant="Variant.Outlined" Margin="Margin.Dense"
-                      Immediate="true"
+                      Immediate="true" AutoFocus="true"
                       HelperText="A short summary of the idea." />
 
         <div class="d-flex align-center mt-2" style="gap: 6px;">
@@ -20,16 +22,27 @@
             </ChipDropdown>
         </div>
 
+        <MudTextField @bind-Value="Branch" T="string"
+                      Label="Branch"
+                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Immediate="true" Class="mt-3"
+                      HelperText="The git branch this card will live on. Defaults from the title; edit to override. No worktree is created until you open a chat or run a step." />
+
         <MudTextField @bind-Value="_body" T="string"
                       Label="Details / plan (optional)"
                       Variant="Variant.Outlined" Margin="Margin.Dense"
                       Lines="8" Class="mt-3"
                       HelperText="Markdown. Add a '- [ ]' checklist for subtasks if you like." />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_error</MudAlert>
+        }
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Cancel</MudButton>
         <MudButton Color="Color.Primary" Variant="Variant.Filled"
-                   OnClick="Create" Disabled="@string.IsNullOrWhiteSpace(_title)">
+                   OnClick="Create" Disabled="@(_busy || string.IsNullOrWhiteSpace(_title))">
             Create card
         </MudButton>
     </DialogActions>
@@ -38,19 +51,74 @@
 @code {
     [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
 
+    /// <summary>The card id the new card will be assigned, used to derive the default branch name
+    /// (an id-prefixed slug of the title, matching <see cref="BoardService.PresumptiveBranch"/>).</summary>
+    [Parameter] public string NextId { get; set; } = "";
+
     private string _title = "";
     private string _body = "";
+    private string _branch = "";
     private CardPriority _priority = CardPriority.Normal;
+    private bool _branchEdited;
+    private bool _busy;
+    private string? _error;
 
-    public sealed record Result(string Title, string Body, CardPriority Priority);
+    public sealed record Result(string Title, string Body, CardPriority Priority, string Branch);
+
+    // Title drives the default branch name until the user edits the branch field themselves, after
+    // which their choice sticks (see Branch's setter flipping _branchEdited).
+    private string Title
+    {
+        get => _title;
+        set
+        {
+            _title = value;
+            if (!_branchEdited)
+                _branch = BoardService.PresumptiveBranch(NextId, _title);
+        }
+    }
+
+    // Any user keystroke in the branch field pins their value so the title no longer overwrites it.
+    private string Branch
+    {
+        get => _branch;
+        set
+        {
+            _branch = value;
+            _branchEdited = true;
+        }
+    }
+
+    protected override void OnInitialized() => _branch = BoardService.PresumptiveBranch(NextId, _title);
 
     private void SetPriority(CardPriority priority) => _priority = priority;
 
     private void Cancel() => Dialog.Cancel();
 
-    private void Create()
+    private async Task Create()
     {
         if (string.IsNullOrWhiteSpace(_title)) return;
-        Dialog.Close(DialogResult.Ok(new Result(_title.Trim(), _body ?? "", _priority)));
+
+        // Fall back to the title-derived default if the user blanked the branch field.
+        var branch = string.IsNullOrWhiteSpace(_branch)
+            ? BoardService.PresumptiveBranch(NextId, _title)
+            : _branch.Trim();
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            if (!await Git.CheckRefFormatAsync(branch, CancellationToken.None))
+            {
+                _error = $"\"{branch}\" is not a valid git branch name.";
+                return;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        Dialog.Close(DialogResult.Ok(new Result(_title.Trim(), _body ?? "", _priority, branch)));
     }
 }

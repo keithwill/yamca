@@ -316,18 +316,29 @@ else
 
     private async Task AddCardAsync(BoardColumn column)
     {
-        var dialog = await Dialogs.ShowAsync<NewCardDialog>("New card", Small());
+        // Preview the id the card will take so the dialog can seed an id-prefixed default branch
+        // (matching PresumptiveBranch). The id is recomputed under the write lock below; on a local
+        // single-user board the two agree, and the branch the user accepted is written verbatim
+        // regardless, so any drift only affects the cosmetic id prefix of the default branch.
+        var boardRoot = await BoardStore.EnsureAsync(CancellationToken.None);
+        var nextId = BoardSvc.NextCardId(boardRoot);
+
+        var parameters = new DialogParameters { ["NextId"] = nextId };
+        var dialog = await Dialogs.ShowAsync<NewCardDialog>("New card", parameters, Small());
         var result = await dialog.Result;
         if (result is null || result.Canceled || result.Data is not NewCardDialog.Result data) return;
 
         // Write the new card into the board directory under the board write lock (the column's
-        // directory name is stable; resolve its path from the board root inside the lock).
+        // directory name is stable; resolve its path from the board root inside the lock). Every card
+        // is born with a `branch:` so its branch is already decided; the worktree is only created
+        // later, the first time a chat is opened or a step is run on the card.
         await BoardStore.MutateAsync(async boardRoot =>
         {
             var id = BoardSvc.NextCardId(boardRoot);
             var path = Path.Combine(boardRoot, column.DirectoryName, BoardService.CardFileName(id, data.Title));
             var priorityLine = data.Priority == CardPriority.Normal ? "" : $"priority: {data.Priority.ToString().ToLowerInvariant()}\n";
-            var content = $"---\nid: {id}\ntitle: \"{data.Title.Replace("\"", "'")}\"\n{priorityLine}---\n\n{data.Body}\n";
+            var branchLine = string.IsNullOrWhiteSpace(data.Branch) ? "" : $"branch: {data.Branch}\n";
+            var content = $"---\nid: {id}\ntitle: \"{data.Title.Replace("\"", "'")}\"\n{branchLine}{priorityLine}---\n\n{data.Body}\n";
             try
             {
                 await File.WriteAllTextAsync(path, content);
@@ -401,6 +412,24 @@ else
             await UpdateCardPriorityAsync(card, pu.Priority);
         else if (result.Data is CardDetailDialog.BodyUpdate bu)
             await UpdateCardBodyAsync(card, bu.Title, bu.Body);
+        else if (result.Data is CardDetailDialog.BranchUpdate br)
+            await UpdateCardBranchAsync(card, br.Branch);
+    }
+
+    // Persist a branch chosen in the card dialog by writing the `branch:` frontmatter (no worktree —
+    // that waits for the first run/chat). Reuses LockCardToBranchAsync, which writes and refreshes;
+    // the busy overlay just gives the card the same in-flight feedback as the other edits.
+    private async Task UpdateCardBranchAsync(BoardCard card, string branch)
+    {
+        if (string.Equals(card.Branch, branch, StringComparison.Ordinal)) return;
+        _busyCards.Add(card.Id);
+        StateHasChanged();
+        await LockCardToBranchAsync(card, branch);
+        await InvokeAsync(() =>
+        {
+            _busyCards.Remove(card.Id);
+            StateHasChanged();
+        });
     }
 
     // Merge a branch-bound card's branch back into the base branch by reusing the same merge dialog

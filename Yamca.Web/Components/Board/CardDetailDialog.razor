@@ -65,12 +65,14 @@
                     </div>
                 }
 
-                @if (IsWorkColumn && CanRunStep && !IsBranchBound)
+                @* The branch is editable on any card that isn't already bound to a live worktree —
+                   including cards in resting columns — so its branch can be decided up front. A
+                   change is persisted on close; the worktree itself is only created on first run/chat. *@
+                @if (!IsBranchBound)
                 {
                     <MudDivider Class="my-2" />
-                    <MudText Typo="Typo.subtitle2" Class="mb-1">Branch</MudText>
                     <MudAutocomplete T="string" @bind-Value="_branch"
-                                     Label="Branch for this card"
+                                     Label="Branch"
                                      Variant="Variant.Outlined" Margin="Margin.Dense"
                                      SearchFunc="SearchBranches"
                                      CoerceText="true" CoerceValue="true" Clearable="true"
@@ -140,6 +142,17 @@
                                OnClick="Merge" />
             </MudTooltip>
         }
+        @* Open chat is offered for any card with a branch (not just branch-bound ones with a live
+           worktree): the page creates the branch/worktree on demand when none exists yet. It only
+           needs a free chat slot, so it stands apart from the work-column step affordances below. *@
+        @if (HasBranchAttribute && CanRunStep)
+        {
+            <MudTooltip Text="@($"Open chat on {Card.Branch}")">
+                <MudIconButton Icon="@Icons.Material.Filled.Forum"
+                               Disabled="@_busy"
+                               OnClick="OpenChat" />
+            </MudTooltip>
+        }
         @if (IsWorkColumn && CanRunStep)
         {
             @if (Endpoints.Count == 0)
@@ -159,14 +172,6 @@
                         </MudMenuItem>
                     }
                 </ChipDropdown>
-                </MudTooltip>
-            }
-            @if (IsBranchBound)
-            {
-                <MudTooltip Text="@($"Open chat on {Card.Branch}")">
-                    <MudIconButton Icon="@Icons.Material.Filled.Forum"
-                                   Disabled="@_busy"
-                                   OnClick="OpenChat" />
                 </MudTooltip>
             }
             <MudTooltip Text="@ColumnDisplayName">
@@ -271,6 +276,11 @@
     /// page writes the new title (frontmatter) and body (frontmatter otherwise preserved) to the
     /// card file.</summary>
     public sealed record BodyUpdate(string Title, string Body);
+
+    /// <summary>Handed back when the user changed the branch field (on a card that isn't bound to a
+    /// live worktree) and closed the dialog. The page writes the <c>branch:</c> frontmatter; no
+    /// worktree is created — that still waits for the first run/chat on the card.</summary>
+    public sealed record BranchUpdate(string Branch);
 
     private bool _busy;
     private string? _error;
@@ -429,5 +439,39 @@
         Dialog.Close(DialogResult.Ok(new BodyUpdate(titleChanged ? trimmedTitle : Card.Title, trimmedBody)));
     }
 
-    private void Close() => Dialog.Cancel();
+    // Closing the dialog persists an edited branch on an unbound card (the field has no explicit
+    // Save, mirroring how priority commits on close). A new name is ref-format validated first; an
+    // unchanged or blank branch just cancels. Bound cards never reach the editable field, so their
+    // close is always a plain cancel.
+    private async Task Close()
+    {
+        if (!IsBranchBound)
+        {
+            var newBranch = _branch?.Trim() ?? "";
+            var current = Card.Branch?.Trim() ?? "";
+            if (newBranch.Length > 0 && !string.Equals(newBranch, current, StringComparison.Ordinal))
+            {
+                var exists = ExistingBranches.Any(b => string.Equals(b, newBranch, StringComparison.Ordinal));
+                if (!exists)
+                {
+                    _busy = true;
+                    try
+                    {
+                        if (!await Git.CheckRefFormatAsync(newBranch, CancellationToken.None))
+                        {
+                            _error = $"\"{newBranch}\" is not a valid git branch name.";
+                            return;
+                        }
+                    }
+                    finally
+                    {
+                        _busy = false;
+                    }
+                }
+                Dialog.Close(DialogResult.Ok(new BranchUpdate(newBranch)));
+                return;
+            }
+        }
+        Dialog.Cancel();
+    }
 }
