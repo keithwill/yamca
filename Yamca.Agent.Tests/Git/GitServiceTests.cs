@@ -114,69 +114,6 @@ public class GitServiceTests
     }
 
     [Test]
-    public async Task AddOrphanWorktreeAsync_CreatesParentlessBranch_InWorktree()
-    {
-        var wtPath = Path.Combine(_root, ".yamca", "board");
-
-        var add = await _svc.AddOrphanWorktreeAsync(_root, wtPath, "yamca-board", CancellationToken.None);
-        Assert.That(add.Ok, Is.True, add.Stderr);
-        Assert.That(Directory.Exists(wtPath), Is.True);
-
-        // Seed a file and commit it as the orphan's root commit.
-        File.WriteAllText(Path.Combine(wtPath, "card.md"), "hi\n");
-        var commit = await _svc.CommitAllAsync(wtPath, "seed", CancellationToken.None);
-        Assert.That(commit.Ok, Is.True, commit.Stderr);
-
-        // Exactly one commit, and it has no parent — a history disconnected from the code branches.
-        var count = (await RunGitCapture("rev-list", "--count", "yamca-board")).Trim();
-        Assert.That(count, Is.EqualTo("1"));
-        var parents = (await RunGitCapture("log", "yamca-board", "--format=%P")).Trim();
-        Assert.That(parents, Is.Empty, "the orphan root commit must have no parent");
-    }
-
-    [Test]
-    public async Task CommitAllAsync_Commits_AndIsNoOpWhenClean()
-    {
-        var wtPath = Path.Combine(_root, ".yamca", "board");
-        await _svc.AddOrphanWorktreeAsync(_root, wtPath, "yamca-board", CancellationToken.None);
-
-        File.WriteAllText(Path.Combine(wtPath, "card.md"), "hi\n");
-        var first = await _svc.CommitAllAsync(wtPath, "add card", CancellationToken.None);
-        Assert.That(first.Ok, Is.True, first.Stderr);
-
-        var before = (await RunGitCapture("rev-list", "--count", "yamca-board")).Trim();
-        var noop = await _svc.CommitAllAsync(wtPath, "nothing changed", CancellationToken.None);
-        Assert.That(noop.Ok, Is.True, "a clean tree is a benign no-op");
-        var after = (await RunGitCapture("rev-list", "--count", "yamca-board")).Trim();
-        Assert.That(after, Is.EqualTo(before), "a clean tree must not produce a new commit");
-    }
-
-    [Test]
-    public async Task RevParseHeadAsync_ReturnsShaAndBranch()
-    {
-        var head = await _svc.RevParseHeadAsync(_root, CancellationToken.None);
-        Assert.That(head, Is.Not.Null);
-        Assert.That(head!.Value.Sha, Is.Not.Empty);
-        Assert.That(head.Value.Branch, Is.EqualTo("main"));
-    }
-
-    [Test]
-    public async Task RevParseHeadAsync_ReturnsNull_OnUnbornHead()
-    {
-        var empty = Path.Combine(Path.GetFullPath(Path.GetTempPath()), "yamca-tests", "empty-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(empty);
-        try
-        {
-            await RunGitInAsync(empty, "init", "-b", "main");
-            Assert.That(await _svc.RevParseHeadAsync(empty, CancellationToken.None), Is.Null);
-        }
-        finally
-        {
-            try { Directory.Delete(empty, recursive: true); } catch { /* best-effort */ }
-        }
-    }
-
-    [Test]
     public async Task BranchExistsAsync_TrueForExisting_FalseOtherwise()
     {
         Assert.That(await _svc.BranchExistsAsync(_root, "main", CancellationToken.None), Is.True);

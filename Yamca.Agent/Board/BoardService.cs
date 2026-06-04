@@ -5,11 +5,10 @@ using System.Text.RegularExpressions;
 namespace Yamca.Agent.Board;
 
 /// <summary>
-/// Reads and parses the git-native dev board under <c>.yamca/board</c>. Pure filesystem +
-/// parsing — no git, no mutation. Columns are numeric-prefixed subdirectories
-/// (<c>10-idea</c>, <c>20-analyze</c>, …); a card is a markdown file living in its current
-/// column's directory. Stateless and reentrant; the workspace root is supplied per call so
-/// the same instance serves both the root workspace and branch worktrees.
+/// Reads and parses the dev board under <c>.yamca/board</c>. Pure filesystem + parsing — no
+/// mutation. Columns are numeric-prefixed subdirectories (<c>10-idea</c>, <c>20-analyze</c>, …);
+/// a card is a markdown file living in its current column's directory. Stateless and reentrant;
+/// the board root is supplied per call so the same instance serves every caller.
 /// </summary>
 public sealed partial class BoardService
 {
@@ -19,14 +18,14 @@ public sealed partial class BoardService
     /// <summary>The default column layout used to seed a fresh board: numeric-prefixed directories,
     /// each with an <c>instructions.md</c> (empty for resting columns). A column with non-blank
     /// instructions is a work step run in chat; idea is a scratchpad and done is terminal, so both
-    /// rest. Shared by the orphan-branch bootstrap (<c>BoardWorktree</c>) and the UI initialize path
-    /// so there is a single definition of the starting board.</summary>
+    /// rest. Shared by the board bootstrap (<c>BoardStore</c>) and the UI initialize path so there is
+    /// a single definition of the starting board.</summary>
     public static readonly IReadOnlyList<(string Dir, string? Instructions)> DefaultColumns = new (string, string?)[]
     {
         ("10-idea", null),
-        ("20-analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan into the card with board_update_card. Break the work into a `- [ ]` subtask checklist where useful. When the plan is ready, move the card to the next column with board_move_card — the board is tracked separately and the move is committed for you.\n"),
-        ("30-implement", "# Implement\n\nDo the work described in the card. Tick subtasks as you complete them. When the implementation is done, commit your code changes on this branch, then move the card to the next column with board_move_card — the board is tracked separately and the move is committed for you.\n"),
-        ("40-verify", "# Verify\n\nBuild, run tests, and confirm the change works end to end. Fix anything that fails. Note verification results on the card with board_update_card, commit any fixes on this branch, then move the card to the next column with board_move_card — the board is tracked separately and the move is committed for you.\n"),
+        ("20-analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan into the card with board_update_card. Break the work into a `- [ ]` subtask checklist where useful. When the plan is ready, move the card to the next column with board_move_card.\n"),
+        ("30-implement", "# Implement\n\nDo the work described in the card. Tick subtasks as you complete them. When the implementation is done, commit your code changes on this branch, then move the card to the next column with board_move_card.\n"),
+        ("40-verify", "# Verify\n\nBuild, run tests, and confirm the change works end to end. Fix anything that fails. Note verification results on the card with board_update_card, commit any fixes on this branch, then move the card to the next column with board_move_card.\n"),
         ("50-done", null),
     };
 
@@ -39,9 +38,9 @@ public sealed partial class BoardService
     [GeneratedRegex(@"^\s*#\s+(.+?)\s*$", RegexOptions.Multiline)]
     private static partial Regex HeadingRegex();
 
-    /// <summary>Absolute path to the board directory. Under the orphan-branch layout the board
-    /// worktree's root <em>is</em> the columns directory, so callers pass the board worktree path
-    /// (from <c>BoardWorktree.EnsureAsync</c>) and this returns it unchanged.</summary>
+    /// <summary>Absolute path to the board directory. The board root <em>is</em> the columns
+    /// directory, so callers pass the board path (from <c>BoardStore.EnsureAsync</c>) and this
+    /// returns it unchanged.</summary>
     public static string BoardDirectory(string boardRoot) => boardRoot;
 
     /// <summary>Read the whole board. Returns <see cref="BoardSnapshot.Empty"/> when the
@@ -171,7 +170,7 @@ public sealed partial class BoardService
     /// step (an agent runs it in chat). A column whose <c>instructions.md</c> is missing or blank is
     /// a *resting* column (idea scratchpad, done, blocked, …) whose cards are simply promoted to the
     /// next column without a chat run. Resting columns still carry an empty <c>instructions.md</c> so
-    /// their directory survives in git, which does not track empty directories.</summary>
+    /// the seeded structure is explicit on disk.</summary>
     public bool HasInstructions(string workspaceRoot, string columnDirName)
         => !string.IsNullOrWhiteSpace(ReadInstructions(workspaceRoot, columnDirName));
 
@@ -190,13 +189,6 @@ public sealed partial class BoardService
     /// to a git branch. Normalizes line endings to LF.</summary>
     public static string WithBranch(string rawText, string branch)
         => WithFrontmatterField(rawText, "branch", branch);
-
-    /// <summary>Return <paramref name="rawText"/> with its frontmatter <c>commit:</c> set to
-    /// <paramref name="sha"/>: the last code commit associated with the card, stamped by a board
-    /// move so the status change stays linked to the code it corresponds to. Normalizes line
-    /// endings to LF.</summary>
-    public static string WithCommit(string rawText, string sha)
-        => WithFrontmatterField(rawText, "commit", sha);
 
     /// <summary>Return <paramref name="rawText"/> with its frontmatter <c>title:</c> set to
     /// <paramref name="title"/>, double-quoted (inner double quotes downgraded to single quotes to
@@ -237,7 +229,7 @@ public sealed partial class BoardService
     }
 
     // Sets a scalar frontmatter field, replacing an existing line for the key or appending one,
-    // and synthesizing a frontmatter block when the text has none. Backs WithBranch / WithCommit.
+    // and synthesizing a frontmatter block when the text has none. Backs WithBranch / WithTitle / etc.
     private static string WithFrontmatterField(string rawText, string key, string value)
     {
         var normalized = (rawText ?? string.Empty).Replace("\r\n", "\n");

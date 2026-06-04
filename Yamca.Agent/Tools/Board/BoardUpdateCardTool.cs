@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Yamca.Agent.Board;
-using Yamca.Agent.Git;
 using Yamca.Agent.Permissions;
 
 namespace Yamca.Agent.Tools.Board;
@@ -9,14 +8,12 @@ namespace Yamca.Agent.Tools.Board;
 public sealed class BoardUpdateCardTool : ITool
 {
     private readonly BoardService _board;
-    private readonly BoardWorktree _boardWorktree;
-    private readonly GitService _git;
+    private readonly BoardStore _boardStore;
 
-    public BoardUpdateCardTool(BoardService board, BoardWorktree boardWorktree, GitService git)
+    public BoardUpdateCardTool(BoardService board, BoardStore boardStore)
     {
         _board = board;
-        _boardWorktree = boardWorktree;
-        _git = git;
+        _boardStore = boardStore;
     }
 
     public string Name => "board_update_card";
@@ -24,7 +21,7 @@ public sealed class BoardUpdateCardTool : ITool
     public string Description =>
         "Replace a board card's full markdown content (frontmatter + body). Use this to refine the plan, add or " +
         "tick subtasks ('- [ ]' → '- [x]'), etc. Fetch the current content with board_get_card first, edit it, and " +
-        "pass the complete new content. The change is saved and committed to the board branch for you.";
+        "pass the complete new content.";
 
     public string ParametersSchema => """
     {
@@ -38,8 +35,8 @@ public sealed class BoardUpdateCardTool : ITool
     }
     """;
 
-    // The board is a worktree of the yamca-board orphan branch, resolved from the repository root
-    // (which may sit above the session's sandbox root). Board tools are never workspace-restricted.
+    // The board lives at the repository root (which may sit above the session's sandbox root), so
+    // board tools are never workspace-restricted.
     public bool SupportsWorkspaceRestriction => false;
 
     public PermissionLevel DefaultPermission => PermissionLevel.Ask;
@@ -51,15 +48,15 @@ public sealed class BoardUpdateCardTool : ITool
         if (!ToolArguments.TryGetString(arguments, "content", out var content, out var contentErr))
             return ToolResult.Error(contentErr);
 
-        return await _boardWorktree.MutateAsync(async boardRoot =>
+        return await _boardStore.MutateAsync(async boardRoot =>
         {
             var snapshot = _board.Read(boardRoot);
             var card = snapshot.FindCard(cardRef);
             if (card is null)
                 return ToolResult.Error($"No card matching '{cardRef}' on the board.");
 
-            // card.AbsolutePath comes from BoardService's enumeration of the board worktree, so it is
-            // already absolute and trusted (and outside the sandbox clamp by design).
+            // card.AbsolutePath comes from BoardService's enumeration of the board, so it is already
+            // absolute and trusted (and outside the sandbox clamp by design).
             var resolved = Path.GetFullPath(card.AbsolutePath);
 
             try
@@ -71,11 +68,7 @@ public sealed class BoardUpdateCardTool : ITool
                 return ToolResult.Error($"Failed to update card '{card.FileName}': {ex.Message}");
             }
 
-            var commit = await _git.CommitAllAsync(boardRoot, $"board: update #{card.Id}", cancellationToken);
-            if (!commit.Ok)
-                return ToolResult.Error($"Card #{card.Id} written but the board commit failed: {commit.Stderr.Trim()}");
-
-            return ToolResult.Ok($"Updated card #{card.Id} ({card.FileName}) and committed to the board branch.");
+            return ToolResult.Ok($"Updated card #{card.Id} ({card.FileName}).");
         }, cancellationToken);
     }
 }

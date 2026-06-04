@@ -194,7 +194,6 @@
     [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
 
     [Parameter, EditorRequired] public BoardCard Card { get; set; } = default!;
-    [Parameter, EditorRequired] public string WorkspaceRoot { get; set; } = default!;
     [Parameter] public string ColumnDisplayName { get; set; } = "";
 
     /// <summary>True when the card's column is a work step (has an <c>instructions.md</c>): the
@@ -257,21 +256,20 @@
     public sealed record OpenChatRequest;
 
     /// <summary>Handed back when the user picks a column from the "Move to…" menu. The page relocates
-    /// the card to <paramref name="ToColumnDirectory"/> — on the root board for an unbound card, or in
-    /// the branch's worktree for a live-bound one — and commits the move.</summary>
+    /// the card's file to <paramref name="ToColumnDirectory"/>.</summary>
     public sealed record MoveRequest(string ToColumnDirectory);
 
     /// <summary>Handed back when the user confirms deletion of this card. The page deletes the card
-    /// file from the board worktree and commits the removal.</summary>
+    /// file from the board.</summary>
     public sealed record DeleteRequest;
 
     /// <summary>Handed back when the user changed the priority and clicked Close. The page writes
-    /// the updated <c>priority:</c> frontmatter field and commits it to the board branch.</summary>
+    /// the updated <c>priority:</c> frontmatter field to the card file.</summary>
     public sealed record PriorityUpdate(CardPriority Priority);
 
     /// <summary>Handed back when the user edits the title and/or markdown body and clicks Save. The
-    /// page writes the new title (frontmatter) and body (frontmatter otherwise preserved) and commits
-    /// them to the board branch.</summary>
+    /// page writes the new title (frontmatter) and body (frontmatter otherwise preserved) to the
+    /// card file.</summary>
     public sealed record BodyUpdate(string Title, string Body);
 
     private bool _busy;

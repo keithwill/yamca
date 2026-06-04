@@ -49,7 +49,7 @@ Yamca listening on http://127.0.0.1:51234  (workspace: C:\Repos\yamca)
 Each feature has its own page under [`doc/`](https://github.com/keithwill/yamca/tree/main/doc)
 (links are absolute so they resolve on both GitHub and NuGet.org):
 
-- **[Dev Board](https://github.com/keithwill/yamca/blob/main/doc/dev-board.md)** — a Kanban board on a dedicated `yamca-board` branch that drives work through AI-assisted steps.
+- **[Dev Board](https://github.com/keithwill/yamca/blob/main/doc/dev-board.md)** — a local, uncommitted Kanban scratchpad that drives your immediate work through AI-assisted steps.
 - **[Chat Sessions](https://github.com/keithwill/yamca/blob/main/doc/chat-sessions.md)** — streaming, tool-using conversations (up to 4 at once), with persistence, compaction, and a split view.
 - **[Endpoints](https://github.com/keithwill/yamca/blob/main/doc/endpoints.md)** — OpenAI-compatible LLM backends (llama.cpp, vllm, OpenAI, OpenRouter, …) with health checks.
 - **[Tools & Permissions](https://github.com/keithwill/yamca/blob/main/doc/tools-and-permissions.md)** — the agent's file, search, execution, and code-intelligence tools, gated by an Allow/Ask/Deny permission model.

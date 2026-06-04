@@ -20,8 +20,8 @@ public class BoardServiceTests
     [TearDown]
     public void TearDown() => _ws.Dispose();
 
-    // Under the orphan-branch layout the board worktree's root IS the columns directory, so tests
-    // treat the workspace root as the board root and write columns directly beneath it.
+    // The board root IS the columns directory, so tests treat the workspace root as the board root
+    // and write columns directly beneath it.
     private string Board(string relative) => relative;
 
     [Test]
@@ -195,21 +195,6 @@ public class BoardServiceTests
         var card = _svc.ParseCard("10-idea", "/x/0005-t.md", updated);
         Assert.That(card.Branch, Is.EqualTo("feat/round"));
         Assert.That(card.Id, Is.EqualTo("5"));
-    }
-
-    [Test]
-    public void WithCommit_AddsOrReplacesFrontmatterCommit()
-    {
-        var added = BoardService.WithCommit("# Title\nbody", "abc123");
-        Assert.That(added, Does.StartWith("---\ncommit: abc123\n---\n"));
-        Assert.That(added, Does.Contain("# Title\nbody"));
-
-        var withFm = "---\nid: 7\ncommit: old\n---\n\nbody here";
-        var replaced = BoardService.WithCommit(withFm, "def456");
-        Assert.That(replaced.Split("commit:").Length, Is.EqualTo(2), "commit line not duplicated");
-        Assert.That(replaced, Does.Contain("commit: def456"));
-        Assert.That(replaced, Does.Contain("id: 7"));
-        Assert.That(replaced, Does.Contain("body here"));
     }
 
     [Test]

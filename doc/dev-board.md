@@ -5,10 +5,12 @@ pipeline of AI-assisted steps. It lives at `/board` in the web UI.
 
 ## Where the board lives
 
-The board is stored on a dedicated `yamca-board` git branch, checked out as a
-worktree at `.yamca/board`. It is tracked independently of any code branch, so
-board edits never touch your working code. Each board mutation (add, move,
-edit, delete) is committed to the `yamca-board` branch automatically.
+The board is a personal scratchpad — a plain, **uncommitted** directory at
+`.yamca/board` (gitignored), for the current user's immediate work. It is local
+only: never committed, tracked, or pushed, so board churn is never shared with
+your team. Each board mutation (add, move, edit, delete) is just a file write.
+Because it sits at the repository root, the one board is shared across every
+chat session regardless of which code branch or worktree the session is on.
 
 ## Columns
 
@@ -43,7 +45,7 @@ markdown body.
 ## Moving cards
 
 - **Drag and drop** a card between lanes. Moves are optimistic (the card jumps
-  immediately) with the git commit running in the background; a spinner overlay
+  immediately) with the file move running in the background; a spinner overlay
   shows the in-flight work.
 - **Promote** a card to the next column from the card detail dialog.
 
@@ -52,7 +54,7 @@ markdown body.
 Opening a card in a work column (or using the per-card play button) starts an
 AI chat session:
 
-1. The card is bound to its branch (`branch:` frontmatter committed).
+1. The card is bound to its branch (`branch:` frontmatter written).
 2. A code worktree is forked off the base branch (or reused/recreated if it was
    deleted or merged).
 3. The column's instructions plus the next-column context seed the session.
@@ -72,12 +74,13 @@ When a card's branch has a live worktree, the card detail dialog offers:
 
 If the branch was merged or deleted, the card offers to run fresh instead.
 
-## Filtering and restore
+## Filtering
 
 - **Filter** (search icon) — filter cards by title, or by full card text, with
   starts-with or contains matching. An active filter shows as a chip.
-- **Restore deleted card** (trash icon) — recover a previously deleted card
-  from the board branch's git history into a chosen column.
+
+Because the board is uncommitted, deleting a card is permanent — there is no
+git history to recover it from.
 
 ## Changes tab
 

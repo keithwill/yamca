@@ -8,12 +8,12 @@ namespace Yamca.Agent.Tools.Board;
 public sealed class BoardGetCardTool : ITool
 {
     private readonly BoardService _board;
-    private readonly BoardWorktree _boardWorktree;
+    private readonly BoardStore _boardStore;
 
-    public BoardGetCardTool(BoardService board, BoardWorktree boardWorktree)
+    public BoardGetCardTool(BoardService board, BoardStore boardStore)
     {
         _board = board;
-        _boardWorktree = boardWorktree;
+        _boardStore = boardStore;
     }
 
     public string Name => "board_get_card";
@@ -33,8 +33,8 @@ public sealed class BoardGetCardTool : ITool
     }
     """;
 
-    // The board is a worktree of the yamca-board orphan branch, resolved from the repository root
-    // (which may sit above the session's sandbox root). Board tools are never workspace-restricted.
+    // The board lives at the repository root (which may sit above the session's sandbox root), so
+    // board tools are never workspace-restricted.
     public bool SupportsWorkspaceRestriction => false;
 
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
@@ -46,15 +46,15 @@ public sealed class BoardGetCardTool : ITool
         if (!ToolArguments.TryGetString(arguments, "card", out var cardRef, out var argError))
             return ToolResult.Error(argError);
 
-        var boardRoot = await _boardWorktree.EnsureAsync(cancellationToken);
+        var boardRoot = await _boardStore.EnsureAsync(cancellationToken);
         var snapshot = _board.Read(boardRoot);
         var card = snapshot.FindCard(cardRef);
         if (card is null)
             return ToolResult.Error($"No card matching '{cardRef}' on the board.");
 
-        // The card path comes from BoardService's enumeration of the board worktree, so it is
-        // already absolute and trusted. It is NOT clamped to the sandbox: the board worktree lives
-        // under the repository root, which may sit above the session's workspace root.
+        // The card path comes from BoardService's enumeration of the board, so it is already
+        // absolute and trusted. It is NOT clamped to the sandbox: the board lives under the
+        // repository root, which may sit above the session's workspace root.
         var resolved = Path.GetFullPath(card.AbsolutePath);
 
         try

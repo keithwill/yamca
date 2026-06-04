@@ -9,12 +9,12 @@ namespace Yamca.Agent.Tools.Board;
 public sealed class BoardListTool : ITool
 {
     private readonly BoardService _board;
-    private readonly BoardWorktree _boardWorktree;
+    private readonly BoardStore _boardStore;
 
-    public BoardListTool(BoardService board, BoardWorktree boardWorktree)
+    public BoardListTool(BoardService board, BoardStore boardStore)
     {
         _board = board;
-        _boardWorktree = boardWorktree;
+        _boardStore = boardStore;
     }
 
     public string Name => "board_list";
@@ -34,8 +34,8 @@ public sealed class BoardListTool : ITool
     }
     """;
 
-    // The board is a worktree of the yamca-board orphan branch, resolved from the repository root
-    // (which may sit above the session's sandbox root). Board tools are never workspace-restricted.
+    // The board lives at the repository root (which may sit above the session's sandbox root), so
+    // board tools are never workspace-restricted.
     public bool SupportsWorkspaceRestriction => false;
 
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
@@ -44,7 +44,7 @@ public sealed class BoardListTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
-        var boardRoot = await _boardWorktree.EnsureAsync(cancellationToken);
+        var boardRoot = await _boardStore.EnsureAsync(cancellationToken);
         var snapshot = _board.Read(boardRoot);
         if (snapshot.Columns.Count == 0)
             return ToolResult.Ok("The board is empty or not initialized (no .yamca/board directory with NN-name columns).");

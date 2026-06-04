@@ -24,10 +24,6 @@ public sealed record WorktreeInfo(
 /// <summary>One entry from <c>git log</c> for a file: commit hash, author date, subject.</summary>
 public sealed record GitFileLogEntry(string Sha, DateTimeOffset Date, string Subject);
 
-/// <summary>A file deleted in git history: path relative to the worktree root (POSIX separators),
-/// the commit that deleted it, the author date, and the commit subject.</summary>
-public sealed record DeletedFileEntry(string RelativePath, string CommitSha, DateTimeOffset DeletedAt, string Subject);
-
 /// <summary>Aggregate change counts for a worktree relative to where its branch forked from base:
 /// total files changed and lines added/removed (committed work plus uncommitted tracked edits),
 /// and how many files currently carry uncommitted changes (staged, unstaged, or untracked).</summary>
@@ -183,69 +179,6 @@ public sealed class GitService
         return r.Ok;
     }
 
-    /// <summary>Create an <em>orphan</em> branch in a fresh linked worktree at
-    /// <paramref name="worktreePath"/>: a branch whose first commit will have no parent, so its
-    /// history is disconnected from the code branches sharing the repository. Primary path uses
-    /// <c>git worktree add --orphan -b</c> (git ≥ 2.42); on older git that rejects the flag it falls
-    /// back to plumbing — a parentless empty root commit (<c>commit-tree</c> of the empty tree with
-    /// no <c>-p</c>) wired to the branch ref, then a plain <c>worktree add</c>. Either way the
-    /// worktree is left checked out on the (possibly unborn) branch for the caller to seed and commit.</summary>
-    public async Task<GitResult> AddOrphanWorktreeAsync(string repoRoot, string worktreePath, string branch, CancellationToken ct)
-    {
-        var primary = await RunAsync(repoRoot, ["worktree", "add", "--orphan", "-b", branch, worktreePath], ct).ConfigureAwait(false);
-        if (primary.Ok) return primary;
-
-        // Fall back only when --orphan is unsupported, not for genuine failures (path exists, etc.).
-        var unsupported = primary.Stderr.Contains("--orphan", StringComparison.OrdinalIgnoreCase)
-            || primary.Stderr.Contains("unknown option", StringComparison.OrdinalIgnoreCase)
-            || primary.Stderr.Contains("usage:", StringComparison.OrdinalIgnoreCase);
-        if (!unsupported) return primary;
-
-        // The empty tree is a well-known constant object; commit-tree with no -p yields a parentless
-        // root commit. Wire it to the branch ref, then check it out into a plain worktree.
-        const string emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-        var root = await RunAsync(repoRoot, ["commit-tree", emptyTree, "-m", "board: initialize board on orphan branch"], ct).ConfigureAwait(false);
-        if (!root.Ok) return root;
-        var sha = root.Stdout.Trim();
-
-        var update = await RunAsync(repoRoot, ["update-ref", $"refs/heads/{branch}", sha], ct).ConfigureAwait(false);
-        if (!update.Ok) return update;
-
-        return await RunAsync(repoRoot, ["worktree", "add", worktreePath, branch], ct).ConfigureAwait(false);
-    }
-
-    /// <summary>Stage everything in a worktree and commit it (<c>git add -A</c> then
-    /// <c>git commit</c>). A clean tree is a benign no-op (returns an Ok result without committing).
-    /// Used only for the board worktree, whose contents are exclusively board files, so a blanket
-    /// add never sweeps in unrelated work.</summary>
-    public async Task<GitResult> CommitAllAsync(string worktreePath, string message, CancellationToken ct)
-    {
-        var add = await RunAsync(worktreePath, ["add", "-A"], ct).ConfigureAwait(false);
-        if (!add.Ok) return add;
-
-        var status = await RunAsync(worktreePath, ["status", "--porcelain"], ct).ConfigureAwait(false);
-        if (status.Ok && string.IsNullOrWhiteSpace(status.Stdout))
-            return new GitResult(0, "nothing to commit", "");
-
-        return await RunAsync(worktreePath, ["commit", "-m", message], ct).ConfigureAwait(false);
-    }
-
-    /// <summary>Current HEAD of <paramref name="path"/> as (sha, branch). Branch is null on a
-    /// detached or unborn HEAD. Returns null when HEAD cannot be resolved (e.g. an empty repo).
-    /// Best-effort, for the board's code↔status association stamp.</summary>
-    public async Task<(string Sha, string? Branch)?> RevParseHeadAsync(string path, CancellationToken ct)
-    {
-        var sha = await RunAsync(path, ["rev-parse", "HEAD"], ct).ConfigureAwait(false);
-        if (!sha.Ok) return null;
-        var s = sha.Stdout.Trim();
-        if (string.IsNullOrEmpty(s)) return null;
-
-        var br = await RunAsync(path, ["rev-parse", "--abbrev-ref", "HEAD"], ct).ConfigureAwait(false);
-        var branch = br.Ok ? br.Stdout.Trim() : null;
-        if (string.IsNullOrEmpty(branch) || branch == "HEAD") branch = null;
-        return (s, branch);
-    }
-
     /// <summary>Number of commits in HEAD that are not in the upstream tracking branch
     /// (<c>@{u}</c>). Returns <see langword="null"/> when no upstream is configured for the
     /// current branch, so the caller can fall back to a different comparison.</summary>
@@ -275,54 +208,6 @@ public sealed class GitService
         var r = await RunAsync(repoRoot, ["rev-parse", "--verify", "--quiet", $"refs/heads/{branch}"], ct).ConfigureAwait(false);
         return r.Ok && !string.IsNullOrWhiteSpace(r.Stdout);
     }
-
-    /// <summary>Returns the name of the first configured remote (typically <c>origin</c>), or
-    /// <see langword="null"/> when no remotes are configured. Used to decide whether remote-sync
-    /// operations (fetch, push) should run at all.</summary>
-    public async Task<string?> GetDefaultRemoteAsync(string repoRoot, CancellationToken ct)
-    {
-        var r = await RunAsync(repoRoot, ["remote"], ct).ConfigureAwait(false);
-        if (!r.Ok) return null;
-        var name = r.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                            .FirstOrDefault();
-        return string.IsNullOrEmpty(name) ? null : name;
-    }
-
-    /// <summary>Fetch a single branch from a remote into its remote-tracking ref
-    /// (<c>refs/remotes/&lt;remote&gt;/&lt;branch&gt;</c>). Returns an Ok result even when the
-    /// branch does not yet exist on the remote — that is a benign no-op, not an error.</summary>
-    public Task<GitResult> FetchAsync(string repoRoot, string remoteName, string branch, CancellationToken ct)
-        => RunAsync(repoRoot, ["fetch", remoteName, branch], ct);
-
-    /// <summary>True when the remote-tracking ref
-    /// <c>refs/remotes/&lt;remote&gt;/&lt;branch&gt;</c> exists locally (i.e. the branch has been
-    /// fetched at least once).</summary>
-    public async Task<bool> RemoteTrackingBranchExistsAsync(string repoRoot, string remoteName, string branch, CancellationToken ct)
-    {
-        var r = await RunAsync(repoRoot, ["rev-parse", "--verify", "--quiet", $"refs/remotes/{remoteName}/{branch}"], ct).ConfigureAwait(false);
-        return r.Ok && !string.IsNullOrWhiteSpace(r.Stdout);
-    }
-
-    /// <summary>Push <paramref name="branch"/> to <paramref name="remoteName"/>. Pass
-    /// <paramref name="setUpstream"/> = <see langword="true"/> on the very first push to establish
-    /// the tracking relationship (<c>--set-upstream</c>).</summary>
-    public Task<GitResult> PushAsync(string worktreePath, string remoteName, string branch, bool setUpstream, CancellationToken ct)
-    {
-        return setUpstream
-            ? RunAsync(worktreePath, ["push", "--set-upstream", remoteName, branch], ct)
-            : RunAsync(worktreePath, ["push", remoteName, branch], ct);
-    }
-
-    /// <summary>Rebase the current branch in <paramref name="worktreePath"/> onto
-    /// <paramref name="upstreamRef"/>. Returns Ok both when there is nothing to rebase and after a
-    /// clean rebase. Call <see cref="AbortRebaseAsync"/> on failure before re-throwing.</summary>
-    public Task<GitResult> RebaseAsync(string worktreePath, string upstreamRef, CancellationToken ct)
-        => RunAsync(worktreePath, ["rebase", upstreamRef], ct);
-
-    /// <summary>Abort an in-progress rebase (<c>git rebase --abort</c>). Called in error paths to
-    /// restore the worktree to its pre-rebase state before surfacing the failure to the caller.</summary>
-    public Task<GitResult> AbortRebaseAsync(string worktreePath, CancellationToken ct)
-        => RunAsync(worktreePath, ["rebase", "--abort"], ct);
 
     /// <summary>True when <paramref name="pathspec"/> has uncommitted changes (staged, unstaged,
     /// or untracked) relative to HEAD. Lets a caller skip an isolated commit when there is nothing
@@ -511,60 +396,6 @@ public sealed class GitService
             entries.Add(new GitFileLogEntry(parts[0], dt, parts[2]));
         }
         return entries;
-    }
-
-    /// <summary>All files deleted in the git history of <paramref name="worktreePath"/>,
-    /// newest first. Files that still exist on disk are excluded (they were re-added after
-    /// deletion). Uses the unit-separator character to distinguish commit headers from file
-    /// paths in the <c>--name-only</c> output.</summary>
-    public async Task<IReadOnlyList<DeletedFileEntry>> GetDeletedFilesAsync(string worktreePath, CancellationToken ct)
-    {
-        const char sep = '\x1f';
-        var r = await RunAsync(worktreePath,
-            ["log", "--diff-filter=D", "--name-only", $"--format=%H{sep}%aI{sep}%s", "--", "*.md"],
-            ct).ConfigureAwait(false);
-        if (!r.Ok) return Array.Empty<DeletedFileEntry>();
-
-        var results = new List<DeletedFileEntry>();
-        string? sha = null;
-        DateTimeOffset deletedAt = default;
-        string subject = "";
-
-        foreach (var raw in r.Stdout.Split('\n'))
-        {
-            var line = raw.TrimEnd('\r');
-            if (line.Length == 0) continue;
-
-            if (line.Contains(sep))
-            {
-                var parts = line.Split(sep);
-                if (parts.Length < 3) { sha = null; continue; }
-                sha = parts[0];
-                if (!DateTimeOffset.TryParse(parts[1], out deletedAt)) { sha = null; continue; }
-                subject = parts[2];
-            }
-            else if (sha is not null)
-            {
-                var absPath = Path.GetFullPath(
-                    Path.Combine(worktreePath, line.Replace('/', Path.DirectorySeparatorChar)));
-                if (File.Exists(absPath)) continue;
-                results.Add(new DeletedFileEntry(line, sha, deletedAt, subject));
-            }
-        }
-
-        return results;
-    }
-
-    /// <summary>Content of <paramref name="relativeFilePath"/> at the parent of
-    /// <paramref name="commitSha"/> — the state of the file just before it was deleted.
-    /// Returns <see langword="null"/> when the content cannot be retrieved.</summary>
-    public async Task<string?> ShowFileAtParentAsync(
-        string worktreePath, string commitSha, string relativeFilePath, CancellationToken ct)
-    {
-        var r = await RunAsync(worktreePath,
-            ["show", $"{commitSha}^:{relativeFilePath}"],
-            ct).ConfigureAwait(false);
-        return r.Ok ? r.Stdout : null;
     }
 
     private static async Task<GitResult> RunAsync(string? workingDir, IReadOnlyList<string> args, CancellationToken ct)

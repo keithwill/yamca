@@ -428,8 +428,8 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-# Yamca dev board and code worktrees. The board lives on the dedicated `yamca-board` orphan branch,
-# checked out as a linked worktree here; code-branch worktrees are forked under .yamca/worktrees.
-# Both are working-tree checkouts of other branches, so they must never be tracked on a code branch.
+# Yamca dev board and code worktrees. The board is a local, uncommitted scratchpad of the current
+# user's work, stored here as plain files; code-branch worktrees are forked under .yamca/worktrees.
+# Neither belongs in git, so both must never be tracked.
 .yamca/board/
 .yamca/worktrees/

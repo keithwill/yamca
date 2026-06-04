@@ -62,10 +62,9 @@ var repositoryRoot = discoveredRepoRoot ?? workspaceRoot;
 
 if (cli.Mode == CliMode.BoardReinit)
 {
-    using var loggerFactory = LoggerFactory.Create(b => b.AddConsole());
     var workspace = new Workspace(workspaceRoot, repositoryRoot);
-    var worktree = new BoardWorktree(workspace, gitService, loggerFactory.CreateLogger<BoardWorktree>());
-    var r = await worktree.ReinitAsync(cli.Wipe, CancellationToken.None).ConfigureAwait(false);
+    var boardStore = new BoardStore(workspace);
+    var r = await boardStore.ReinitAsync(cli.Wipe, CancellationToken.None).ConfigureAwait(false);
     Console.WriteLine("Board reinitialized.");
     Console.WriteLine($"  Columns created:       {r.ColumnsCreated}");
     Console.WriteLine($"  Instructions restored: {r.InstructionsRestored}");
@@ -133,11 +132,12 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IWorkspace>(_ => new Workspace(workspaceRoot, repositoryRoot));
 builder.Services.AddSingleton<GitService>();
 builder.Services.AddSingleton<BoardService>();
-// The board lives on the yamca-board orphan branch, mounted as a worktree at <repo>/.yamca/board.
-// BoardWorktree owns that location and bootstrap, anchored at the root workspace's repository root
-// (not any per-session workspace), so every chat session and the board UI share one canonical board.
-// Created lazily on first board access (EnsureAsync), so an unused board costs nothing at startup.
-builder.Services.AddSingleton<BoardWorktree>();
+// The board is a plain, uncommitted directory at <repo>/.yamca/board — a personal scratchpad,
+// gitignored and never tracked or pushed. BoardStore owns that location and bootstrap, anchored at
+// the root workspace's repository root (not any per-session workspace), so every chat session and
+// the board UI share one canonical board. Created lazily on first board access (EnsureAsync), so an
+// unused board costs nothing at startup.
+builder.Services.AddSingleton<BoardStore>();
 
 builder.Services.AddSingleton<ITool, ReadFileTool>();
 builder.Services.AddSingleton<ITool, WriteFileTool>();
@@ -195,8 +195,8 @@ builder.Services.AddScoped<ITool, LookupToolTool>();
 builder.Services.AddScoped<ITool, CallToolTool>();
 
 // Dev board tools. Reads default to Allow; the mutating move/update tools default to Ask
-// (like write_file/edit_file). They resolve the board through BoardWorktree and commit mutations
-// to the yamca-board branch, independent of whichever code branch the session is on.
+// (like write_file/edit_file). They resolve the board through BoardStore — a plain directory at the
+// repository root, shared by every chat session independent of which code branch it is on.
 builder.Services.AddSingleton<ITool, BoardListTool>();
 builder.Services.AddSingleton<ITool, BoardGetCardTool>();
 builder.Services.AddSingleton<ITool, BoardGetStepInstructionsTool>();

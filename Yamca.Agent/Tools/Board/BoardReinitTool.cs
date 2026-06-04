@@ -10,11 +10,11 @@ namespace Yamca.Agent.Tools.Board;
 /// initial (idea) column. Pass <c>wipe: true</c> to delete all cards instead.</summary>
 public sealed class BoardReinitTool : ITool
 {
-    private readonly BoardWorktree _boardWorktree;
+    private readonly BoardStore _boardStore;
 
-    public BoardReinitTool(BoardWorktree boardWorktree)
+    public BoardReinitTool(BoardStore boardStore)
     {
-        _boardWorktree = boardWorktree;
+        _boardStore = boardStore;
     }
 
     public string Name => "board_reinit";
@@ -54,7 +54,7 @@ public sealed class BoardReinitTool : ITool
             wipe = true;
         }
 
-        var r = await _boardWorktree.ReinitAsync(wipe, cancellationToken).ConfigureAwait(false);
+        var r = await _boardStore.ReinitAsync(wipe, cancellationToken).ConfigureAwait(false);
 
         var sb = new StringBuilder();
         sb.AppendLine("Board reinitialized to default layout.");

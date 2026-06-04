@@ -8,12 +8,12 @@ namespace Yamca.Agent.Tools.Board;
 public sealed class BoardGetStepInstructionsTool : ITool
 {
     private readonly BoardService _board;
-    private readonly BoardWorktree _boardWorktree;
+    private readonly BoardStore _boardStore;
 
-    public BoardGetStepInstructionsTool(BoardService board, BoardWorktree boardWorktree)
+    public BoardGetStepInstructionsTool(BoardService board, BoardStore boardStore)
     {
         _board = board;
-        _boardWorktree = boardWorktree;
+        _boardStore = boardStore;
     }
 
     public string Name => "board_get_step_instructions";
@@ -33,8 +33,8 @@ public sealed class BoardGetStepInstructionsTool : ITool
     }
     """;
 
-    // The board is a worktree of the yamca-board orphan branch, resolved from the repository root
-    // (which may sit above the session's sandbox root). Board tools are never workspace-restricted.
+    // The board lives at the repository root (which may sit above the session's sandbox root), so
+    // board tools are never workspace-restricted.
     public bool SupportsWorkspaceRestriction => false;
 
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
@@ -46,7 +46,7 @@ public sealed class BoardGetStepInstructionsTool : ITool
         if (!ToolArguments.TryGetString(arguments, "column", out var columnRef, out var argError))
             return ToolResult.Error(argError);
 
-        var boardRoot = await _boardWorktree.EnsureAsync(cancellationToken);
+        var boardRoot = await _boardStore.EnsureAsync(cancellationToken);
         var snapshot = _board.Read(boardRoot);
         var column = snapshot.FindColumn(columnRef);
         if (column is null)

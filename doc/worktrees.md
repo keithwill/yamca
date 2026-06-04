@@ -49,9 +49,9 @@ harmless no-op rather than a crash.
 
 ## Relationship to the board
 
-The dev board is itself a worktree (the `yamca-board` branch), tracked
-independently of code. Board *cards* bind to *code* worktrees when their steps
-run. The board enumerates code-branch worktrees only to decide a card's
+The dev board is a plain, uncommitted directory at `.yamca/board` — separate
+from code and never tracked. Board *cards* bind to *code* worktrees when their
+steps run. The board enumerates code-branch worktrees only to decide a card's
 liveness affordances — a card whose branch has a live worktree offers
 merge / open-chat; one whose branch never started or was merged away offers
 run-fresh instead.

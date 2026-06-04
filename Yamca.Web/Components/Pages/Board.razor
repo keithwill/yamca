@@ -11,7 +11,7 @@
 @using WorkspaceImpl = Yamca.Agent.Workspace.Workspace
 @inject IWorkspace Workspace
 @inject BoardService BoardSvc
-@inject BoardWorktree BoardWorktree
+@inject BoardStore BoardStore
 @inject GitService Git
 @inject IDialogService Dialogs
 @inject ChatSessionManager Manager
@@ -35,8 +35,8 @@ else if (_snapshot.Columns.Count == 0)
     <MudContainer MaxWidth="MaxWidth.Small" Class="pa-8">
         <MudText Typo="Typo.h6" GutterBottom="true">No dev board yet</MudText>
         <MudText Typo="Typo.body2" Class="mb-4">
-            The board lives on a dedicated <code>yamca-board</code> branch, checked out as a worktree
-            at <code>.yamca/board</code>. A column whose <code>instructions.md</code> has content is a
+            The board is a personal scratchpad stored at <code>.yamca/board</code> — local and
+            uncommitted, never shared. A column whose <code>instructions.md</code> has content is a
             work step run in chat; an empty <code>instructions.md</code> marks a resting column whose
             cards are just promoted onward. Initialize it with the default idea → analyze → implement
             → verify → done columns?
@@ -58,12 +58,6 @@ else
                                    Color="@(HasFilter ? Color.Primary : Color.Inherit)"
                                    OnClick="OpenSearchAsync"
                                    aria-label="Filter cards" />
-                </MudTooltip>
-                <MudTooltip Text="Restore deleted card" Placement="Placement.Bottom">
-                    <MudIconButton Icon="@Icons.Material.Filled.RestoreFromTrash"
-                                   Size="Size.Small"
-                                   OnClick="OpenRestoreCardAsync"
-                                   aria-label="Restore deleted card" />
                 </MudTooltip>
             </div>
             @if (HasFilter)
@@ -212,14 +206,14 @@ else
 
     private void OnSessionsChanged() => InvokeAsync(StateHasChanged);
 
-    // The board is read from its own worktree (the yamca-board branch), independent of any code
+    // The board is read from its own directory under the repository root, independent of any code
     // branch — so there is no overlay. We still enumerate code-branch worktrees, but only to drive
     // the dialog's merge / open-chat affordances. Worktrees are repo-scoped (enumerated from the
-    // repo root); the board snapshot comes from the board worktree path.
+    // repo root); the board snapshot comes from the board directory.
     private async Task RefreshAsync()
     {
         var ct = CancellationToken.None;
-        var boardRoot = await BoardWorktree.EnsureAsync(ct);
+        var boardRoot = await BoardStore.EnsureAsync(ct);
 
         var worktrees = await Git.ListWorktreesAsync(Workspace.RepositoryRoot, ct);
         var branchWorktrees = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -272,19 +266,19 @@ else
         return _filterStartsWith ? text.StartsWith(query) : text.Contains(query);
     }
 
-    // Bootstrap the board worktree (creates the yamca-board orphan branch and seeds default columns
-    // on first use). Normally unreachable — RefreshAsync ensures the worktree on first navigation, so
-    // the empty-board view rarely shows — but kept as an explicit affordance.
+    // Bootstrap the board directory (creates .yamca/board and seeds default columns on first use).
+    // Normally unreachable — RefreshAsync ensures the board on first navigation, so the empty-board
+    // view rarely shows — but kept as an explicit affordance.
     private async Task InitializeBoardAsync()
     {
-        try { await BoardWorktree.EnsureAsync(CancellationToken.None); }
+        try { await BoardStore.EnsureAsync(CancellationToken.None); }
         catch (Exception ex)
         {
             Snackbar.Add($"Could not initialize board: {ex.Message}", Severity.Error);
             return;
         }
         await RefreshAsync();
-        Snackbar.Add("Board initialized on the yamca-board branch.", Severity.Success);
+        Snackbar.Add("Board initialized.", Severity.Success);
     }
 
     private async Task OpenColumnSettingsAsync(BoardColumn column)
@@ -303,26 +297,17 @@ else
         if (string.Equals(oldNorm, newNorm, StringComparison.Ordinal)) return;
 
         var ct = CancellationToken.None;
-        await BoardWorktree.MutateAsync(async br =>
+        await BoardStore.MutateAsync(async br =>
         {
             try
             {
                 await BoardSvc.WriteInstructionsAsync(br, column.DirectoryName, data.Instructions);
+                Snackbar.Add($"Column '{column.DisplayName}' updated.", Severity.Success);
             }
             catch (Exception ex)
             {
                 Snackbar.Add($"Could not save instructions: {ex.Message}", Severity.Error);
-                return;
             }
-
-            var msg = string.IsNullOrWhiteSpace(data.Instructions)
-                ? $"board: clear {column.DirectoryName} instructions"
-                : $"board: set {column.DirectoryName} instructions";
-            var commit = await Git.CommitAllAsync(br, msg, ct);
-            if (!commit.Ok)
-                Snackbar.Add($"Instructions saved but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning);
-            else
-                Snackbar.Add($"Column '{column.DisplayName}' updated.", Severity.Success);
         }, ct);
 
         await RefreshAsync();
@@ -335,10 +320,9 @@ else
         var result = await dialog.Result;
         if (result is null || result.Canceled || result.Data is not NewCardDialog.Result data) return;
 
-        // Write the new card into the board worktree and commit it to the board branch immediately,
-        // under the board write lock (the column's directory name is stable; resolve its path from
-        // the board root inside the lock).
-        await BoardWorktree.MutateAsync(async boardRoot =>
+        // Write the new card into the board directory under the board write lock (the column's
+        // directory name is stable; resolve its path from the board root inside the lock).
+        await BoardStore.MutateAsync(async boardRoot =>
         {
             var id = BoardSvc.NextCardId(boardRoot);
             var path = Path.Combine(boardRoot, column.DirectoryName, BoardService.CardFileName(id, data.Title));
@@ -351,11 +335,7 @@ else
             catch (Exception ex)
             {
                 Snackbar.Add($"Could not create card: {ex.Message}", Severity.Error);
-                return;
             }
-            var commit = await Git.CommitAllAsync(boardRoot, $"board: add #{id} {data.Title}", CancellationToken.None);
-            if (!commit.Ok)
-                Snackbar.Add($"Card created but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning);
         }, CancellationToken.None);
 
         await RefreshAsync();
@@ -367,7 +347,7 @@ else
         // Branch field defaults / existing branches are gathered up front so the dialog can
         // offer them inline (combobox + endpoint dropdown) instead of chaining more modals.
         var existingBranches = await Git.ListBranchesAsync(Workspace.RepositoryRoot, CancellationToken.None);
-        var boardRoot = await BoardWorktree.EnsureAsync(CancellationToken.None);
+        var boardRoot = await BoardStore.EnsureAsync(CancellationToken.None);
         var next = _snapshot.NextColumn(column);
 
         // When the card's branch has a live code worktree, hand the dialog its path and the repo's
@@ -380,9 +360,6 @@ else
         var parameters = new DialogParameters
         {
             ["Card"] = card,
-            // The card file lives in the board worktree, so its git history resolves against that
-            // path (the dialog runs `git log` for the card against WorkspaceRoot).
-            ["WorkspaceRoot"] = boardRoot,
             ["ColumnDisplayName"] = column.DisplayName,
             ["IsWorkColumn"] = BoardSvc.HasInstructions(boardRoot, column.DirectoryName),
             ["NextColumnDisplayName"] = next?.DisplayName,
@@ -516,8 +493,8 @@ else
     }
 
     // Move a card to an arbitrary column. The snapshot is updated optimistically so the card appears
-    // in the target column immediately; the git commit + push run in the background under the board
-    // lock. The busy overlay stays on the card until the background work finishes. Refresh is deferred
+    // in the target column immediately; the file move runs in the background under the board lock.
+    // The busy overlay stays on the card until the background work finishes. Refresh is deferred
     // until all in-flight mutations drain so concurrent moves don't stomp each other's optimistic state.
     private Task MoveCardAsync(BoardCard card, BoardColumn from, BoardColumn target)
     {
@@ -534,7 +511,7 @@ else
         var ct = CancellationToken.None;
         try
         {
-            await BoardWorktree.MutateAsync(async boardRoot =>
+            await BoardStore.MutateAsync(async boardRoot =>
             {
                 var src = Path.GetFullPath(card.AbsolutePath);
                 var destColumnDir = Path.Combine(boardRoot, target.DirectoryName);
@@ -554,12 +531,7 @@ else
                 catch (Exception ex)
                 {
                     await InvokeAsync(() => Snackbar.Add($"Could not move card #{card.Id}: {ex.Message}", Severity.Error));
-                    return;
                 }
-
-                var commit = await Git.CommitAllAsync(boardRoot, $"board: move #{card.Id} to {target.DisplayName}", ct);
-                if (!commit.Ok)
-                    await InvokeAsync(() => Snackbar.Add($"Card #{card.Id} moved to '{target.DisplayName}', but the commit failed: {commit.Stderr.Trim()}", Severity.Warning));
             }, ct);
         }
         catch (Exception ex)
@@ -585,7 +557,7 @@ else
         var ct = CancellationToken.None;
         try
         {
-            await BoardWorktree.MutateAsync(async boardRoot =>
+            await BoardStore.MutateAsync(async _ =>
             {
                 try
                 {
@@ -594,12 +566,7 @@ else
                 catch (Exception ex)
                 {
                     await InvokeAsync(() => Snackbar.Add($"Could not delete card #{card.Id}: {ex.Message}", Severity.Error));
-                    return;
                 }
-
-                var commit = await Git.CommitAllAsync(boardRoot, $"board: delete #{card.Id} {card.Title}", ct);
-                if (!commit.Ok)
-                    await InvokeAsync(() => Snackbar.Add($"Card #{card.Id} deleted but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning));
             }, ct);
         }
         catch (Exception ex)
@@ -612,66 +579,9 @@ else
         }
     }
 
-    private async Task OpenRestoreCardAsync()
-    {
-        var boardRoot = await BoardWorktree.EnsureAsync(CancellationToken.None);
-        var parameters = new DialogParameters
-        {
-            ["BoardRoot"] = boardRoot,
-            ["Columns"] = _snapshot.Columns,
-        };
-        var dialog = await Dialogs.ShowAsync<RestoreCardDialog>("Restore card", parameters, Small());
-        var result = await dialog.Result;
-        if (result is null || result.Canceled || result.Data is not RestoreCardDialog.Result data) return;
-        await RestoreCardAsync(data);
-    }
-
-    private async Task RestoreCardAsync(RestoreCardDialog.Result data)
-    {
-        var card = data.Card;
-        var ct = CancellationToken.None;
-
-        await BoardWorktree.MutateAsync(async boardRoot =>
-        {
-            var content = await Git.ShowFileAtParentAsync(boardRoot, card.CommitSha, card.RelativePath, ct);
-            if (content is null)
-            {
-                await InvokeAsync(() => Snackbar.Add($"Could not retrieve #{card.Id} from git history.", Severity.Error));
-                return;
-            }
-
-            var destDir = Path.Combine(boardRoot, data.TargetColumnDirectory);
-            Directory.CreateDirectory(destDir);
-            var destPath = Path.Combine(destDir, card.FileName);
-
-            if (File.Exists(destPath))
-            {
-                await InvokeAsync(() => Snackbar.Add($"A card named '{card.FileName}' already exists in that column.", Severity.Error));
-                return;
-            }
-
-            try
-            {
-                await File.WriteAllTextAsync(destPath, content, ct);
-            }
-            catch (Exception ex)
-            {
-                await InvokeAsync(() => Snackbar.Add($"Could not restore card: {ex.Message}", Severity.Error));
-                return;
-            }
-
-            var commit = await Git.CommitAllAsync(boardRoot, $"board: restore #{card.Id} {card.Title}", ct);
-            if (!commit.Ok)
-                await InvokeAsync(() => Snackbar.Add($"Card restored but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning));
-        }, ct);
-
-        await RefreshAsync();
-        StateHasChanged();
-    }
-
     // Remove the card from _busyCards and refresh once all in-flight mutations have settled.
     // Deferring the refresh until the set drains prevents concurrent optimistic moves from
-    // briefly reverting each other while their commits are still queued under the board lock.
+    // briefly reverting each other while their writes are still queued under the board lock.
     private async Task FinishMutationAsync(string cardId)
     {
         _busyCards.Remove(cardId);
@@ -703,12 +613,11 @@ else
             return;
         }
 
-        // 1. Bind the card to its branch by writing `branch:` frontmatter and committing it to the
-        //    board branch. The board is its own worktree, so this no longer has to happen before the
-        //    code worktree is forked (the agent reads the card from the board worktree, not from the
-        //    forked code branch). We (re)bind both for a card that has never had a branch and for one
-        //    whose stale `branch:` attribute differs from the branch chosen now (e.g. an idea reworked
-        //    onto a fresh branch) — so the frontmatter never lies about which branch the card lives on.
+        // 1. Bind the card to its branch by writing `branch:` frontmatter. The board is separate from
+        //    the code worktree, so this is just a write to the card file. We (re)bind both for a card
+        //    that has never had a branch and for one whose stale `branch:` attribute differs from the
+        //    branch chosen now (e.g. an idea reworked onto a fresh branch) — so the frontmatter never
+        //    lies about which branch the card lives on.
         if (!string.Equals(card.Branch, run.Branch, StringComparison.Ordinal))
         {
             if (!await LockCardToBranchAsync(card, run.Branch)) return; // error already surfaced
@@ -722,7 +631,7 @@ else
         if (worktree is null) return; // error already surfaced
 
         // 3. Column instructions (from the board worktree) + next column.
-        var boardRoot = await BoardWorktree.EnsureAsync(CancellationToken.None);
+        var boardRoot = await BoardStore.EnsureAsync(CancellationToken.None);
         var instructions = BoardSvc.ReadInstructions(boardRoot, column.DirectoryName);
         var next = _snapshot.NextColumn(column);
 
@@ -781,14 +690,13 @@ else
         return new WorktreeInfo(branch, baseBranch, path, Workspace.RootPath);
     }
 
-    // Bind a card to its branch by writing the `branch:` frontmatter and committing it to the board
-    // branch. The board is tracked separately from code, so this is a self-contained board commit —
-    // no pre-fork commit-to-the-outer-branch dance. Returns false (after surfacing an error) when the
-    // write or commit fails.
+    // Bind a card to its branch by writing the `branch:` frontmatter. The board is plain on-disk
+    // state, so this is just a card-file write. Returns false (after surfacing an error) when the
+    // write fails.
     private async Task<bool> LockCardToBranchAsync(BoardCard card, string branch)
     {
         var ct = CancellationToken.None;
-        var ok = await BoardWorktree.MutateAsync(async boardRoot =>
+        var ok = await BoardStore.MutateAsync(async _ =>
         {
             try
             {
@@ -798,13 +706,6 @@ else
             catch (Exception ex)
             {
                 Snackbar.Add($"Could not bind card to '{branch}': {ex.Message}", Severity.Error);
-                return false;
-            }
-
-            var commit = await Git.CommitAllAsync(boardRoot, $"board: bind #{card.Id} to {branch}", ct);
-            if (!commit.Ok)
-            {
-                Snackbar.Add($"Could not commit binding for card #{card.Id}: {commit.Stderr.Trim()}", Severity.Error);
                 return false;
             }
             return true;
@@ -820,7 +721,7 @@ else
         StateHasChanged();
 
         var ct = CancellationToken.None;
-        await BoardWorktree.MutateAsync(async boardRoot =>
+        await BoardStore.MutateAsync(async boardRoot =>
         {
             var path = Path.Combine(boardRoot, card.ColumnDirectory, card.FileName);
             string raw;
@@ -834,11 +735,7 @@ else
             catch (Exception ex)
             {
                 Snackbar.Add($"Could not update card #{card.Id}: {ex.Message}", Severity.Error);
-                return;
             }
-            var commit = await Git.CommitAllAsync(boardRoot, $"board: set #{card.Id} priority to {priority.ToString().ToLowerInvariant()}", ct);
-            if (!commit.Ok)
-                Snackbar.Add($"Priority updated but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning);
         }, ct);
 
         await InvokeAsync(async () =>
@@ -850,16 +747,16 @@ else
     }
 
     // Same shape as UpdateCardPriorityAsync: mark the card busy, write the edited title (frontmatter)
-    // and markdown body (frontmatter otherwise preserved) into the board worktree, commit it, then
-    // refresh and clear the spinner. The card file keeps its original NNNN-slug name even when the
-    // title changes — the displayed title is read from frontmatter, not the file name.
+    // and markdown body (frontmatter otherwise preserved) into the board, then refresh and clear the
+    // spinner. The card file keeps its original NNNN-slug name even when the title changes — the
+    // displayed title is read from frontmatter, not the file name.
     private async Task UpdateCardBodyAsync(BoardCard card, string title, string body)
     {
         _busyCards.Add(card.Id);
         StateHasChanged();
 
         var ct = CancellationToken.None;
-        await BoardWorktree.MutateAsync(async boardRoot =>
+        await BoardStore.MutateAsync(async boardRoot =>
         {
             var path = Path.Combine(boardRoot, card.ColumnDirectory, card.FileName);
             string raw;
@@ -879,7 +776,7 @@ else
                 return;
             }
 
-            // Keep the NNNN-slug file name in step with the title so the rename shows up in git as a
+            // Keep the NNNN-slug file name in step with the title so the file name stays a
             // recognisable card name. Skip the rename if the slug is unchanged or the target already
             // exists (a leftover/collision) — the title edit above still lands either way.
             var newFileName = BoardService.CardFileName(card.Id, title);
@@ -895,11 +792,6 @@ else
                         Snackbar.Add($"Card updated but the file rename failed: {ex.Message}", Severity.Warning);
                     }
             }
-
-            var summary = titleChanged ? "title and description" : "description";
-            var commit = await Git.CommitAllAsync(boardRoot, $"board: edit #{card.Id} {summary}", ct);
-            if (!commit.Ok)
-                Snackbar.Add($"Card updated but the board commit failed: {commit.Stderr.Trim()}", Severity.Warning);
         }, ct);
 
         await InvokeAsync(async () =>
