@@ -12,7 +12,7 @@ namespace Yamca.Agent.Chat;
 /// extension) directly as <see cref="LlmReasoningDelta"/>; falls back to
 /// <see cref="ReasoningTagStripper"/> for servers that inline <c>&lt;think&gt;</c>
 /// tags into the visible content stream.</summary>
-public sealed class OpenAIChatCompletionClient : IChatCompletionClient
+public sealed class OpenAIChatCompletionClient : IChatCompletionClient, IChatRequestPreview
 {
     private static readonly JsonSerializerOptions RequestJson = new()
     {
@@ -207,6 +207,16 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient
 
         yield return new LlmAssistantTurnComplete(
             content.ToString(), completed, finishReason, reasoning.ToString());
+    }
+
+    /// <summary>Serialize the exact request body <see cref="StreamAsync"/> would POST, reusing
+    /// <see cref="BuildRequest"/> and the shared <see cref="RequestJson"/> options so the
+    /// diagnostic preview is byte-identical to the wire format.</summary>
+    public string SerializeRequest(IReadOnlyList<ChatMessage> messages, IReadOnlyList<ChatTool> tools)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        ArgumentNullException.ThrowIfNull(tools);
+        return JsonSerializer.Serialize(BuildRequest(messages, tools), RequestJson);
     }
 
     private ChatRequestDto BuildRequest(IReadOnlyList<ChatMessage> messages, IReadOnlyList<ChatTool> tools)

@@ -192,6 +192,11 @@ public sealed class ChatViewModel : IDisposable
         }
     }
 
+    /// <summary>Snapshot of the exact request that would be sent to the LLM on the next turn
+    /// (messages, tools, raw JSON), for the "view raw context" diagnostic. Null before the first
+    /// send, when no session/loop has been created yet.</summary>
+    public ChatRequestPreview? GetContextPreview() => _loop?.BuildRequestPreview();
+
     /// <summary>Completion tokens reported by the server for the most recent
     /// assistant turn. Null until the first <see cref="UsageUpdateEvent"/>.</summary>
     public int? LastCompletionTokens => _lastReportedCompletionTokens;

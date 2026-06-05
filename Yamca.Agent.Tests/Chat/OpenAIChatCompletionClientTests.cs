@@ -63,6 +63,47 @@ public class OpenAIChatCompletionClientTests
     }
 
     [Test]
+    public void SerializeRequest_ProducesWireFaithfulJson()
+    {
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(SseResponse(Sse())));
+        var client = new OpenAIChatCompletionClient(ClientFor(handler), "test-model");
+
+        var messages = new[]
+        {
+            new ChatMessage(ChatRole.System, "be helpful"),
+            new ChatMessage(ChatRole.User, "hi"),
+            new ChatMessage(ChatRole.Assistant, "", ToolCalls: new[]
+            {
+                new ChatToolCall("call_1", "read_file", """{"path":"a.txt"}"""),
+            }),
+            new ChatMessage(ChatRole.Tool, "file body", ToolCallId: "call_1"),
+        };
+        var tools = new[]
+        {
+            new ChatTool("read_file", "Read a file", """{"type":"object","properties":{}}"""),
+        };
+
+        var json = client.SerializeRequest(messages, tools);
+
+        using var doc = JsonDocument.Parse(json);   // must be valid JSON
+        var root = doc.RootElement;
+
+        Assert.That(root.GetProperty("model").GetString(), Is.EqualTo("test-model"));
+        Assert.That(root.GetProperty("stream").GetBoolean(), Is.True);
+        Assert.That(root.GetProperty("stream_options").GetProperty("include_usage").GetBoolean(), Is.True);
+
+        var msgs = root.GetProperty("messages");
+        Assert.That(msgs.GetArrayLength(), Is.EqualTo(4));
+        Assert.That(msgs[0].GetProperty("role").GetString(), Is.EqualTo("system"));
+        Assert.That(msgs[3].GetProperty("role").GetString(), Is.EqualTo("tool"));
+        // snake_case naming on tool plumbing
+        Assert.That(msgs[3].GetProperty("tool_call_id").GetString(), Is.EqualTo("call_1"));
+        Assert.That(msgs[2].GetProperty("tool_calls")[0].GetProperty("id").GetString(), Is.EqualTo("call_1"));
+        Assert.That(root.GetProperty("tools")[0].GetProperty("function").GetProperty("name").GetString(),
+            Is.EqualTo("read_file"));
+    }
+
+    [Test]
     public async Task ReasoningContent_ThenContent_EmitsReasoningCloseOnTransition()
     {
         var sse = Sse(

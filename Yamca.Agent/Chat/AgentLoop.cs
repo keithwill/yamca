@@ -95,6 +95,18 @@ public sealed class AgentLoop
 
     public ChatSession Session => _session;
 
+    /// <summary>Snapshot what the next model request would contain: the current messages, the
+    /// tools array built exactly as the live loop builds it (<see cref="IToolRegistry.GetChatTools"/>
+    /// with the same availability resolver), and — when the client supports it — the serialized
+    /// request body. Powers the "view raw context" diagnostic.</summary>
+    public ChatRequestPreview BuildRequestPreview()
+    {
+        var messages = _session.Messages;
+        var tools = _tools.GetChatTools(_availability);
+        var raw = _client is IChatRequestPreview preview ? preview.SerializeRequest(messages, tools) : null;
+        return new ChatRequestPreview(_session.SystemPrompt, messages, tools, raw);
+    }
+
     public IAsyncEnumerable<ChatStreamEvent> RunTurnAsync(
         string userMessage,
         IReadOnlyList<ChatImage>? images = null,
