@@ -22,6 +22,7 @@ public sealed class SubagentLiveSession
         RunId = info.RunId;
         ParentCallId = info.ParentCallId;
         OwnerId = info.OwnerId;
+        LoopRunId = info.LoopRunId;
         AgentName = info.AgentName;
         Prompt = info.Prompt;
         StartedAt = info.StartedAt;
@@ -33,6 +34,10 @@ public sealed class SubagentLiveSession
 
     /// <summary>The chat session that launched this run (<see cref="SubagentRunInfo.OwnerId"/>).</summary>
     public string? OwnerId { get; }
+
+    /// <summary>The loop run that spawned this run, when it is one item of a batch <c>loop</c>
+    /// (<see cref="SubagentRunInfo.LoopRunId"/>). Null for a standalone <c>subagent_run</c>.</summary>
+    public string? LoopRunId { get; }
 
     public string AgentName { get; }
     public string Prompt { get; }

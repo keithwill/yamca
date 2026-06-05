@@ -12,13 +12,17 @@ namespace Yamca.Agent.Subagents;
 /// <param name="AgentName">The configured subagent's name.</param>
 /// <param name="Prompt">The self-contained task handed to the subagent.</param>
 /// <param name="StartedAt">When the run began.</param>
+/// <param name="LoopRunId">The loop run that spawned this run, when it was launched as one item
+/// of a batch <c>loop</c>. Lets the UI group a loop's child runs together. Null for a standalone
+/// <c>subagent_run</c>.</param>
 public sealed record SubagentRunInfo(
     string RunId,
     string? ParentCallId,
     string? OwnerId,
     string AgentName,
     string Prompt,
-    DateTimeOffset StartedAt);
+    DateTimeOffset StartedAt,
+    string? LoopRunId = null);
 
 /// <summary>Receives the live event stream of a headless subagent run so a host (the
 /// Blazor UI) can mirror it into a viewable, read-only session. <see cref="SubagentRunner"/>

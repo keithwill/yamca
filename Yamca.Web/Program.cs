@@ -221,6 +221,11 @@ builder.Services.AddScoped<ITool, ExecuteScriptTool>();
 builder.Services.AddScoped<ISubagentRunner, SubagentRunner>();
 builder.Services.AddScoped<ITool, SubagentRunTool>();
 
+// loop fans one prompt over many items, each its own headless subagent run, via BatchRunner
+// (which reuses SubagentRunner) and returns a single mechanical roll-up. Scoped like the runner.
+builder.Services.AddScoped<IBatchRunner, BatchRunner>();
+builder.Services.AddScoped<ITool, LoopTool>();
+
 // Live subagent transcripts: the runner mirrors each run's event stream into this per-circuit
 // registry via ISubagentObserver; the UI reads the same instance to render a read-only view.
 builder.Services.AddScoped<SubagentSessionRegistry>();

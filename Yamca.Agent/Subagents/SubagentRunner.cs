@@ -61,14 +61,34 @@ public sealed class SubagentRunner : ISubagentRunner
         ToolContext parentContext,
         CancellationToken cancellationToken)
     {
+        var outcome = await RunCoreAsync(agentName, prompt, parentContext, loopRunId: null, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Map the structured outcome to a ToolResult for the single-delegation case. Semantic
+        // failure (the subagent said "I couldn't") now surfaces as an error, not silent prose;
+        // needs_followup stays a success but is tagged so the parent can spot it.
+        if (outcome.IsFailure)
+            return ToolResult.Error(outcome.Summary);
+        if (outcome.IsNeedsFollowup)
+            return ToolResult.Ok("[needs follow-up] " + outcome.Summary);
+        return ToolResult.Ok(outcome.Summary);
+    }
+
+    public async Task<SubagentOutcome> RunCoreAsync(
+        string agentName,
+        string prompt,
+        ToolContext parentContext,
+        string? loopRunId,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(parentContext);
 
         var def = SubagentRegistry.Resolve(_settings.UserSubagents, _settings.ProjectSubagents, agentName);
         if (def is null)
-            return ToolResult.Error($"Unknown subagent '{agentName}'. {AvailableAgentsHint()}");
+            return Mechanical($"Unknown subagent '{agentName}'. {AvailableAgentsHint()}");
 
         if (string.IsNullOrWhiteSpace(prompt))
-            return ToolResult.Error("A non-empty 'prompt' is required to run a subagent.");
+            return Mechanical("A non-empty 'prompt' is required to run a subagent.");
 
         // Per-subagent gate: force a parent approval prompt even when subagent_run itself is
         // set to Allow (for the occasional expensive agent). Surfaces in the parent UI via the
@@ -81,24 +101,26 @@ public sealed class SubagentRunner : ISubagentRunner
                 .RequestApprovalAsync("subagent_run", argsDoc.RootElement, cancellationToken)
                 .ConfigureAwait(false);
             if (!decision.Approved)
-                return ToolResult.Error($"Subagent '{def.Name}' was not approved to run.");
+                return Mechanical($"Subagent '{def.Name}' was not approved to run.");
         }
 
         var client = ResolveClient(def);
         if (client is null)
-            return ToolResult.Error(
+            return Mechanical(
                 $"Subagent '{def.Name}' references an endpoint that no longer exists and no parent endpoint is available.");
 
         // Build the subagent's private tool set: its allowed tools (sourced from the parent
-        // registry snapshot) plus the result tool. subagent_run is deliberately never included,
-        // so a subagent cannot spawn further subagents.
+        // registry snapshot) plus the result tool. subagent_run and loop are deliberately never
+        // included, so a subagent cannot spawn further subagents or fan out.
         var registry = (IToolRegistry?)_services.GetService(typeof(IToolRegistry))
             ?? throw new InvalidOperationException("IToolRegistry is not registered.");
 
         var sink = new SubagentResultSink();
         var allowed = new HashSet<string>(def.AllowedTools, StringComparer.Ordinal);
         var childTools = registry.Tools
-            .Where(t => allowed.Contains(t.Name) && t.Name != SubagentRunTool.ToolName)
+            .Where(t => allowed.Contains(t.Name)
+                && t.Name != SubagentRunTool.ToolName
+                && t.Name != LoopTool.ToolName)
             .ToList<ITool>();
         childTools.Add(new SubagentResultTool(sink));
 
@@ -124,47 +146,75 @@ public sealed class SubagentRunner : ISubagentRunner
 
         // Mirror the run to any observer (the UI) so it can be watched live. The run id keys
         // the live session; the parent tool-call id (when present) lets the UI open the matching
-        // transcript from the subagent_run card. OnCompleted always fires (see finally).
+        // transcript from the subagent_run card; the loop run id (when present) groups this run
+        // under its parent loop. OnCompleted always fires (see finally).
         var runId = Guid.NewGuid().ToString("n");
         _observer.OnStarted(new SubagentRunInfo(
-            runId, parentContext.CallId, parentContext.OwnerId, def.Name, prompt, DateTimeOffset.Now));
+            runId, parentContext.CallId, parentContext.OwnerId, def.Name, prompt, DateTimeOffset.Now, loopRunId));
 
-        var outcome = ToolResult.Error(FailureMessage(def.Name, null, ""));
+        var outcome = Mechanical(FailureMessage(def.Name, null, ""));
         try
         {
             var lastAssistant = "";
             TurnCompletionReason? reason = null;
 
-            await foreach (var ev in loop.RunTurnAsync(prompt, cancellationToken: cancellationToken).ConfigureAwait(false))
+            // Drive one turn: forward its events to the observer, capture the last assistant text
+            // and completion reason, and report whether the subagent delivered a result.
+            async Task<bool> RunTurnAsync(string message)
             {
-                _observer.OnEvent(runId, ev);
-                switch (ev)
+                await foreach (var ev in loop.RunTurnAsync(message, cancellationToken: cancellationToken).ConfigureAwait(false))
                 {
-                    case ToolCallResultEvent r when r.ToolName == SubagentResultTool.ToolName && !r.IsError:
-                        // The subagent reported back — stop the loop here rather than letting it
-                        // burn further iterations, and hand the payload to the caller.
-                        outcome = ToolResult.Ok(sink.Result ?? "");
-                        return outcome;
-                    case AssistantMessageEvent a when !string.IsNullOrWhiteSpace(a.Content):
-                        lastAssistant = a.Content;
-                        break;
-                    case TurnCompleteEvent c:
-                        reason = c.Reason;
-                        break;
+                    _observer.OnEvent(runId, ev);
+                    switch (ev)
+                    {
+                        case ToolCallResultEvent r when r.ToolName == SubagentResultTool.ToolName && !r.IsError:
+                            // The subagent reported back — stop consuming the turn here rather than
+                            // letting it burn further iterations.
+                            return true;
+                        case AssistantMessageEvent a when !string.IsNullOrWhiteSpace(a.Content):
+                            lastAssistant = a.Content;
+                            break;
+                        case TurnCompleteEvent c:
+                            reason = c.Reason;
+                            break;
+                    }
                 }
+                return sink.HasResult;
             }
 
-            // Defensive: if the result landed but we somehow fell out of the loop, still return it.
-            outcome = sink.HasResult
-                ? ToolResult.Ok(sink.Result ?? "")
-                : ToolResult.Error(FailureMessage(def.Name, reason, lastAssistant));
+            var delivered = await RunTurnAsync(prompt).ConfigureAwait(false);
+
+            // One-shot nudge: a subagent that stopped without delivering (typically it answered in
+            // prose and forgot the protocol) gets exactly one reminder and one more turn to call
+            // subagent_result. Skip it on cancellation — the caller asked to stop, so respect that.
+            if (!delivered
+                && reason != TurnCompletionReason.Cancelled
+                && !cancellationToken.IsCancellationRequested)
+            {
+                delivered = await RunTurnAsync(NudgeMessage).ConfigureAwait(false);
+            }
+
+            outcome = delivered
+                ? Delivered(sink, reason)
+                : Mechanical(FailureMessage(def.Name, reason, lastAssistant), reason);
             return outcome;
         }
         finally
         {
-            _observer.OnCompleted(runId, outcome.IsError, outcome.Content);
+            _observer.OnCompleted(runId, outcome.IsFailure, outcome.Summary);
         }
     }
+
+    private const string NudgeMessage =
+        "You ended your turn without calling subagent_result, so the caller received nothing. You " +
+        "MUST call subagent_result now — exactly once, with your status (success, failure, or " +
+        "needs_followup) and your complete answer — to finish the run.";
+
+    private static SubagentOutcome Mechanical(string message, TurnCompletionReason? reason = null) =>
+        new(Delivered: false, SubagentStatus.Failure, message, MechanicalFailure: true, reason);
+
+    private static SubagentOutcome Delivered(SubagentResultSink sink, TurnCompletionReason? reason) =>
+        new(Delivered: true, sink.Status, sink.Result ?? "", MechanicalFailure: false, reason);
 
     private ChatSession BuildSession(
         SubagentDefinition def,
@@ -181,9 +231,13 @@ public sealed class SubagentRunner : ISubagentRunner
         // per-subagent instructions) follows. Keep this block byte-stable.
         var systemPrompt =
             "You are running headless as a subagent — there is no user to talk to. When you " +
-            "have finished, call the subagent_result tool exactly once with your complete answer; " +
-            "that is the only output the caller receives. Do not ask clarifying questions: make " +
-            "reasonable assumptions and proceed. Your responses are not rendered as Markdown.\n\n" +
+            "have finished, you MUST call the subagent_result tool exactly once with your complete " +
+            "answer and a status (success, failure, or needs_followup); that is the only output the " +
+            "caller receives, and the run is not complete until you call it. If the task tells you " +
+            "to \"reply\", \"answer\", \"output\", or \"print\" something, deliver that through " +
+            "subagent_result rather than writing it as a message — the result tool is the only " +
+            "channel the caller can read. Do not ask clarifying questions: make reasonable " +
+            "assumptions and proceed. Your responses are not rendered as Markdown.\n\n" +
             baseInstructions;
 
         // Let tools contribute their session-start state (e.g. the registered-scripts list), the

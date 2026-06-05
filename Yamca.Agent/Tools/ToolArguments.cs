@@ -53,6 +53,44 @@ internal static class ToolArguments
         return false;
     }
 
+    public static bool TryGetStringArray(JsonElement args, string name, out IReadOnlyList<string> value, out string error)
+    {
+        value = Array.Empty<string>();
+        error = string.Empty;
+
+        if (args.ValueKind != JsonValueKind.Object)
+        {
+            error = "Arguments must be a JSON object.";
+            return false;
+        }
+
+        if (!args.TryGetProperty(name, out var prop))
+        {
+            error = $"Missing required argument '{name}'.";
+            return false;
+        }
+
+        if (prop.ValueKind != JsonValueKind.Array)
+        {
+            error = $"Argument '{name}' must be an array of strings.";
+            return false;
+        }
+
+        var list = new List<string>(prop.GetArrayLength());
+        foreach (var element in prop.EnumerateArray())
+        {
+            if (element.ValueKind != JsonValueKind.String)
+            {
+                error = $"Every entry in '{name}' must be a string.";
+                return false;
+            }
+            list.Add(element.GetString() ?? string.Empty);
+        }
+
+        value = list;
+        return true;
+    }
+
     /// <summary>
     /// Resolve a path argument honoring the workspace-restriction flag. When restricted,
     /// the path goes through <see cref="IWorkspace.Resolve"/> (sandboxed). When not, it is

@@ -55,7 +55,7 @@ public class SubagentRunnerTests
     {
         DefineAgent(Agent("explorer", new[] { "read_file" }));
         var runner = BuildRunner(new StubTool("read_file"));
-        _llm.EnqueueToolCall("c1", "subagent_result", """{"result":"the answer"}""");
+        _llm.EnqueueToolCall("c1", "subagent_result", """{"status":"success","result":"the answer"}""");
 
         var result = await runner.RunAsync("explorer", "find X", ParentContext(), CancellationToken.None);
 
@@ -64,17 +64,76 @@ public class SubagentRunnerTests
     }
 
     [Test]
-    public async Task ReturnsError_WhenSubagentNeverDelivers()
+    public async Task ReturnsError_WhenSubagentReportsSemanticFailure()
+    {
+        DefineAgent(Agent("explorer", new[] { "read_file" }));
+        var runner = BuildRunner(new StubTool("read_file"));
+        _llm.EnqueueToolCall("c1", "subagent_result", """{"status":"failure","result":"the file does not exist"}""");
+
+        var result = await runner.RunAsync("explorer", "find X", ParentContext(), CancellationToken.None);
+
+        Assert.That(result.IsError, Is.True);
+        Assert.That(result.Content, Is.EqualTo("the file does not exist"));
+    }
+
+    [Test]
+    public async Task TagsNeedsFollowup_AsNonErrorSuccess()
+    {
+        DefineAgent(Agent("explorer", new[] { "read_file" }));
+        var runner = BuildRunner(new StubTool("read_file"));
+        _llm.EnqueueToolCall("c1", "subagent_result", """{"status":"needs_followup","result":"looks off, check it"}""");
+
+        var result = await runner.RunAsync("explorer", "find X", ParentContext(), CancellationToken.None);
+
+        Assert.That(result.IsError, Is.False);
+        Assert.That(result.Content, Does.StartWith("[needs follow-up]"));
+        Assert.That(result.Content, Does.Contain("looks off, check it"));
+    }
+
+    [Test]
+    public async Task RunCore_ReturnsStructuredStatus()
+    {
+        DefineAgent(Agent("explorer", new[] { "read_file" }));
+        var runner = BuildRunner(new StubTool("read_file"));
+        _llm.EnqueueToolCall("c1", "subagent_result", """{"status":"needs_followup","result":"flagged"}""");
+
+        var outcome = await runner.RunCoreAsync("explorer", "find X", ParentContext(), loopRunId: null, CancellationToken.None);
+
+        Assert.That(outcome.Delivered, Is.True);
+        Assert.That(outcome.MechanicalFailure, Is.False);
+        Assert.That(outcome.IsNeedsFollowup, Is.True);
+        Assert.That(outcome.Summary, Is.EqualTo("flagged"));
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenSubagentNeverDelivers_EvenAfterNudge()
     {
         DefineAgent(Agent("explorer", new[] { "read_file" }));
         var runner = BuildRunner(new StubTool("read_file"));
         _llm.EnqueueText("I am not sure what you mean.");
+        _llm.EnqueueText("I am still not sure."); // ignores the one-shot nudge
 
         var result = await runner.RunAsync("explorer", "find X", ParentContext(), CancellationToken.None);
 
         Assert.That(result.IsError, Is.True);
         Assert.That(result.Content, Does.Contain("did not return a result"));
-        Assert.That(result.Content, Does.Contain("I am not sure"));
+        Assert.That(result.Content, Does.Contain("still not sure"));
+        Assert.That(_llm.Calls, Has.Count.EqualTo(2)); // nudged exactly once, then gave up
+    }
+
+    [Test]
+    public async Task NudgesOnce_WhenSubagentAnswersInProse_ThenDelivers()
+    {
+        DefineAgent(Agent("explorer", new[] { "read_file" }));
+        var runner = BuildRunner(new StubTool("read_file"));
+        _llm.EnqueueText("NO MATCH"); // first turn: answered, but forgot to call subagent_result
+        _llm.EnqueueToolCall("c1", "subagent_result", """{"status":"success","result":"NO MATCH"}"""); // after nudge
+
+        var result = await runner.RunAsync("explorer", "check it", ParentContext(), CancellationToken.None);
+
+        Assert.That(result.IsError, Is.False);
+        Assert.That(result.Content, Is.EqualTo("NO MATCH"));
+        Assert.That(_llm.Calls, Has.Count.EqualTo(2)); // initial turn + one nudge that recovered
     }
 
     [Test]
@@ -99,7 +158,7 @@ public class SubagentRunnerTests
         var runner = BuildRunner(probe);
 
         _llm.EnqueueToolCall("c1", "probe", "{}");
-        _llm.EnqueueToolCall("c2", "subagent_result", """{"result":"done"}""");
+        _llm.EnqueueToolCall("c2", "subagent_result", """{"status":"success","result":"done"}""");
 
         var result = await runner.RunAsync("explorer", "probe it", ParentContext(), CancellationToken.None);
 
@@ -115,7 +174,7 @@ public class SubagentRunnerTests
         var runner = BuildRunner(probe);
 
         _llm.EnqueueToolCall("c1", "probe", "{}");
-        _llm.EnqueueToolCall("c2", "subagent_result", """{"result":"done"}""");
+        _llm.EnqueueToolCall("c2", "subagent_result", """{"status":"success","result":"done"}""");
 
         await runner.RunAsync("explorer", "probe it", ParentContext(restrict: true), CancellationToken.None);
 

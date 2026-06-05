@@ -40,6 +40,13 @@ public sealed class SubagentSessionRegistry : ISubagentObserver
         lock (_gate) return _byCallId.GetValueOrDefault(callId);
     }
 
+    /// <summary>The child runs of a given loop, oldest first — lets the UI group a batch
+    /// <c>loop</c>'s items under one parent.</summary>
+    public IReadOnlyList<SubagentLiveSession> ByLoopId(string loopRunId)
+    {
+        lock (_gate) return _sessions.Where(s => s.LoopRunId == loopRunId).ToArray();
+    }
+
     /// <summary>How many of a chat session's runs are still in progress (drives the toolbar badge).</summary>
     public int RunningCountFor(string ownerId)
     {

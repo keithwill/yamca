@@ -49,7 +49,11 @@ public sealed class SubagentRunTool : ITool
                 "well-scoped, context-heavy subtasks (codebase exploration, search, review, research): the " +
                 "subagent's intermediate steps and tool output stay in its own session, so delegating keeps " +
                 "this conversation's context small. Pass the subagent's 'agent' name and a complete, " +
-                "self-contained 'prompt' — the subagent cannot see this conversation.");
+                "self-contained 'prompt' — the subagent cannot see this conversation. The subagent reports " +
+                "a status of success, failure, or needs_followup, but only your 'prompt' defines what those " +
+                "mean for this task: state the success and failure criteria explicitly, and treat the " +
+                "expected, nominal outcome as success (e.g. a search that finds no match is a successful " +
+                "search, not a failure). Without this, runs judge the status inconsistently.");
 
             var agents = Agents;
             if (agents.Count > 0)
@@ -100,7 +104,9 @@ public sealed class SubagentRunTool : ITool
                         ["type"] = "string",
                         ["description"] =
                             "Complete, self-contained task or question for the subagent. Include every " +
-                            "detail it needs — it cannot see this conversation, your files, or prior context.",
+                            "detail it needs — it cannot see this conversation, your files, or prior context. " +
+                            "Define what counts as success vs failure, making the expected/nominal outcome the " +
+                            "success case where possible.",
                     },
                 },
                 ["required"] = new JsonArray("agent", "prompt"),

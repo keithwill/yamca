@@ -92,5 +92,8 @@ public class SubagentRunToolTests
 
         public Task<ToolResult> RunAsync(string agentName, string prompt, ToolContext parentContext, CancellationToken cancellationToken) =>
             Task.FromResult(ToolResult.Ok(""));
+
+        public Task<SubagentOutcome> RunCoreAsync(string agentName, string prompt, ToolContext parentContext, string? loopRunId, CancellationToken cancellationToken) =>
+            Task.FromResult(new SubagentOutcome(true, SubagentStatus.Success, "", false, null));
     }
 }

@@ -16,10 +16,21 @@ public interface ISubagentRunner
     /// <summary>Look up <paramref name="agentName"/>, run it headless against
     /// <paramref name="parentContext"/>'s workspace with <paramref name="prompt"/>, and return
     /// either the result the subagent delivered via <c>subagent_result</c> or an error
-    /// describing why it produced none.</summary>
+    /// describing why it produced none. Thin wrapper over <see cref="RunCoreAsync"/> that maps
+    /// the structured outcome to a <see cref="ToolResult"/> for the single-delegation case.</summary>
     Task<ToolResult> RunAsync(
         string agentName,
         string prompt,
         ToolContext parentContext,
+        CancellationToken cancellationToken);
+
+    /// <summary>The core run, returning the structured <see cref="SubagentOutcome"/> consumed by
+    /// the batch engine. <paramref name="loopRunId"/> groups this run under a parent loop in the
+    /// observability pipeline (null for a standalone <c>subagent_run</c>).</summary>
+    Task<SubagentOutcome> RunCoreAsync(
+        string agentName,
+        string prompt,
+        ToolContext parentContext,
+        string? loopRunId,
         CancellationToken cancellationToken);
 }
