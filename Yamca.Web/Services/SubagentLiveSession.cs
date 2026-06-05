@@ -1,3 +1,4 @@
+using Yamca.Agent.Chat;
 using Yamca.Agent.Subagents;
 
 namespace Yamca.Web.Services;
@@ -52,6 +53,11 @@ public sealed class SubagentLiveSession
     /// <summary>The subagent's streamed reasoning, tool calls, and assistant text, built up
     /// from the run's event stream.</summary>
     public ChatTurn Turn { get; }
+
+    /// <summary>Snapshot of the exact request this run would send to its endpoint, for the "view
+    /// raw context" diagnostic. Set at launch (system message + tools) and refreshed with the full
+    /// context on completion. Null until the runner publishes the first snapshot.</summary>
+    public ChatRequestPreview? Context { get; internal set; }
 
     /// <summary>How long the run took, once it has completed.</summary>
     public TimeSpan? Duration => CompletedAt is { } end ? end - StartedAt : null;

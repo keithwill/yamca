@@ -38,6 +38,12 @@ public interface ISubagentObserver
     /// tool call started/result, etc.).</summary>
     void OnEvent(string runId, ChatStreamEvent ev);
 
+    /// <summary>A snapshot of the exact request the subagent would send (system message, tools,
+    /// messages, raw JSON), for the "view raw context" diagnostic. Sent once at launch (so a
+    /// running subagent can show at least its system prompt and tools) and refreshed once on
+    /// completion with the full final context. Hosts that don't surface it can ignore it.</summary>
+    void OnContext(string runId, ChatRequestPreview context);
+
     /// <summary>The run has finished — with a delivered result, a failure, or cancellation.
     /// Guaranteed to fire exactly once per <see cref="OnStarted"/>.</summary>
     void OnCompleted(string runId, bool isError, string result);
@@ -51,5 +57,6 @@ public sealed class NoopSubagentObserver : ISubagentObserver
 
     public void OnStarted(SubagentRunInfo info) { }
     public void OnEvent(string runId, ChatStreamEvent ev) { }
+    public void OnContext(string runId, ChatRequestPreview context) { }
     public void OnCompleted(string runId, bool isError, string result) { }
 }

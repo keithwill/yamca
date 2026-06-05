@@ -1,3 +1,4 @@
+@using Yamca.Agent.Chat
 @using Yamca.Web.Services
 
 <div class="yamca-subagent-transcript">
@@ -21,10 +22,23 @@
                 break;
         }
         <span class="yamca-subagent-spacer"></span>
+        <MudTooltip Text="View raw context — exact request sent to this subagent's endpoint">
+            <span>
+                <MudIconButton Icon="@Icons.Material.Filled.DataObject"
+                               Color="Color.Default" Variant="Variant.Text" Size="Size.Small"
+                               Disabled="@(Session.Context is null)"
+                               OnClick="@(() => _ctxOpen = true)"
+                               aria-label="View raw context" />
+            </span>
+        </MudTooltip>
         <span class="yamca-subagent-time" title="@Session.StartedAt.LocalDateTime.ToString("F")">
             @Session.StartedAt.LocalDateTime.ToString("HH:mm:ss")@(Session.Duration is { } d ? $" · {Format(d)}" : "")
         </span>
     </div>
+
+    <RawContextDialog @bind-Visible="_ctxOpen" Preview="Session.Context"
+                      Title="Subagent context"
+                      EmptyMessage="No context captured yet for this run." />
 
     <div class="yamca-subagent-body">
         <ChatTurnView Turn="Session.Turn" OnContinue="NoOp" />
@@ -69,6 +83,8 @@
 
 @code {
     [Parameter, EditorRequired] public SubagentLiveSession Session { get; set; } = default!;
+
+    private bool _ctxOpen;
 
     private static readonly EventCallback NoOp = EventCallback.Empty;
 

@@ -291,56 +291,7 @@
         </DialogActions>
     </MudDialog>
 
-    <MudDialog @bind-Visible="_ctxDialogOpen"
-               Options="@(new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true })">
-        <TitleContent>
-            <div class="d-flex align-center" style="gap: 6px; width: 100%;">
-                <MudIcon Icon="@Icons.Material.Filled.DataObject" Size="Size.Small" />
-                <MudText Typo="Typo.h6">Raw context</MudText>
-                @if (_ctxPreview is not null)
-                {
-                    <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
-                        @_ctxPreview.Messages.Count @(_ctxPreview.Messages.Count == 1 ? "message" : "messages"),
-                        @_ctxPreview.Tools.Count @(_ctxPreview.Tools.Count == 1 ? "tool" : "tools")
-                    </MudText>
-                }
-                <MudSwitch T="bool" @bind-Value="_ctxShowLabels" Class="ml-auto mr-2"
-                           Size="Size.Small" Color="Color.Primary" Label="Labels"
-                           Disabled="@(_ctxPreview is null || _ctxRawView)" />
-                <MudToggleGroup T="bool" @bind-Value="_ctxRawView"
-                                Size="Size.Small" Color="Color.Primary" CheckMark="false"
-                                Disabled="@(_ctxPreview is null)">
-                    <MudToggleItem Value="false" Text="Structured" />
-                    <MudToggleItem Value="true" Text="Raw JSON" />
-                </MudToggleGroup>
-                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small"
-                               OnClick="CopyContext"
-                               Disabled="@(_ctxPreview is null)" aria-label="Copy context" />
-                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
-                               OnClick="@(() => _ctxDialogOpen = false)" aria-label="Close" />
-            </div>
-        </TitleContent>
-        <DialogContent>
-            <MudText Typo="Typo.caption" Class="mb-2" Style="color:var(--mud-palette-text-secondary)">
-                The exact request that would be sent to the endpoint on the next turn. In the
-                structured view, <em>Labels</em> annotates the parts with their yamca concepts (the
-                <code>system</code> message's component sections, the tools list) — these are never
-                sent to the model; turn it off to see just the message stream the model receives.
-                In-memory snapshot — taken when this dialog was opened.
-            </MudText>
-            @if (_ctxPreview is null)
-            {
-                <MudText Typo="Typo.body2">No session yet — send a message to populate the context.</MudText>
-            }
-            else
-            {
-                <pre style="white-space: pre-wrap; word-break: break-word; font-family: var(--mud-typography-body2-family); font-size: 0.8rem; margin: 0; max-height: 60vh; overflow: auto;">@(_ctxRawView ? FormatRaw(_ctxPreview) : FormatStructured(_ctxPreview, _ctxShowLabels))</pre>
-            }
-        </DialogContent>
-        <DialogActions>
-            <MudButton OnClick="@(() => _ctxDialogOpen = false)">Close</MudButton>
-        </DialogActions>
-    </MudDialog>
+    <RawContextDialog @bind-Visible="_ctxDialogOpen" Preview="_ctxPreview" />
 
     <div class="yamca-scroll" @ref="_scrollContainer">
         <MudContainer MaxWidth="MaxWidth.Large" Class="pa-2">
@@ -412,8 +363,6 @@
     private bool _diagDialogOpen;
     private IReadOnlyList<DiagnosticEntry> _diagEntries = Array.Empty<DiagnosticEntry>();
     private bool _ctxDialogOpen;
-    private bool _ctxRawView;
-    private bool _ctxShowLabels = true;
     private ChatRequestPreview? _ctxPreview;
 
     // Worktree change badge: refreshed on bind and whenever an agent turn finishes (which is when
@@ -919,109 +868,6 @@
     {
         _ctxPreview = Chat.GetContextPreview();
         _ctxDialogOpen = true;
-    }
-
-    private async Task CopyContext()
-    {
-        if (_ctxPreview is null) return;
-        var text = _ctxRawView ? FormatRaw(_ctxPreview) : FormatStructured(_ctxPreview, _ctxShowLabels);
-        await SafeInvokeAsync("yamcaChat.copyText", text);
-        Snackbar.Add("Context copied to clipboard.", Severity.Normal);
-    }
-
-    private static string FormatRaw(ChatRequestPreview p) =>
-        p.RawJson ?? "(raw JSON unavailable for this endpoint client)";
-
-    // Section markers used when ChatSession concatenates the system message (ChatSession.cs):
-    // the base prompt, then "\n\nCurrent workspace: ...", then each instruction file
-    // ("# Instructions from ..."), and a compaction summary under "[Summary of earlier conversation]:".
-    private const string WorkspaceMarker = "Current workspace: ";
-    private const string SummaryMarker = "[Summary of earlier conversation]:";
-
-    // showLabels: when true, annotate the stream with yamca concepts — the system message's
-    // component sections and the tools list (neither is sent to the model as labels). When false,
-    // render just the role-tagged message stream the model logically receives.
-    private static string FormatStructured(ChatRequestPreview p, bool showLabels)
-    {
-        var sb = new StringBuilder();
-        for (var i = 0; i < p.Messages.Count; i++)
-        {
-            var m = p.Messages[i];
-            var header = m.Role switch
-            {
-                ChatRole.System => "SYSTEM (role: system)",
-                ChatRole.User => "USER",
-                ChatRole.Assistant => "ASSISTANT",
-                ChatRole.Tool => $"TOOL (tool_call_id: {m.ToolCallId})",
-                _ => m.Role.ToString().ToUpperInvariant(),
-            };
-            AppendDivider(sb, header);
-
-            if (m.Role == ChatRole.System && showLabels)
-                AppendSystemSections(sb, m.Content, p.SystemPromptBase);
-            else if (!string.IsNullOrEmpty(m.Content))
-                sb.AppendLine(m.Content);
-
-            if (m.ToolCalls is { Count: > 0 })
-            {
-                foreach (var tc in m.ToolCalls)
-                    sb.Append("  (tool call: ").Append(tc.Name).Append(' ').AppendLine(tc.ArgumentsJson);
-            }
-            if (showLabels && m.Images is { Count: > 0 })
-                sb.Append("  [").Append(m.Images.Count).AppendLine(m.Images.Count == 1 ? " image attached]" : " images attached]");
-
-            sb.AppendLine();
-        }
-
-        // The tools array is genuinely part of the request the model receives (sent alongside the
-        // messages), so it shows in both modes — it is not a yamca-only annotation.
-        AppendDivider(sb, $"TOOLS ({p.Tools.Count})");
-        foreach (var t in p.Tools)
-            sb.Append("  • ").Append(t.Name).Append(" — ").AppendLine(t.Description);
-
-        return sb.ToString();
-    }
-
-    private static void AppendDivider(StringBuilder sb, string label)
-    {
-        sb.Append("── ").Append(label).Append(' ');
-        var pad = 60 - label.Length;
-        if (pad > 0) sb.Append('─', pad);
-        sb.AppendLine();
-    }
-
-    // Split the single concatenated system message back into labeled sections. The base prompt is
-    // stripped using the known prefix (ChatSession.SystemPrompt); the remainder is split on blank
-    // lines and recognizable blocks are labeled. On a restored session SystemPromptBase equals the
-    // whole content, so this degrades to one "Base system prompt" block.
-    private static void AppendSystemSections(StringBuilder sb, string content, string basePrompt)
-    {
-        var rest = content;
-        if (!string.IsNullOrEmpty(basePrompt) && content.StartsWith(basePrompt, StringComparison.Ordinal))
-        {
-            sb.AppendLine("  ▸ Base system prompt");
-            sb.AppendLine(basePrompt);
-            rest = content[basePrompt.Length..];
-        }
-
-        foreach (var raw in rest.Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
-        {
-            var block = raw.Trim('\n');
-            if (block.Length == 0) continue;
-
-            string label;
-            if (block.StartsWith(WorkspaceMarker, StringComparison.Ordinal))
-                label = "Workspace";
-            else if (block.StartsWith("# Instructions from", StringComparison.Ordinal))
-                label = "Instruction file";
-            else if (block.StartsWith(SummaryMarker, StringComparison.Ordinal))
-                label = "Compaction summary";
-            else
-                label = "Additional system content";
-
-            sb.Append("  ▸ ").AppendLine(label);
-            sb.AppendLine(block);
-        }
     }
 
     private async Task ConfirmCompactNow()

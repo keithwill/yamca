@@ -152,6 +152,11 @@ public sealed class SubagentRunner : ISubagentRunner
         _observer.OnStarted(new SubagentRunInfo(
             runId, parentContext.CallId, parentContext.OwnerId, def.Name, prompt, DateTimeOffset.Now, loopRunId));
 
+        // Initial context snapshot: at this point the session holds only the system message and the
+        // (fixed) tool set, so a running subagent can already show its system prompt and tools. It
+        // is refreshed with the full message log on completion below.
+        PublishContext(runId, loop);
+
         var outcome = Mechanical(FailureMessage(def.Name, null, ""));
         try
         {
@@ -201,7 +206,24 @@ public sealed class SubagentRunner : ISubagentRunner
         }
         finally
         {
+            // Refresh with the full final context (the run has stopped, so the session is no longer
+            // being mutated and is safe to read off this thread).
+            PublishContext(runId, loop);
             _observer.OnCompleted(runId, outcome.IsFailure, outcome.Summary);
+        }
+    }
+
+    // Snapshot the loop's next-request context for the observer. Best-effort: a serialization or
+    // tool-schema hiccup must never derail the run or the completion callback.
+    private void PublishContext(string runId, AgentLoop loop)
+    {
+        try
+        {
+            _observer.OnContext(runId, loop.BuildRequestPreview());
+        }
+        catch
+        {
+            // Diagnostic-only; ignore.
         }
     }
 

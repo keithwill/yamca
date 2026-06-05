@@ -112,6 +112,16 @@ public sealed class SubagentSessionRegistry : ISubagentObserver
         Changed?.Invoke();
     }
 
+    public void OnContext(string runId, ChatRequestPreview context)
+    {
+        SubagentLiveSession? session;
+        lock (_gate) session = _byRunId.GetValueOrDefault(runId);
+        if (session is null) return;
+
+        session.Context = context;   // scalar reference write; mirrors the OnCompleted pattern
+        Changed?.Invoke();
+    }
+
     public void OnCompleted(string runId, bool isError, string result)
     {
         SubagentLiveSession? session;
