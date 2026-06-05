@@ -39,15 +39,18 @@ public sealed class ExecuteScriptTool : ITool
 
     public string Description =>
         "Run a script by workspace-relative path. Interpreter is resolved automatically " +
-        "(PowerShell, sh, Python, Node, tsx/ts-node).";
+        "(PowerShell, sh, Python, Node, tsx/ts-node). To run a registered inline script " +
+        "(a bare command listed at session start, e.g. 'npm install'), pass its exact " +
+        "command line as script_path; inline scripts ignore 'arguments'.";
 
     public string ParametersSchema => """
     {
       "type": "object",
       "properties": {
-        "script_path":     { "type": "string", "description": "Workspace-relative path to a script (.ps1, .sh, .py, .js, .mjs, .ts)." },
-        "arguments":       { "type": "array", "items": { "type": "string" }, "description": "Arguments passed as argv." },
-        "timeout_seconds": { "type": "integer", "description": "Timeout in seconds. Default 60.", "minimum": 1, "maximum": 600 }
+        "script_path":      { "type": "string", "description": "Workspace-relative path to a script (.ps1, .sh, .py, .js, .mjs, .ts), or the exact command line of a registered inline script." },
+        "arguments":        { "type": "array", "items": { "type": "string" }, "description": "Arguments passed as argv. Ignored for inline scripts." },
+        "timeout_seconds":  { "type": "integer", "description": "Timeout in seconds. Default 60.", "minimum": 1, "maximum": 600 },
+        "max_output_lines": { "type": "integer", "description": "Keep only the last N lines of stdout and stderr. Useful for noisy build/test commands. Default: unrestricted.", "minimum": 1, "maximum": 10000 }
       },
       "required": ["script_path"],
       "additionalProperties": false
@@ -90,18 +93,35 @@ public sealed class ExecuteScriptTool : ITool
                   .AppendLine();
         }
 
+        var inline = _registry.AllInline().ToList();
+        if (inline.Count > 0)
+        {
+            sb.AppendLine("Registered Inline Scripts (pass the command verbatim as script_path):");
+            foreach (var (cmd, _) in inline)
+                sb.Append("  ").Append(cmd.Command)
+                  .Append(string.IsNullOrWhiteSpace(cmd.Description) ? "" : "  — " + cmd.Description)
+                  .AppendLine();
+        }
+
         return sb.ToString();
     }
 
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
-        if (!ScriptToolArgs.TryParse(arguments, out var scriptPath, out var args, out var timeoutSeconds, out var error))
+        if (!ScriptToolArgs.TryParse(arguments, out var scriptPath, out var args, out var timeoutSeconds, out var maxOutputLines, out var error))
             return ToolResult.Error(error);
 
-        if (!ToolArguments.TryResolvePath(context, scriptPath, out var resolved, out var pathError))
+        // Inline scripts have no backing file: match the literal command line against the
+        // registry first. A match always runs under the registered-script permission.
+        var isInline = _registry.TryGetInline(scriptPath, out var inlineEntry);
+
+        string resolved = string.Empty;
+        if (!isInline && !ToolArguments.TryResolvePath(context, scriptPath, out resolved, out var pathError))
             return ToolResult.Error(pathError);
 
-        var isRegistered = _registry.IsRegistered(resolved, context.Workspace);
+        var suppressOutputOnSuccess = isInline && inlineEntry.SuppressOutputOnSuccess;
+        var isRegistered = isInline
+            || _registry.IsRegistered(resolved, context.Workspace, out suppressOutputOnSuccess);
         var effectiveName = isRegistered ? "execute_registered_script" : "execute_discovered_script";
 
         var permissions = _services.GetRequiredService<IPermissionResolver>();
@@ -118,6 +138,8 @@ public sealed class ExecuteScriptTool : ITool
         if (level == PermissionLevel.Deny)
             return ToolResult.Error($"Permission denied for '{effectiveName}'.");
 
-        return await _runner.RunAsync(resolved, args, timeoutSeconds, context, cancellationToken).ConfigureAwait(false);
+        return isInline
+            ? await _runner.RunInlineAsync(inlineEntry.Command, timeoutSeconds, maxOutputLines, context, cancellationToken, suppressOutputOnSuccess).ConfigureAwait(false)
+            : await _runner.RunAsync(resolved, args, timeoutSeconds, maxOutputLines, context, cancellationToken, suppressOutputOnSuccess).ConfigureAwait(false);
     }
 }

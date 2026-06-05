@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Yamca.Agent.Tools.ScriptExecution;
 
 namespace Yamca.Agent.Tools.ShellExecution;
@@ -57,5 +58,49 @@ public sealed class ShellResolver
             return new ResolvedShell("Bash", bash, ShellKind.Bash);
 
         return new ResolvedShell("POSIX sh", "/bin/sh", ShellKind.Sh);
+    }
+
+    /// <summary>Builds a <see cref="ProcessStartInfo"/> that runs <paramref name="command"/>
+    /// verbatim through the resolved host shell. Single source of truth for how a command
+    /// line maps to shell arguments per <see cref="ShellKind"/>; shared by
+    /// <c>ExecuteCommandTool</c> and the inline-script path.</summary>
+    public ProcessStartInfo BuildCommandStartInfo(string command, string workingDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        var shell = Resolve();
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = shell.ExecutablePath,
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        switch (shell.Kind)
+        {
+            case ShellKind.Pwsh:
+            case ShellKind.WindowsPowerShell:
+                psi.ArgumentList.Add("-NoLogo");
+                psi.ArgumentList.Add("-NoProfile");
+                psi.ArgumentList.Add("-NonInteractive");
+                psi.ArgumentList.Add("-Command");
+                psi.ArgumentList.Add(command);
+                break;
+            case ShellKind.Cmd:
+                psi.ArgumentList.Add("/c");
+                psi.ArgumentList.Add(command);
+                break;
+            case ShellKind.Bash:
+            case ShellKind.Sh:
+            default:
+                psi.ArgumentList.Add("-c");
+                psi.ArgumentList.Add(command);
+                break;
+        }
+
+        return psi;
     }
 }

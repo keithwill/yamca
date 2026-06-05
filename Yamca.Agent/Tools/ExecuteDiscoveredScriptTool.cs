@@ -51,7 +51,7 @@ public sealed class ExecuteDiscoveredScriptTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
-        if (!ScriptToolArgs.TryParse(arguments, out var scriptPath, out var args, out var timeoutSeconds, out var error))
+        if (!ScriptToolArgs.TryParse(arguments, out var scriptPath, out var args, out var timeoutSeconds, out var maxOutputLines, out var error))
             return ToolResult.Error(error);
 
         if (!ToolArguments.TryResolvePath(context, scriptPath, out var resolved, out var pathError))
@@ -63,6 +63,6 @@ public sealed class ExecuteDiscoveredScriptTool : ITool
                 $"Script '{scriptPath}' is already registered. Call execute_registered_script instead.");
         }
 
-        return await _runner.RunAsync(resolved, args, timeoutSeconds, context, cancellationToken).ConfigureAwait(false);
+        return await _runner.RunAsync(resolved, args, timeoutSeconds, maxOutputLines, context, cancellationToken).ConfigureAwait(false);
     }
 }

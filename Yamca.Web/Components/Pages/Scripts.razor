@@ -35,7 +35,7 @@ else
         @{ var fileRows = CurrentScriptFileRows; }
         @if (fileRows.Count == 0)
         {
-            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)" Class="mb-1">No registered script files.</MudText>
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled); display:block;" Class="mb-1">No registered script files.</MudText>
         }
         else
         {
@@ -44,13 +44,13 @@ else
                 {
                     <div @key="row.Id" class="d-flex align-center mb-1" style="gap: 4px;">
                         <MudTextField T="string" Value="@row.Path"
-                                      ValueChanged="@((string v) => OnScriptPathChanged(row, v, isDirectory: false))"
+                                      ValueChanged="@((string v) => OnScriptValueChanged(row, v, ScriptKind.File))"
                                       DebounceInterval="400"
                                       Variant="Variant.Outlined" Margin="Margin.Dense"
                                       Class="flex-grow-1"
                                       Placeholder="build.ps1" />
                         <MudTextField T="string" Value="@(row.Description ?? string.Empty)"
-                                      ValueChanged="@((string v) => OnScriptDescriptionChanged(row, v, isDirectory: false))"
+                                      ValueChanged="@((string v) => OnScriptDescriptionChanged(row, v))"
                                       DebounceInterval="400"
                                       Variant="Variant.Outlined" Margin="Margin.Dense"
                                       Class="flex-grow-1"
@@ -61,15 +61,21 @@ else
                                 <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Warning" />
                             </MudTooltip>
                         }
+                        <MudTooltip Text="No output on success: on a successful (exit 0) run, return only the status to the LLM — withhold stdout/stderr to save context. Failures still return full output.">
+                            <MudCheckBox T="bool" Value="@row.SuppressOutputOnSuccess"
+                                         ValueChanged="@((bool v) => OnSuppressOutputChanged(row, v))"
+                                         Label="Hide Success"
+                                         Dense="true" Size="Size.Small" />
+                        </MudTooltip>
                         <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                       OnClick="@(() => RemoveScriptRow(row, isDirectory: false))"
+                                       OnClick="@(() => RemoveScriptRow(row, ScriptKind.File))"
                                        aria-label="Remove" />
                     </div>
                 }
             </div>
         }
         <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
-                   OnClick="@(() => AddScriptRow(isDirectory: false))">
+                   OnClick="@(() => AddScriptRow(ScriptKind.File))">
             Add file
         </MudButton>
 
@@ -77,7 +83,7 @@ else
         @{ var dirRows = CurrentScriptDirectoryRows; }
         @if (dirRows.Count == 0)
         {
-            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)" Class="mb-1">No registered script directories.</MudText>
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled); display:block;" Class="mb-1">No registered script directories.</MudText>
         }
         else
         {
@@ -86,13 +92,13 @@ else
                 {
                     <div @key="row.Id" class="d-flex align-center mb-1" style="gap: 4px;">
                         <MudTextField T="string" Value="@row.Path"
-                                      ValueChanged="@((string v) => OnScriptPathChanged(row, v, isDirectory: true))"
+                                      ValueChanged="@((string v) => OnScriptValueChanged(row, v, ScriptKind.Directory))"
                                       DebounceInterval="400"
                                       Variant="Variant.Outlined" Margin="Margin.Dense"
                                       Class="flex-grow-1"
                                       Placeholder=".scripts" />
                         <MudTextField T="string" Value="@(row.Description ?? string.Empty)"
-                                      ValueChanged="@((string v) => OnScriptDescriptionChanged(row, v, isDirectory: true))"
+                                      ValueChanged="@((string v) => OnScriptDescriptionChanged(row, v))"
                                       DebounceInterval="400"
                                       Variant="Variant.Outlined" Margin="Margin.Dense"
                                       Class="flex-grow-1"
@@ -103,16 +109,68 @@ else
                                 <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Warning" />
                             </MudTooltip>
                         }
+                        <MudTooltip Text="No output on success: applies to every file run via this directory. On a successful (exit 0) run, return only the status to the LLM. Failures still return full output.">
+                            <MudCheckBox T="bool" Value="@row.SuppressOutputOnSuccess"
+                                         ValueChanged="@((bool v) => OnSuppressOutputChanged(row, v))"
+                                         Label="Hide Success"
+                                         Dense="true" Size="Size.Small" />
+                        </MudTooltip>
                         <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                       OnClick="@(() => RemoveScriptRow(row, isDirectory: true))"
+                                       OnClick="@(() => RemoveScriptRow(row, ScriptKind.Directory))"
                                        aria-label="Remove" />
                     </div>
                 }
             </div>
         }
         <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.CreateNewFolder"
-                   OnClick="@(() => AddScriptRow(isDirectory: true))">
+                   OnClick="@(() => AddScriptRow(ScriptKind.Directory))">
             Add directory
+        </MudButton>
+
+        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Inline commands</MudText>
+        <MudText Typo="Typo.caption" Class="mb-1" Style="display:block;">
+            One-line CLI commands with no file in the repo (e.g. <code>npm install</code>, <code>dotnet build</code>).
+            The LLM runs them exactly as written via <code>execute_script</code> &mdash; no arguments are appended.
+        </MudText>
+        @{ var inlineRows = CurrentScriptInlineRows; }
+        @if (inlineRows.Count == 0)
+        {
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled); display:block;" Class="mb-1">No registered inline commands.</MudText>
+        }
+        else
+        {
+            <div class="mb-2">
+                @foreach (var row in inlineRows)
+                {
+                    <div @key="row.Id" class="d-flex align-center mb-1" style="gap: 4px;">
+                        <MudTextField T="string" Value="@row.Path"
+                                      ValueChanged="@((string v) => OnScriptValueChanged(row, v, ScriptKind.Inline))"
+                                      DebounceInterval="400"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Class="flex-grow-1"
+                                      Placeholder="npm install" />
+                        <MudTextField T="string" Value="@(row.Description ?? string.Empty)"
+                                      ValueChanged="@((string v) => OnScriptDescriptionChanged(row, v))"
+                                      DebounceInterval="400"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Class="flex-grow-1"
+                                      Placeholder="Description (optional)" />
+                        <MudTooltip Text="No output on success: on a successful (exit 0) run, return only the status to the LLM — withhold stdout/stderr to save context. Failures still return full output.">
+                            <MudCheckBox T="bool" Value="@row.SuppressOutputOnSuccess"
+                                         ValueChanged="@((bool v) => OnSuppressOutputChanged(row, v))"
+                                         Label="Hide Success"
+                                         Dense="true" Size="Size.Small" />
+                        </MudTooltip>
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       OnClick="@(() => RemoveScriptRow(row, ScriptKind.Inline))"
+                                       aria-label="Remove" />
+                    </div>
+                }
+            </div>
+        }
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Terminal"
+                   OnClick="@(() => AddScriptRow(ScriptKind.Inline))">
+            Add command
         </MudButton>
     </MudPaper>
 }
@@ -128,21 +186,34 @@ else
     private bool _hydrated;
     private int _scriptTierIndex = 1; // 0 = Project, 1 = User (User shown by default)
 
+    private enum ScriptKind { File, Directory, Inline }
+
     private sealed class ScriptRow
     {
         public Guid Id { get; } = Guid.NewGuid();
         public string Path { get; set; } = string.Empty;
         public string? Description { get; set; }
+        public bool SuppressOutputOnSuccess { get; set; }
     }
 
     private readonly List<ScriptRow> _projectScriptFiles = new();
     private readonly List<ScriptRow> _projectScriptDirs = new();
+    private readonly List<ScriptRow> _projectScriptInline = new();
     private readonly List<ScriptRow> _userScriptFiles = new();
     private readonly List<ScriptRow> _userScriptDirs = new();
+    private readonly List<ScriptRow> _userScriptInline = new();
 
     private List<ScriptRow> CurrentScriptFileRows => _scriptTierIndex == 0 ? _projectScriptFiles : _userScriptFiles;
     private List<ScriptRow> CurrentScriptDirectoryRows => _scriptTierIndex == 0 ? _projectScriptDirs : _userScriptDirs;
+    private List<ScriptRow> CurrentScriptInlineRows => _scriptTierIndex == 0 ? _projectScriptInline : _userScriptInline;
     private SettingsTier CurrentScriptTier => _scriptTierIndex == 0 ? SettingsTier.Project : SettingsTier.User;
+
+    private List<ScriptRow> RowsFor(ScriptKind kind) => kind switch
+    {
+        ScriptKind.File => CurrentScriptFileRows,
+        ScriptKind.Directory => CurrentScriptDirectoryRows,
+        _ => CurrentScriptInlineRows,
+    };
 
     protected override void OnInitialized()
     {
@@ -162,54 +233,78 @@ else
 
     private void SyncRowsFromSession()
     {
-        SyncScriptRows(Session.ProjectScripts, _projectScriptFiles, _projectScriptDirs);
-        SyncScriptRows(Session.UserScripts, _userScriptFiles, _userScriptDirs);
+        SyncScriptRows(Session.ProjectScripts, _projectScriptFiles, _projectScriptDirs, _projectScriptInline);
+        SyncScriptRows(Session.UserScripts, _userScriptFiles, _userScriptDirs, _userScriptInline);
     }
 
-    private static void SyncScriptRows(ScriptRegistry registry, List<ScriptRow> files, List<ScriptRow> dirs)
+    private static void SyncScriptRows(ScriptRegistry registry, List<ScriptRow> files, List<ScriptRow> dirs, List<ScriptRow> inline)
     {
         files.Clear();
         foreach (var e in registry.Registered)
-            files.Add(new ScriptRow { Path = e.Path, Description = e.Description });
+            files.Add(new ScriptRow { Path = e.Path, Description = e.Description, SuppressOutputOnSuccess = e.SuppressOutputOnSuccess });
         dirs.Clear();
         foreach (var d in registry.Directories)
-            dirs.Add(new ScriptRow { Path = d.Path, Description = d.Description });
+            dirs.Add(new ScriptRow { Path = d.Path, Description = d.Description, SuppressOutputOnSuccess = d.SuppressOutputOnSuccess });
+        inline.Clear();
+        foreach (var i in registry.Inline)
+            inline.Add(new ScriptRow { Path = i.Command, Description = i.Description, SuppressOutputOnSuccess = i.SuppressOutputOnSuccess });
     }
 
     private void PersistScripts()
     {
         var files = CurrentScriptFileRows
             .Where(r => !string.IsNullOrWhiteSpace(r.Path))
-            .Select(r => new RegisteredScript(NormalizeScriptPath(r.Path), NullIfBlank(r.Description)))
+            .Select(r => new RegisteredScript(NormalizeScriptPath(r.Path), NullIfBlank(r.Description), r.SuppressOutputOnSuccess))
             .ToList();
         var dirs = CurrentScriptDirectoryRows
             .Where(r => !string.IsNullOrWhiteSpace(r.Path))
-            .Select(r => new RegisteredScriptDirectory(NormalizeScriptPath(r.Path), NullIfBlank(r.Description)))
+            .Select(r => new RegisteredScriptDirectory(NormalizeScriptPath(r.Path), NullIfBlank(r.Description), r.SuppressOutputOnSuccess))
             .ToList();
-        Session.SetScripts(CurrentScriptTier, new ScriptRegistry(files, dirs));
+        var inline = CurrentScriptInlineRows
+            .Where(r => !string.IsNullOrWhiteSpace(r.Path))
+            .Select(r => new RegisteredInlineScript(r.Path.Trim(), NullIfBlank(r.Description), r.SuppressOutputOnSuccess))
+            .ToList();
+        Session.SetScripts(CurrentScriptTier, new ScriptRegistry(files, dirs, inline));
     }
 
-    private void AddScriptRow(bool isDirectory)
+    private void AddScriptRow(ScriptKind kind)
     {
-        (isDirectory ? CurrentScriptDirectoryRows : CurrentScriptFileRows).Add(new ScriptRow());
+        RowsFor(kind).Add(new ScriptRow());
     }
 
-    private void RemoveScriptRow(ScriptRow row, bool isDirectory)
+    private void RemoveScriptRow(ScriptRow row, ScriptKind kind)
     {
-        (isDirectory ? CurrentScriptDirectoryRows : CurrentScriptFileRows).Remove(row);
+        RowsFor(kind).Remove(row);
         PersistScripts();
     }
 
-    private void OnScriptPathChanged(ScriptRow row, string value, bool isDirectory)
+    private void OnScriptValueChanged(ScriptRow row, string value, ScriptKind kind)
     {
-        var normalized = NormalizeScriptPath(value ?? string.Empty);
-        if (Path.IsPathRooted(normalized)) normalized = string.Empty;
-        if (row.Path == normalized) return;
-        row.Path = normalized;
+        // Inline commands are stored verbatim; file/dir paths are normalized to forward
+        // slashes and may not be absolute.
+        string next;
+        if (kind == ScriptKind.Inline)
+        {
+            next = (value ?? string.Empty).Trim();
+        }
+        else
+        {
+            next = NormalizeScriptPath(value ?? string.Empty);
+            if (Path.IsPathRooted(next)) next = string.Empty;
+        }
+        if (row.Path == next) return;
+        row.Path = next;
         PersistScripts();
     }
 
-    private void OnScriptDescriptionChanged(ScriptRow row, string value, bool isDirectory)
+    private void OnSuppressOutputChanged(ScriptRow row, bool value)
+    {
+        if (row.SuppressOutputOnSuccess == value) return;
+        row.SuppressOutputOnSuccess = value;
+        PersistScripts();
+    }
+
+    private void OnScriptDescriptionChanged(ScriptRow row, string value)
     {
         var trimmed = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
         if (string.Equals(row.Description, trimmed, StringComparison.Ordinal)) return;

@@ -10,11 +10,13 @@ internal static class ScriptToolArgs
         out string scriptPath,
         out IReadOnlyList<string> args,
         out int timeoutSeconds,
+        out int? maxOutputLines,
         out string error)
     {
         scriptPath = string.Empty;
         args = Array.Empty<string>();
         timeoutSeconds = 60;
+        maxOutputLines = null;
         error = string.Empty;
 
         if (!ToolArguments.TryGetString(arguments, "script_path", out scriptPath, out error))
@@ -42,6 +44,9 @@ internal static class ScriptToolArgs
 
         if (arguments.TryGetProperty("timeout_seconds", out var tProp) && tProp.ValueKind == JsonValueKind.Number)
             timeoutSeconds = Math.Clamp(tProp.GetInt32(), 1, 600);
+
+        if (arguments.TryGetProperty("max_output_lines", out var mProp) && mProp.ValueKind == JsonValueKind.Number)
+            maxOutputLines = Math.Clamp(mProp.GetInt32(), 1, 10_000);
 
         return true;
     }

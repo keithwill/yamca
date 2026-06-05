@@ -195,7 +195,7 @@ public sealed class SessionSettings : ISessionSettings
             .Where(e => !string.Equals(e.Path, entry.Path, StringComparison.Ordinal))
             .Append(entry)
             .ToList();
-        SetScripts(tier, new ScriptRegistry(registered, current.Directories));
+        SetScripts(tier, new ScriptRegistry(registered, current.Directories, current.Inline));
     }
 
     public void SetSubagents(SettingsTier tier, SubagentRegistry registry)
@@ -688,12 +688,21 @@ public sealed class SessionSettings : ISessionSettings
     {
         public List<ScriptEntryDto>? Registered { get; set; }
         public List<ScriptEntryDto>? Directories { get; set; }
+        public List<InlineScriptDto>? Inline { get; set; }
     }
 
     private sealed class ScriptEntryDto
     {
         public string? Path { get; set; }
         public string? Description { get; set; }
+        public bool? SuppressOutputOnSuccess { get; set; }
+    }
+
+    private sealed class InlineScriptDto
+    {
+        public string? Command { get; set; }
+        public string? Description { get; set; }
+        public bool? SuppressOutputOnSuccess { get; set; }
     }
 
     private static ScriptRegistry ScriptsFromDto(ScriptsDto? dto)
@@ -702,28 +711,36 @@ public sealed class SessionSettings : ISessionSettings
 
         var files = (dto.Registered ?? new List<ScriptEntryDto>())
             .Where(e => !string.IsNullOrWhiteSpace(e.Path))
-            .Select(e => new RegisteredScript(NormalizePath(e.Path!), Trim(e.Description)))
+            .Select(e => new RegisteredScript(NormalizePath(e.Path!), Trim(e.Description), e.SuppressOutputOnSuccess ?? false))
             .ToList();
         var dirs = (dto.Directories ?? new List<ScriptEntryDto>())
             .Where(e => !string.IsNullOrWhiteSpace(e.Path))
-            .Select(e => new RegisteredScriptDirectory(NormalizePath(e.Path!), Trim(e.Description)))
+            .Select(e => new RegisteredScriptDirectory(NormalizePath(e.Path!), Trim(e.Description), e.SuppressOutputOnSuccess ?? false))
+            .ToList();
+        var inline = (dto.Inline ?? new List<InlineScriptDto>())
+            .Where(e => !string.IsNullOrWhiteSpace(e.Command))
+            .Select(e => new RegisteredInlineScript(e.Command!.Trim(), Trim(e.Description), e.SuppressOutputOnSuccess ?? false))
             .ToList();
 
-        if (files.Count == 0 && dirs.Count == 0) return ScriptRegistry.Empty;
-        return new ScriptRegistry(files, dirs);
+        if (files.Count == 0 && dirs.Count == 0 && inline.Count == 0) return ScriptRegistry.Empty;
+        return new ScriptRegistry(files, dirs, inline);
     }
 
     private static ScriptsDto? ScriptsToDto(ScriptRegistry registry)
     {
         if (registry.IsEmpty) return null;
+        // Emit the flag only when true (WhenWritingNull omits nulls), keeping JSON clean.
         return new ScriptsDto
         {
             Registered = registry.Registered.Count == 0
                 ? null
-                : registry.Registered.Select(e => new ScriptEntryDto { Path = e.Path, Description = e.Description }).ToList(),
+                : registry.Registered.Select(e => new ScriptEntryDto { Path = e.Path, Description = e.Description, SuppressOutputOnSuccess = e.SuppressOutputOnSuccess ? true : null }).ToList(),
             Directories = registry.Directories.Count == 0
                 ? null
-                : registry.Directories.Select(d => new ScriptEntryDto { Path = d.Path, Description = d.Description }).ToList(),
+                : registry.Directories.Select(d => new ScriptEntryDto { Path = d.Path, Description = d.Description, SuppressOutputOnSuccess = d.SuppressOutputOnSuccess ? true : null }).ToList(),
+            Inline = registry.Inline.Count == 0
+                ? null
+                : registry.Inline.Select(i => new InlineScriptDto { Command = i.Command, Description = i.Description, SuppressOutputOnSuccess = i.SuppressOutputOnSuccess ? true : null }).ToList(),
         };
     }
 

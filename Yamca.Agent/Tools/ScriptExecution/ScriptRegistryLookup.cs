@@ -23,10 +23,18 @@ public sealed class ScriptRegistryLookup
         _settings = settings;
     }
 
-    public bool IsRegistered(string resolvedScriptPath, IWorkspace workspace)
+    public bool IsRegistered(string resolvedScriptPath, IWorkspace workspace) =>
+        IsRegistered(resolvedScriptPath, workspace, out _);
+
+    /// <summary>As <see cref="IsRegistered(string, IWorkspace)"/>, but also reports the
+    /// matched entry's <c>SuppressOutputOnSuccess</c> flag. A direct file entry wins over a
+    /// containing directory entry; project tier is checked before user tier.</summary>
+    public bool IsRegistered(string resolvedScriptPath, IWorkspace workspace, out bool suppressOutputOnSuccess)
     {
         ArgumentException.ThrowIfNullOrEmpty(resolvedScriptPath);
         ArgumentNullException.ThrowIfNull(workspace);
+
+        suppressOutputOnSuccess = false;
 
         foreach (var tier in new[] { _settings.ProjectScripts, _settings.UserScripts })
         {
@@ -35,6 +43,7 @@ public sealed class ScriptRegistryLookup
                 if (TryResolveWithinWorkspace(workspace, entry.Path, out var entryResolved)
                     && string.Equals(entryResolved, resolvedScriptPath, PathComparison))
                 {
+                    suppressOutputOnSuccess = entry.SuppressOutputOnSuccess;
                     return true;
                 }
             }
@@ -44,6 +53,7 @@ public sealed class ScriptRegistryLookup
                 if (TryResolveWithinWorkspace(workspace, dir.Path, out var dirResolved)
                     && IsUnder(resolvedScriptPath, dirResolved))
                 {
+                    suppressOutputOnSuccess = dir.SuppressOutputOnSuccess;
                     return true;
                 }
             }
@@ -54,6 +64,36 @@ public sealed class ScriptRegistryLookup
 
     public bool IsEmpty =>
         _settings.ProjectScripts.IsEmpty && _settings.UserScripts.IsEmpty;
+
+    /// <summary>Looks up a registered inline script by exact command match. Inline commands
+    /// are literal command lines, so matching is case-sensitive on every platform (only the
+    /// surrounding whitespace is trimmed). Project tier wins over user tier.</summary>
+    public bool TryGetInline(string command, out RegisteredInlineScript entry)
+    {
+        entry = null!;
+        if (string.IsNullOrWhiteSpace(command)) return false;
+        var needle = command.Trim();
+
+        foreach (var tier in new[] { _settings.ProjectScripts, _settings.UserScripts })
+        {
+            foreach (var inline in tier.Inline)
+            {
+                if (string.Equals(inline.Command.Trim(), needle, StringComparison.Ordinal))
+                {
+                    entry = inline;
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    public IEnumerable<(RegisteredInlineScript Entry, SettingsTierTag Tier)> AllInline()
+    {
+        foreach (var i in _settings.ProjectScripts.Inline) yield return (i, SettingsTierTag.Project);
+        foreach (var i in _settings.UserScripts.Inline)  yield return (i, SettingsTierTag.User);
+    }
 
     public IEnumerable<(RegisteredScript Entry, SettingsTierTag Tier)> AllRegistered()
     {

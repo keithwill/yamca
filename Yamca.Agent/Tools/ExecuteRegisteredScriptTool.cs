@@ -51,19 +51,19 @@ public sealed class ExecuteRegisteredScriptTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
-        if (!ScriptToolArgs.TryParse(arguments, out var scriptPath, out var args, out var timeoutSeconds, out var error))
+        if (!ScriptToolArgs.TryParse(arguments, out var scriptPath, out var args, out var timeoutSeconds, out var maxOutputLines, out var error))
             return ToolResult.Error(error);
 
         if (!ToolArguments.TryResolvePath(context, scriptPath, out var resolved, out var pathError))
             return ToolResult.Error(pathError);
 
-        if (!_registry.IsRegistered(resolved, context.Workspace))
+        if (!_registry.IsRegistered(resolved, context.Workspace, out var suppressOutputOnSuccess))
         {
             return ToolResult.Error(
                 $"Script '{scriptPath}' is not in the registry. Use execute_discovered_script instead; " +
                 "the user can choose to register it during approval.");
         }
 
-        return await _runner.RunAsync(resolved, args, timeoutSeconds, context, cancellationToken).ConfigureAwait(false);
+        return await _runner.RunAsync(resolved, args, timeoutSeconds, maxOutputLines, context, cancellationToken, suppressOutputOnSuccess).ConfigureAwait(false);
     }
 }

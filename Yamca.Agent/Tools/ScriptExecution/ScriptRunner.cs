@@ -1,32 +1,36 @@
 using System.Diagnostics;
 using System.Text;
+using Yamca.Agent.Tools.ShellExecution;
 
 namespace Yamca.Agent.Tools.ScriptExecution;
 
 /// <summary>
-/// Shared execution helper for the two script tools. Dispatches by extension to the
-/// correct interpreter, runs the process with no shell in the loop, and returns a
-/// <see cref="ToolResult"/> whose Content matches <c>ExecuteCommandTool</c>'s shape.
+/// Shared execution helper for the script tools. For file scripts it dispatches by
+/// extension to the correct interpreter; for inline scripts it runs a literal command
+/// line through the host shell. Both return a <see cref="ToolResult"/> whose Content
+/// matches <c>ExecuteCommandTool</c>'s shape.
 /// </summary>
 public sealed class ScriptRunner
 {
-    // Cap captured output so a runaway script doesn't blow up the chat context.
-    private const int MaxStreamChars = 16_000;
-
     private readonly InterpreterResolver _interpreters;
+    private readonly ShellResolver _shells;
 
-    public ScriptRunner(InterpreterResolver interpreters)
+    public ScriptRunner(InterpreterResolver interpreters, ShellResolver shells)
     {
         ArgumentNullException.ThrowIfNull(interpreters);
+        ArgumentNullException.ThrowIfNull(shells);
         _interpreters = interpreters;
+        _shells = shells;
     }
 
     public async Task<ToolResult> RunAsync(
         string resolvedScriptPath,
         IReadOnlyList<string> userArguments,
         int timeoutSeconds,
+        int? maxOutputLines,
         ToolContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool suppressOutputOnSuccess = false)
     {
         ArgumentException.ThrowIfNullOrEmpty(resolvedScriptPath);
         ArgumentNullException.ThrowIfNull(userArguments);
@@ -52,51 +56,26 @@ public sealed class ScriptRunner
         if (dispatchResult.PassScriptPathArg) psi.ArgumentList.Add(resolvedScriptPath);
         foreach (var arg in userArguments) psi.ArgumentList.Add(arg);
 
-        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        return await ProcessRunner.RunAsync(psi, timeoutSeconds, maxOutputLines, "Script", cancellationToken, suppressOutputOnSuccess)
+            .ConfigureAwait(false);
+    }
 
-        var stdout = new StringBuilder();
-        var stderr = new StringBuilder();
-        process.OutputDataReceived += (_, e) => AppendCapped(stdout, e.Data);
-        process.ErrorDataReceived  += (_, e) => AppendCapped(stderr, e.Data);
+    /// <summary>Runs a registered inline script: a literal command line executed verbatim
+    /// through the host shell (no file, no appended arguments).</summary>
+    public async Task<ToolResult> RunInlineAsync(
+        string command,
+        int timeoutSeconds,
+        int? maxOutputLines,
+        ToolContext context,
+        CancellationToken cancellationToken,
+        bool suppressOutputOnSuccess = false)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(command);
+        ArgumentNullException.ThrowIfNull(context);
 
-        try
-        {
-            process.Start();
-        }
-        catch (Exception ex)
-        {
-            return ToolResult.Error($"Failed to start script: {ex.Message}");
-        }
-
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-
-        var clampedTimeout = Math.Clamp(timeoutSeconds, 1, 600);
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(clampedTimeout));
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-        try
-        {
-            await process.WaitForExitAsync(linkedCts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            TryKill(process);
-            var reason = timeoutCts.IsCancellationRequested ? $"timed out after {clampedTimeout}s" : "cancelled";
-            return ToolResult.Error($"Script {reason}.\nstdout:\n{stdout}\nstderr:\n{stderr}");
-        }
-
-        process.WaitForExit();
-
-        var summary = new StringBuilder();
-        summary.Append("exit_code: ").Append(process.ExitCode).Append('\n');
-        summary.Append("stdout:\n").Append(stdout.ToString());
-        if (stdout.Length == 0 || stdout[^1] != '\n') summary.Append('\n');
-        summary.Append("stderr:\n").Append(stderr.ToString());
-
-        return process.ExitCode == 0
-            ? ToolResult.Ok(summary.ToString())
-            : ToolResult.Error(summary.ToString());
+        var psi = _shells.BuildCommandStartInfo(command, context.Workspace.RootPath);
+        return await ProcessRunner.RunAsync(psi, timeoutSeconds, maxOutputLines, "Script", cancellationToken, suppressOutputOnSuccess)
+            .ConfigureAwait(false);
     }
 
     /// <summary>Produces a human-readable preview of what would be dispatched for a script.
@@ -203,29 +182,6 @@ public sealed class ScriptRunner
         {
             return false;
         }
-    }
-
-    private static void AppendCapped(StringBuilder sink, string? line)
-    {
-        if (line is null) return;
-        var remaining = MaxStreamChars - sink.Length;
-        if (remaining <= 0) return;
-
-        if (line.Length + 1 <= remaining)
-        {
-            sink.Append(line).Append('\n');
-        }
-        else
-        {
-            sink.Append(line, 0, Math.Min(line.Length, remaining));
-            sink.Append("\n…[truncated]\n");
-        }
-    }
-
-    private static void TryKill(Process process)
-    {
-        try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
-        catch { /* best-effort */ }
     }
 
     private readonly record struct Dispatch(string? FileName, IReadOnlyList<string> InterpreterArgs, bool PassScriptPathArg, string? Error = null)
