@@ -1,3 +1,4 @@
+using Yamca.Agent.Chat.Prompts;
 using Yamca.Agent.Workspace;
 
 namespace Yamca.Web.Services;
@@ -27,7 +28,7 @@ public sealed class InstructionFilesLoader
         {
             var content = TryRead(workspace, relative);
             if (content is null) continue;
-            messages.Add($"# Instructions from {relative}\n\n{content}");
+            messages.Add($"{SessionPrompts.InstructionFile.Marker}{relative}\n\n{content}");
         }
         return messages;
     }

@@ -1,5 +1,6 @@
 @using System.Text
 @using Yamca.Agent.Chat
+@using Yamca.Agent.Chat.Prompts
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar
 
@@ -86,12 +87,6 @@
     private static string FormatRaw(ChatRequestPreview p) =>
         p.RawJson ?? "(raw JSON unavailable for this endpoint client)";
 
-    // Section markers used when ChatSession concatenates the system message (ChatSession.cs):
-    // the base prompt, then "\n\nCurrent workspace: ...", then each instruction file
-    // ("# Instructions from ..."), and a compaction summary under "[Summary of earlier conversation]:".
-    private const string WorkspaceMarker = "Current workspace: ";
-    private const string SummaryMarker = "[Summary of earlier conversation]:";
-
     // showLabels: when true, annotate the stream with yamca concepts — the system message's
     // component sections. When false, render just the role-tagged message stream the model receives.
     private static string FormatStructured(ChatRequestPreview p, bool showLabels)
@@ -162,13 +157,15 @@
             var block = raw.Trim('\n');
             if (block.Length == 0) continue;
 
+            // Markers are owned by SessionPrompts so this reader and the ChatSession writer
+            // share one definition of each section's prefix and cannot drift.
             string label;
-            if (block.StartsWith(WorkspaceMarker, StringComparison.Ordinal))
-                label = "Workspace";
-            else if (block.StartsWith("# Instructions from", StringComparison.Ordinal))
-                label = "Instruction file";
-            else if (block.StartsWith(SummaryMarker, StringComparison.Ordinal))
-                label = "Compaction summary";
+            if (block.StartsWith(SessionPrompts.Workspace.Marker, StringComparison.Ordinal))
+                label = SessionPrompts.Workspace.Label;
+            else if (block.StartsWith(SessionPrompts.InstructionFile.Marker, StringComparison.Ordinal))
+                label = SessionPrompts.InstructionFile.Label;
+            else if (block.StartsWith(SessionPrompts.CompactionSummary.Marker, StringComparison.Ordinal))
+                label = SessionPrompts.CompactionSummary.Label;
             else
                 label = "Additional system content";
 

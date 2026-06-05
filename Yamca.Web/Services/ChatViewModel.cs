@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using Yamca.Agent.Chat;
 using Yamca.Agent.Chat.Persistence;
+using Yamca.Agent.Chat.Prompts;
 using Yamca.Agent.Git;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
@@ -505,8 +506,8 @@ public sealed class ChatViewModel : IDisposable
         {
             var prompt = _settings.SystemPrompt;
             var hint = _settings.MarkdownEnabled
-                ? "Your responses are rendered as GitHub-flavored Markdown — use fenced code blocks for code, and standard Markdown for emphasis, lists, and tables."
-                : "Your responses are rendered as plain text. Do NOT use Markdown formatting: no `backticks`, no **bold**/*italics*, no #headings, no fenced code blocks, no bullet/numbered lists. Write code and identifiers inline as plain text.";
+                ? SessionPrompts.MarkdownHint
+                : SessionPrompts.PlainTextHint;
             prompt = (string.IsNullOrWhiteSpace(prompt) ? "" : prompt + "\n\n") + hint;
             var instructions = _instructionLoader.Load(_settings, _workspace).ToList();
             foreach (var tool in _tools.Tools)

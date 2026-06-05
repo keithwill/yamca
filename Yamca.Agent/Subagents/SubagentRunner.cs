@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Yamca.Agent.Chat;
+using Yamca.Agent.Chat.Prompts;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
@@ -245,22 +246,13 @@ public sealed class SubagentRunner : ISubagentRunner
         IPermissionResolver permissions)
     {
         var baseInstructions = string.IsNullOrWhiteSpace(def.Instructions)
-            ? "You are a focused subagent that completes a single delegated task."
+            ? SubagentPrompts.DefaultInstructions
             : def.Instructions.Trim();
 
         // The fixed preamble leads, so it forms a stable prefix shared by every subagent run —
         // prefix-caching inference servers can reuse it regardless of which subagent (and which
-        // per-subagent instructions) follows. Keep this block byte-stable.
-        var systemPrompt =
-            "You are running headless as a subagent — there is no user to talk to. When you " +
-            "have finished, you MUST call the subagent_result tool exactly once with your complete " +
-            "answer and a status (success, failure, or needs_followup); that is the only output the " +
-            "caller receives, and the run is not complete until you call it. If the task tells you " +
-            "to \"reply\", \"answer\", \"output\", or \"print\" something, deliver that through " +
-            "subagent_result rather than writing it as a message — the result tool is the only " +
-            "channel the caller can read. Do not ask clarifying questions: make reasonable " +
-            "assumptions and proceed. Your responses are not rendered as Markdown.\n\n" +
-            baseInstructions;
+        // per-subagent instructions) follows. SubagentPrompts.HeadlessPreamble is byte-stable.
+        var systemPrompt = SubagentPrompts.HeadlessPreamble + "\n\n" + baseInstructions;
 
         // Let tools contribute their session-start state (e.g. the registered-scripts list), the
         // same way the parent chat builds its system message.

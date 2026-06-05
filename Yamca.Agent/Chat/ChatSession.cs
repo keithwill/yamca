@@ -1,4 +1,5 @@
 using System.Text;
+using Yamca.Agent.Chat.Prompts;
 using Yamca.Agent.Workspace;
 
 namespace Yamca.Agent.Chat;
@@ -59,7 +60,7 @@ public sealed class ChatSession
 
         var sb = new StringBuilder(systemPrompt);
         if (workspace is not null)
-            sb.Append("\n\nCurrent workspace: ").Append(workspace.RootPath);
+            sb.Append("\n\n").Append(SessionPrompts.Workspace.Marker).Append(workspace.RootPath);
 
         if (instructionMessages is not null)
         {
@@ -125,7 +126,9 @@ public sealed class ChatSession
         _estimatedChars += content.Length;
     }
 
-    private const string SummaryMarker = "\n\n[Summary of earlier conversation]: ";
+    // The compaction summary marker as written into the system message: the shared section
+    // marker, preceded by the blank-line separator every section uses.
+    private static readonly string SummaryMarker = "\n\n" + SessionPrompts.CompactionSummary.Marker;
 
     /// <summary>Replace messages in the range [1, <paramref name="keepFromMessageIndex"/>)
     /// with a model-generated summary appended to the system message. The system
