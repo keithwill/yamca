@@ -17,6 +17,22 @@ public sealed class SessionSettings : ISessionSettings
     private const string DefaultSystemPrompt =
         "You are a coding assistant.";
 
+    // Defaults and clamp ranges for the scalar user-tier settings. Hoisted here so the
+    // property initializers, the setters' clamps, ApplyBlob (hydrate/import), and
+    // ResetUserToDefaults all agree on one source of truth.
+    private const bool DefaultMarkdownEnabled = true;
+    private const ReasoningDisplay DefaultReasoningDisplay = ReasoningDisplay.Collapsed;
+    private const bool DefaultAutoCompactionEnabled = false;
+    private const int DefaultAutoCompactionThresholdPercent = 75;
+    private const int MinAutoCompactionThresholdPercent = 1;
+    private const int MaxAutoCompactionThresholdPercent = 95;
+    private const int DefaultAutoCompactionKeepRecentTurns = 4;
+    private const int MinAutoCompactionKeepRecentTurns = 1;
+    private const int MaxAutoCompactionKeepRecentTurns = 50;
+    private const int MinMaxToolIterations = 1;
+    private const int MaxMaxToolIterations = 100;
+    private const DeferredToolsHint DefaultDeferredToolsHint = DeferredToolsHint.Names;
+
     public static readonly IReadOnlyList<string> DefaultUserInstructionFiles =
         new[] { "AGENTS.md", "CLAUDE.md", "GEMINI.md" };
 
@@ -24,16 +40,16 @@ public sealed class SessionSettings : ISessionSettings
     public ToolSettingsMap User { get; private set; } = ToolSettingsMap.Empty;
     public EndpointsSettings Endpoints { get; private set; } = EndpointsSettings.CreateDefault();
     public string SystemPrompt { get; private set; } = DefaultSystemPrompt;
-    public bool MarkdownEnabled { get; private set; } = true;
-    public ReasoningDisplay ReasoningDisplay { get; private set; } = ReasoningDisplay.Collapsed;
+    public bool MarkdownEnabled { get; private set; } = DefaultMarkdownEnabled;
+    public ReasoningDisplay ReasoningDisplay { get; private set; } = DefaultReasoningDisplay;
 
-    public bool AutoCompactionEnabled { get; private set; } = false;
-    public int AutoCompactionThresholdPercent { get; private set; } = 75;
-    public int AutoCompactionKeepRecentTurns { get; private set; } = 4;
+    public bool AutoCompactionEnabled { get; private set; } = DefaultAutoCompactionEnabled;
+    public int AutoCompactionThresholdPercent { get; private set; } = DefaultAutoCompactionThresholdPercent;
+    public int AutoCompactionKeepRecentTurns { get; private set; } = DefaultAutoCompactionKeepRecentTurns;
 
     public int MaxToolIterations { get; private set; } = AgentLoopOptions.Default.MaxIterations;
 
-    public DeferredToolsHint DeferredToolsHint { get; private set; } = DeferredToolsHint.Names;
+    public DeferredToolsHint DeferredToolsHint { get; private set; } = DefaultDeferredToolsHint;
 
     public IReadOnlyList<string> UserInstructionFiles { get; private set; } = DefaultUserInstructionFiles;
     public IReadOnlyList<string> ProjectInstructionFiles { get; private set; } = Array.Empty<string>();
@@ -129,7 +145,7 @@ public sealed class SessionSettings : ISessionSettings
 
     public void SetAutoCompactionThresholdPercent(int percent)
     {
-        var clamped = Math.Clamp(percent, 1, 95);
+        var clamped = Math.Clamp(percent, MinAutoCompactionThresholdPercent, MaxAutoCompactionThresholdPercent);
         if (AutoCompactionThresholdPercent == clamped) return;
         AutoCompactionThresholdPercent = clamped;
         Changed?.Invoke(SettingsTier.User);
@@ -137,7 +153,7 @@ public sealed class SessionSettings : ISessionSettings
 
     public void SetAutoCompactionKeepRecentTurns(int turns)
     {
-        var clamped = Math.Clamp(turns, 1, 50);
+        var clamped = Math.Clamp(turns, MinAutoCompactionKeepRecentTurns, MaxAutoCompactionKeepRecentTurns);
         if (AutoCompactionKeepRecentTurns == clamped) return;
         AutoCompactionKeepRecentTurns = clamped;
         Changed?.Invoke(SettingsTier.User);
@@ -145,7 +161,7 @@ public sealed class SessionSettings : ISessionSettings
 
     public void SetMaxToolIterations(int iterations)
     {
-        var clamped = Math.Clamp(iterations, 1, 100);
+        var clamped = Math.Clamp(iterations, MinMaxToolIterations, MaxMaxToolIterations);
         if (MaxToolIterations == clamped) return;
         MaxToolIterations = clamped;
         Changed?.Invoke(SettingsTier.User);
@@ -208,7 +224,7 @@ public sealed class SessionSettings : ISessionSettings
 
     /// <summary>Reset every user-tier setting to the values it would be seeded with on
     /// first run, while leaving the configured endpoints untouched. Mirrors the
-    /// <c>firstRun</c> branch of <see cref="HydrateUser"/>. The curated seed is then
+    /// <c>firstRun</c> branch of <see cref="ApplyBlob"/>. The curated seed is then
     /// expanded to a full, explicit map via <see cref="MaterializeUserToolDefaults"/> so
     /// the User tier never carries an "inherit" (unset) per-tool value.</summary>
     public void ResetUserToDefaults(IEnumerable<ITool> settingsTools)
@@ -216,13 +232,13 @@ public sealed class SessionSettings : ISessionSettings
         ArgumentNullException.ThrowIfNull(settingsTools);
 
         SystemPrompt = DefaultSystemPrompt;
-        MarkdownEnabled = true;
-        ReasoningDisplay = ReasoningDisplay.Collapsed;
-        AutoCompactionEnabled = false;
-        AutoCompactionThresholdPercent = 75;
-        AutoCompactionKeepRecentTurns = 4;
+        MarkdownEnabled = DefaultMarkdownEnabled;
+        ReasoningDisplay = DefaultReasoningDisplay;
+        AutoCompactionEnabled = DefaultAutoCompactionEnabled;
+        AutoCompactionThresholdPercent = DefaultAutoCompactionThresholdPercent;
+        AutoCompactionKeepRecentTurns = DefaultAutoCompactionKeepRecentTurns;
         MaxToolIterations = AgentLoopOptions.Default.MaxIterations;
-        DeferredToolsHint = DeferredToolsHint.Names;
+        DeferredToolsHint = DefaultDeferredToolsHint;
         User = DefaultUserToolSettings();
         MaterializeUserToolDefaults(settingsTools);
         UserInstructionFiles = DefaultUserInstructionFiles;
@@ -309,20 +325,32 @@ public sealed class SessionSettings : ISessionSettings
     {
         var firstRun = string.IsNullOrWhiteSpace(json);
         var blob = TryDeserialize<UserBlob>(json) ?? new UserBlob();
+        ApplyBlob(blob, firstRun);
+    }
 
+    /// <summary>Apply a deserialized user blob to every user-tier field. Shared by
+    /// <see cref="HydrateUser"/> (load from disk) and <see cref="ImportUser"/> (manual import).
+    /// On <paramref name="firstRun"/> — i.e. no blob has ever been written — the tools,
+    /// instruction files, and subagents are seeded with the curated defaults instead of the
+    /// (empty) blob values; an import is never a first run.</summary>
+    private void ApplyBlob(UserBlob blob, bool firstRun)
+    {
         Endpoints = EndpointsFromBlob(blob);
 
         SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
-        MarkdownEnabled = blob.MarkdownEnabled ?? true;
-        ReasoningDisplay = blob.ReasoningDisplay ?? ReasoningDisplay.Collapsed;
-        AutoCompactionEnabled = blob.AutoCompactionEnabled ?? false;
+        MarkdownEnabled = blob.MarkdownEnabled ?? DefaultMarkdownEnabled;
+        ReasoningDisplay = blob.ReasoningDisplay ?? DefaultReasoningDisplay;
+        AutoCompactionEnabled = blob.AutoCompactionEnabled ?? DefaultAutoCompactionEnabled;
         AutoCompactionThresholdPercent = blob.AutoCompactionThresholdPercent is int p
-            ? Math.Clamp(p, 1, 95) : 75;
+            ? Math.Clamp(p, MinAutoCompactionThresholdPercent, MaxAutoCompactionThresholdPercent)
+            : DefaultAutoCompactionThresholdPercent;
         AutoCompactionKeepRecentTurns = blob.AutoCompactionKeepRecentTurns is int k
-            ? Math.Clamp(k, 1, 50) : 4;
+            ? Math.Clamp(k, MinAutoCompactionKeepRecentTurns, MaxAutoCompactionKeepRecentTurns)
+            : DefaultAutoCompactionKeepRecentTurns;
         MaxToolIterations = blob.MaxToolIterations is int mi
-            ? Math.Clamp(mi, 1, 100) : AgentLoopOptions.Default.MaxIterations;
-        DeferredToolsHint = blob.DeferredToolsHint ?? DeferredToolsHint.Names;
+            ? Math.Clamp(mi, MinMaxToolIterations, MaxMaxToolIterations)
+            : AgentLoopOptions.Default.MaxIterations;
+        DeferredToolsHint = blob.DeferredToolsHint ?? DefaultDeferredToolsHint;
         User = firstRun ? DefaultUserToolSettings() : MapFromDto(blob.Tools);
         UserInstructionFiles = firstRun
             ? DefaultUserInstructionFiles
@@ -424,11 +452,16 @@ public sealed class SessionSettings : ISessionSettings
         ProjectSubagents = SubagentsFromDto(blob.Subagents);
     }
 
-    public string SerializeUser()
-    {
-        var blob = new UserBlob
+    public string SerializeUser() =>
+        JsonSerializer.Serialize(ToUserBlob(includeApiKeys: true), JsonOptions);
+
+    /// <summary>Snapshot the live user-tier state into a serializable blob. Shared by
+    /// <see cref="SerializeUser"/> (persist to disk, always with keys) and
+    /// <see cref="ExportUser"/> (manual export, keys optional).</summary>
+    private UserBlob ToUserBlob(bool includeApiKeys) =>
+        new()
         {
-            Endpoints = EndpointsToDto(Endpoints, includeApiKeys: true),
+            Endpoints = EndpointsToDto(Endpoints, includeApiKeys),
             DefaultEndpointId = Endpoints.DefaultId,
             SystemPrompt = SystemPrompt,
             MarkdownEnabled = MarkdownEnabled,
@@ -443,8 +476,6 @@ public sealed class SessionSettings : ISessionSettings
             Scripts = ScriptsToDto(UserScripts),
             Subagents = SubagentsToDto(UserSubagents),
         };
-        return JsonSerializer.Serialize(blob, JsonOptions);
-    }
 
     private static readonly JsonSerializerOptions ExportJsonOptions = new()
     {
@@ -465,23 +496,7 @@ public sealed class SessionSettings : ISessionSettings
             Version = ExportVersion,
             Tier = "user",
             ExportedAt = DateTimeOffset.UtcNow,
-            User = new UserBlob
-            {
-                Endpoints = EndpointsToDto(Endpoints, includeApiKeys: includeApiKey),
-                DefaultEndpointId = Endpoints.DefaultId,
-                SystemPrompt = SystemPrompt,
-                MarkdownEnabled = MarkdownEnabled,
-                ReasoningDisplay = ReasoningDisplay,
-                AutoCompactionEnabled = AutoCompactionEnabled,
-                AutoCompactionThresholdPercent = AutoCompactionThresholdPercent,
-                AutoCompactionKeepRecentTurns = AutoCompactionKeepRecentTurns,
-                MaxToolIterations = MaxToolIterations,
-                DeferredToolsHint = DeferredToolsHint,
-                Tools = MapToDto(User),
-                InstructionFiles = NonEmpty(UserInstructionFiles),
-                Scripts = ScriptsToDto(UserScripts),
-                Subagents = SubagentsToDto(UserSubagents),
-            },
+            User = ToUserBlob(includeApiKeys: includeApiKey),
         };
         return JsonSerializer.Serialize(envelope, ExportJsonOptions);
     }
@@ -516,29 +531,9 @@ public sealed class SessionSettings : ISessionSettings
         if (envelope.User is null)
             return ImportResult.Fail("File is missing the \"user\" section.");
 
-        ApplyUserBlob(envelope.User);
+        ApplyBlob(envelope.User, firstRun: false);
         Changed?.Invoke(SettingsTier.User);
         return ImportResult.Ok();
-    }
-
-    private void ApplyUserBlob(UserBlob blob)
-    {
-        Endpoints = EndpointsFromBlob(blob);
-        SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
-        MarkdownEnabled = blob.MarkdownEnabled ?? true;
-        ReasoningDisplay = blob.ReasoningDisplay ?? ReasoningDisplay.Collapsed;
-        AutoCompactionEnabled = blob.AutoCompactionEnabled ?? false;
-        AutoCompactionThresholdPercent = blob.AutoCompactionThresholdPercent is int p
-            ? Math.Clamp(p, 1, 95) : 75;
-        AutoCompactionKeepRecentTurns = blob.AutoCompactionKeepRecentTurns is int k
-            ? Math.Clamp(k, 1, 50) : 4;
-        MaxToolIterations = blob.MaxToolIterations is int mi
-            ? Math.Clamp(mi, 1, 100) : AgentLoopOptions.Default.MaxIterations;
-        DeferredToolsHint = blob.DeferredToolsHint ?? DeferredToolsHint.Names;
-        User = MapFromDto(blob.Tools);
-        UserInstructionFiles = blob.InstructionFiles?.ToArray() ?? Array.Empty<string>();
-        UserScripts = ScriptsFromDto(blob.Scripts);
-        UserSubagents = SubagentsFromDto(blob.Subagents);
     }
 
     public string SerializeProject()
