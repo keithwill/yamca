@@ -239,6 +239,13 @@ public class GitServiceTests
         Assert.That(byPath["untracked.txt"].Kind, Is.EqualTo(WorktreeChangeKind.Added));
         Assert.That(byPath["untracked.txt"].Uncommitted, Is.True);
 
+        // The basis overload, given the same fork point, yields identical results without
+        // recomputing merge-base.
+        var basis = await _svc.GetMergeBaseAsync(wtPath, "main", CancellationToken.None);
+        var fromBasis = await _svc.GetWorktreeChangesFromBasisAsync(wtPath, basis, CancellationToken.None);
+        Assert.That(fromBasis.Select(c => (c.Path, c.Kind, c.Uncommitted)),
+            Is.EqualTo(changes.Select(c => (c.Path, c.Kind, c.Uncommitted))));
+
         await _svc.RemoveWorktreeAsync(_root, wtPath, force: true, CancellationToken.None);
     }
 

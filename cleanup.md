@@ -81,7 +81,18 @@ construct. Several deps exist only to build the `AgentLoop` once. Consider group
 loop's collaborators behind an injected `AgentLoopFactory` — which also naturally absorbs
 item #1.
 
-### 5. Redundant git invocations for the same worktree
+### 5. Redundant git invocations for the same worktree — DONE
+
+The "6 processes per render" overstated it: the stat badge (`ChatSessionPanel`, always in
+the panel header) and the file list (`WorktreeChangesView`, an on-demand dialog) are
+separate render paths, so they never run together. The real redundancy was *within*
+`WorktreeChangesView.LoadChangesAsync`, which called `GetMergeBaseAsync` explicitly and then
+`GetWorktreeChangesAsync` — which recomputed the same merge-base internally (4 git processes,
+merge-base twice). Added `GitService.GetWorktreeChangesFromBasisAsync(worktreePath, basis, ct)`;
+the view now resolves the fork point once and shares it for both the change list and the
+later "before"-side `ShowFileAtRefAsync`. Down to 3 processes.
+
+Original note:
 
 `GitService.GetWorktreeDiffStatAsync` (`:227`) and `GetWorktreeChangesAsync` (`:274`) each
 independently run `merge-base` + `diff` + `status --porcelain`. If the UI renders both the

@@ -274,6 +274,15 @@ public sealed class GitService
     public async Task<IReadOnlyList<WorktreeFileChange>> GetWorktreeChangesAsync(string worktreePath, string baseBranch, CancellationToken ct)
     {
         var basis = await GetMergeBaseAsync(worktreePath, baseBranch, ct).ConfigureAwait(false);
+        return await GetWorktreeChangesFromBasisAsync(worktreePath, basis, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>As <see cref="GetWorktreeChangesAsync"/> but against an already-resolved fork point
+    /// (from <see cref="GetMergeBaseAsync"/>). Lets a caller that needs the merge base anyway — e.g.
+    /// to later render a file's "before" side via <see cref="ShowFileAtRefAsync"/> — share that one
+    /// <c>git merge-base</c> instead of paying for a second invocation.</summary>
+    public async Task<IReadOnlyList<WorktreeFileChange>> GetWorktreeChangesFromBasisAsync(string worktreePath, string basis, CancellationToken ct)
+    {
         var diff = await RunAsync(worktreePath, ["diff", "--name-status", "-M", basis], ct).ConfigureAwait(false);
         var status = await RunAsync(worktreePath, ["status", "--porcelain"], ct).ConfigureAwait(false);
         if (!diff.Ok && !status.Ok) return Array.Empty<WorktreeFileChange>();

@@ -113,8 +113,10 @@ else
         var ct = CancellationToken.None;
         try
         {
+            // Resolve the fork point once and reuse it both for the change list and as the "before"
+            // ref in SelectAsync — GetWorktreeChangesFromBasisAsync avoids a second `git merge-base`.
             _mergeBase = await Git.GetMergeBaseAsync(WorktreePath, BaseBranch, ct);
-            _changes = await Git.GetWorktreeChangesAsync(WorktreePath, BaseBranch, ct);
+            _changes = await Git.GetWorktreeChangesFromBasisAsync(WorktreePath, _mergeBase, ct);
         }
         catch (Exception ex)
         {
