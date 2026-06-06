@@ -52,6 +52,8 @@ Yamca listening on http://127.0.0.1:51234  (workspace: C:\Repos\yamca)
 - **[Chat Sessions](https://github.com/keithwill/yamca/blob/main/doc/chat-sessions.md)** — streaming, tool-using conversations (up to 4 at once), with persistence, compaction, and a split view.
 - **[Endpoints](https://github.com/keithwill/yamca/blob/main/doc/endpoints.md)** — OpenAI-compatible LLM backends (llama.cpp, vllm, OpenAI).
 - **[Tools & Permissions](https://github.com/keithwill/yamca/blob/main/doc/tools-and-permissions.md)** — the agent's file, search, execution, and code-intelligence tools, gated by an Allow/Ask/Deny permission model with the option for deferred loading.
+- **[Subagents](https://github.com/keithwill/yamca/blob/main/doc/subagents.md)** — named, headless agents the chat can delegate self-contained tasks to, keeping the parent context small.
+- **[Loop](https://github.com/keithwill/yamca/blob/main/doc/loop.md)** — fan one prompt out across many items, each handled by its own subagent, with a single roll-up of the results.
 - **[Worktrees](https://github.com/keithwill/yamca/blob/main/doc/worktrees.md)** — isolated git worktrees for branch work which can be tied to chat sessions so they can work independantly.
 - **[MCP Servers](https://github.com/keithwill/yamca/blob/main/doc/mcp.md)** — Model Context Protocol servers that contribute additional tools to the agent.
 - **[Scripts](https://github.com/keithwill/yamca/blob/main/doc/scripts.md)** — registered vs. discovered scripts, with distinct execution permissions.
