@@ -31,6 +31,26 @@ public sealed class ChatTurn
         get { lock (_itemsGate) return _items.ToArray(); }
     }
 
+    /// <summary>The most recently added item, or null when the turn has none. A non-allocating
+    /// peek for the hot apply path (called per streamed token) — unlike <see cref="Items"/> it
+    /// doesn't snapshot the whole list just to read the tail.</summary>
+    public ChatTurnItem? LastItem
+    {
+        get { lock (_itemsGate) return _items.Count > 0 ? _items[^1] : null; }
+    }
+
+    /// <summary>Find the tool-call item with the given call id, or null. Scans under the gate so
+    /// the apply path can match results to in-flight calls without snapshotting <see cref="Items"/>.</summary>
+    public ToolCallItem? FindToolCall(string callId)
+    {
+        lock (_itemsGate)
+        {
+            foreach (var item in _items)
+                if (item is ToolCallItem tc && tc.CallId == callId) return tc;
+            return null;
+        }
+    }
+
     internal void AddItem(ChatTurnItem item)
     {
         lock (_itemsGate) _items.Add(item);

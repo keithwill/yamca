@@ -111,7 +111,7 @@ public static class ChatTurnApplier
 
     private static AssistantTextItem CurrentOrNewText(ChatTurn turn)
     {
-        if (turn.Items.LastOrDefault() is AssistantTextItem t && !t.IsComplete) return t;
+        if (turn.LastItem is AssistantTextItem t && !t.IsComplete) return t;
         var fresh = new AssistantTextItem();
         turn.AddItem(fresh);
         return fresh;
@@ -122,7 +122,7 @@ public static class ChatTurnApplier
 
     private static ReasoningItem CurrentOrNewReasoning(ChatTurn turn)
     {
-        if (turn.Items.LastOrDefault() is ReasoningItem r && !r.IsComplete) return r;
+        if (turn.LastItem is ReasoningItem r && !r.IsComplete) return r;
         var fresh = new ReasoningItem();
         turn.AddItem(fresh);
         return fresh;
@@ -133,7 +133,7 @@ public static class ChatTurnApplier
 
     private static bool TryFind(ChatTurn turn, string callId, out ToolCallItem item)
     {
-        item = turn.Items.OfType<ToolCallItem>().FirstOrDefault(c => c.CallId == callId)!;
+        item = turn.FindToolCall(callId)!;
         return item is not null;
     }
 }
