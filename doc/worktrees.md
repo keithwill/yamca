@@ -19,7 +19,7 @@ A workspace exposes two distinct paths (`IWorkspace`):
 
 Repo-scoped artifacts that live at `RepositoryRoot`:
 
-- `.yamca/board` — the dev board worktree (see [dev-board.md](dev-board.md))
+- `.yamca/board` — the dev board, a plain uncommitted directory (see [dev-board.md](dev-board.md))
 - `.yamca/worktrees` — code-branch worktrees
 - `.yamca/chat` — saved chat sessions (see [chat-sessions.md](chat-sessions.md))
 

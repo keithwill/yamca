@@ -13,6 +13,7 @@ through a **permission** check first. Configure both at `/tools`.
 | **Execution** | `execute_command`, `execute_script`, `execute_registered_script`, `execute_discovered_script` |
 | **Code intelligence** | `code_search`, `code_list_symbols`, `code_find_definitions`, `code_find_calls`, `code_find_references`, `code_extract_symbol`, `code_edit_symbol`, `code_surrounding_context` |
 | **Dev board** | `board_list`, `board_get_card`, `board_get_step_instructions`, `board_move_card`, `board_update_card`, `board_reinit` |
+| **Subagents** | `subagent_run`, `loop` |
 | **Tool discovery** | `lookup_tool`, `call_tool` |
 
 The code-intelligence tools understand symbols across ~12 languages (C#, C, C++,
@@ -48,13 +49,14 @@ with the same Project → User → tool-default precedence.
 
 The shipped defaults are tuned for the primary audience: developers modifying
 code in a git repository, typically on a throwaway worktree branch that
-segregates the agent's work. Under that assumption, tools that mutate files
-(`write_file`, `edit_file`, `delete_file`, the `code_edit_*` family) default to
-**Allow** — but only *within the workspace*, because workspace restriction is on
-by default for every file-touching tool. Anything reaching outside the sandbox,
-or running an arbitrary shell command (`execute_command`), still defaults to
-**Ask**. The safety net is the workspace boundary plus version control, not a
-prompt on every edit.
+segregates the agent's work. Under that assumption, the whole-file tools
+`write_file` and `delete_file` default to **Allow** — but only *within the
+workspace*, because workspace restriction is on by default for every
+file-touching tool. The in-place edit tools (`edit_file` and `code_edit_symbol`)
+default to **Ask** so you see a diff before each surgical change lands, as does
+running an arbitrary shell command (`execute_command`). For everything that does
+default to Allow, the safety net is the workspace boundary plus version control,
+not a prompt on every write.
 
 ## Availability
 

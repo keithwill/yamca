@@ -31,7 +31,10 @@ are user-only.
 - **Reasoning blocks** — how to display chain-of-thought from reasoning models
   (Hidden / Collapsed / Expanded). See [chat-sessions.md](chat-sessions.md).
 - **Auto-compaction** — folds older turns into a summary as context grows so long
-  sessions keep working.
+  sessions keep working. A trigger threshold (% of the context window) and the
+  number of recent turns to keep verbatim are configurable.
+- **Max tool call iterations** — caps how many LLM round-trips a single turn may
+  make before the agent stops.
 
 ## Backup (export / import)
 
@@ -43,8 +46,10 @@ are user-only.
 Project settings are **not** included — they live per workspace on disk and
 travel with the repository instead.
 
-> **Note:** exported user settings include your endpoints, and therefore any
-> **API keys** stored on them. Treat an export file as a secret.
+> **Note:** exported user settings include your endpoints. The export dialog has
+> an opt-in **Include API key** checkbox (off by default) — leave it unchecked and
+> keys are stripped from the file; check it and the file holds your **API keys** in
+> plaintext, so treat such an export as a secret.
 
 ## See also
 

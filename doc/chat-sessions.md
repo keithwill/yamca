@@ -9,7 +9,7 @@ through here.
 
 Up to **4 concurrent sessions** run at once (`ChatSessionManager.MaxSessions`).
 When all 4 slots are in use, you must close one before starting another — the
-board surfaces this as a "all 4 chat slots are in use" message when launching a
+board surfaces this as an "All 4 chat slots are in use" message when launching a
 step or opening a card chat.
 
 Each session is bound to a workspace. A plain chat runs against the repository
@@ -25,11 +25,12 @@ compatibility with OpenAI-compatible servers whose chat templates only honor the
 first `system` role. That message is assembled at session start from:
 
 1. The user-authored **system prompt** (from the Instructions page).
-2. The **current workspace path**, appended automatically — you don't need to
+2. A **capability hint** about Markdown vs. plain-text rendering, appended
+   directly after the prompt.
+3. The **current workspace path**, appended automatically — you don't need to
    mention it in your prompt.
-3. The bodies of any configured **instruction files** (see
+4. The bodies of any configured **instruction files** (see
    [custom-instructions.md](custom-instructions.md)).
-4. A **capability hint** about Markdown vs. plain-text rendering.
 
 ## Picking an endpoint and model
 
@@ -49,12 +50,13 @@ Models that emit chain-of-thought inside `<think>`, `<thinking>`, or
 
 ## Context and compaction
 
-Each session tracks an estimated character count of its context. **Auto-
-compaction** (a Preferences toggle) folds older turns into a summary inside the
-system message when the context grows large, so long sessions keep working
-without overflowing the model's context window. A restored session preserves the
-already-compacted log exactly, so the model sees the same context it had when the
-chat was saved.
+Each session tracks an estimated input-token count of its context — the
+server-reported `prompt_tokens` when available, otherwise a char/4 estimate.
+**Auto-compaction** (a Preferences toggle, off by default) folds older turns
+into a summary inside the system message when the context grows large, so long
+sessions keep working without overflowing the model's context window. A restored
+session preserves the already-compacted log exactly, so the model sees the same
+context it had when the chat was saved.
 
 ## Persistence
 

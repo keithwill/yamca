@@ -17,8 +17,8 @@ sent automatically as separate context.
 
 Instruction files let you keep richer guidance in the repo itself rather than in
 a settings box. Each entry names a file that is read from the current workspace
-and appended to the chat context as an additional system message at session
-start.
+and folded into the session's single system message at session start (each under
+a `# Instructions from <path>` header).
 
 - Each entry is a **bare filename or a relative path**; absolute paths are not
   allowed.

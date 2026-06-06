@@ -6,9 +6,11 @@ additional tools to the agent beyond yamca's built-in set. Manage them at `/mcp`
 ## How MCP tools appear
 
 Each connected server's tools are exposed to the agent as
-`mcp__<id>__<tool>`. They are **deferred**: the schema never enters the prompt
-prefix (preserving prompt-cache hits). The LLM discovers a tool with
-`lookup_tool` and invokes it via `call_tool`. See
+`mcp__<id>__<tool>`. By default they are **deferred**: the schema never enters
+the prompt prefix (preserving prompt-cache hits), and the LLM discovers a tool
+with `lookup_tool` and invokes it via `call_tool`. The default availability is
+set per server via `DefaultToolAvailability` (deferred unless changed) and can
+be overridden per tool on the Tools page. See
 [tools-and-permissions.md](tools-and-permissions.md) for the availability model.
 
 MCP tools resolve permissions through the same Project → User → default chain
@@ -32,7 +34,7 @@ and its adapted tool list:
   server's tools (default startup timeout **20s**).
 - Tool calls have a default timeout of **30s**, overridable per server via
   `CallTimeoutSeconds`.
-- Status is tracked (`Connecting`, connected, `Disabled`, failed) along with a
+- Status is tracked (`Connecting`, `Ready`, `Disabled`, `Failed`) along with a
   failure message when a connection fails.
 
 ## Diagnostics

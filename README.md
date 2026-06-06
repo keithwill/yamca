@@ -62,7 +62,9 @@ Each feature has its own page under [`doc/`](https://github.com/keithwill/yamca/
 ## Troubleshooting
 
 - **Port already in use** — Yamca defaults to port 9001. If 9001 is taken
-  Yamca exits with an error; pass `--port <n>` to pick a different one.
+  Yamca falls back to an OS-assigned port and prints the URL it ends up on,
+  so running it against several repos at once just works. An explicit
+  `--port <n>` is honored exactly and errors if that port is unavailable.
   Settings persist on disk — user settings and the MCP server list in your
   OS user-config directory, project settings under the repo's `.yamca` — so
   they survive a port change and are shared across browsers.

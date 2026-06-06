@@ -63,8 +63,8 @@ AI chat session:
 1. The card is bound to its branch (`branch:` frontmatter written).
 2. A code worktree is forked off the base branch (or reused/recreated if it was
    deleted or merged).
-3. The column's instructions plus the next-column context seed the session.
-4. You're navigated to the chat with the composer pre-filled (not yet sent).
+3. The card (title + body) plus the column's `instructions.md` seed the session.
+4. You're navigated to the chat with the seeded prompt pre-filled and sent automatically.
 
 The play button appears on cards in work columns when at least one endpoint is
 configured. Up to 4 concurrent chat sessions are supported.

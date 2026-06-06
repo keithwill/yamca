@@ -13,22 +13,39 @@ build/test/lint entry points without granting blanket execution rights.
 
 The relevant tools (see [tools-and-permissions.md](tools-and-permissions.md)):
 
-- **`execute_registered_script`** — runs a known, registered script.
-- **`execute_discovered_script`** — runs a script the LLM found by other means.
-- **`execute_script`** / **`execute_command`** — general execution.
+- **`execute_script`** — the single tool the LLM actually calls to run a script by
+  workspace-relative path. Internally it checks whether the path is registered and
+  dispatches the permission check under one of the two names below.
+- **`execute_registered_script`** — the permission identity for a known, registered
+  script. Defaults to *Allow*. (Not exposed to the LLM directly.)
+- **`execute_discovered_script`** — the permission identity for a script the LLM
+  found by other means. Defaults to *Ask*, and the approval prompt offers to add
+  the script to the registry. (Not exposed to the LLM directly.)
+- **`execute_command`** — a separate tool for running an arbitrary shell command
+  line (not a script file). Defaults to *Ask*.
 
-Because each is a separate tool, you can set their permissions independently —
-e.g. allow registered scripts while leaving discovered-script execution on *Ask*.
+Even though the LLM calls a single `execute_script` tool, the registered and
+discovered cases carry independent permissions — e.g. you can allow registered
+scripts while leaving discovered-script execution on *Ask*.
 
 ## Registering a script
 
-Each registered entry is a **workspace-relative** path:
+The `/scripts` page registers three kinds of entry:
 
-- A file path registers that single script.
-- A directory path registers everything inside it — files within a registered
-  directory count as registered.
-- An optional **description** is shown to the LLM at session start so it can pick
+- **File** — a workspace-relative path that registers that single script.
+- **Directory** — a workspace-relative path that registers everything inside it;
+  files within a registered directory count as registered.
+- **Inline command** — a one-line CLI command with no file in the repo (e.g.
+  `npm install`, `dotnet build`). The LLM runs it verbatim by passing the exact
+  command line as the script path; no arguments are appended.
+
+Each entry also has:
+
+- An optional **description**, shown to the LLM at session start so it can pick
   the right entry for a task.
+- A **Hide Success** toggle: on a successful (exit 0) run, return only the status
+  to the LLM and withhold stdout/stderr to save context. Failures still return
+  full output.
 
 ## Project vs. User tiers
 
