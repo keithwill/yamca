@@ -5,6 +5,8 @@ local-LLM first â€” a `BaseUrl` typically points at a llama.cpp or vllm server â
 but any OpenAI-compatible API works (OpenAI, OpenRouter, etc.). Configure them at
 `/endpoints`.
 
+![The endpoints page](img/endpoints.png)
+
 ## Endpoint fields
 
 | Field | Notes |

@@ -4,6 +4,8 @@ Tools are the actions the agent can take in your workspace — reading and writi
 files, searching, running commands, and navigating code. Every tool call runs
 through a **permission** check first. Configure both at `/tools`.
 
+![The tools and permissions page](img/tools.png)
+
 ## Built-in tools
 
 | Category | Tools |

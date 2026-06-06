@@ -5,6 +5,8 @@ living under `.yamca/worktrees/<branch>`. This lets a chat session (or a board
 step) make changes on an isolated branch without disturbing your main checkout.
 The `/workspace` page shows the current workspace and the repository's worktrees.
 
+![The workspace page](img/workspace.png)
+
 ## RootPath vs. RepositoryRoot
 
 A workspace exposes two distinct paths (`IWorkspace`):

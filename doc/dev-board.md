@@ -3,6 +3,8 @@
 The dev board is a Kanban-style board for driving development work through a
 pipeline of AI-assisted steps. It lives at `/board` in the web UI.
 
+![The dev board](img/board.png)
+
 ## Where the board lives
 
 The board is a personal scratchpad — a plain, **uncommitted** directory at

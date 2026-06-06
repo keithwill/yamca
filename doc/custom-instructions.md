@@ -5,6 +5,8 @@ start of every chat session: a system prompt plus optional instruction files.
 Both are folded into the single system message described in
 [chat-sessions.md](chat-sessions.md).
 
+![The instructions page](img/instructions.png)
+
 ## System prompt
 
 A free-text **system prompt** that leads the system message. Use it for standing

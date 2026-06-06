@@ -4,6 +4,8 @@ yamca distinguishes between scripts you **register** ahead of time and scripts t
 agent **discovers** on its own, giving each a different trust level. Manage
 registered scripts at `/scripts`.
 
+![The registered scripts page](img/scripts.png)
+
 ## Why the distinction
 
 A registered script is one you've explicitly told yamca about, so it can run

@@ -5,6 +5,8 @@ remote) LLM that can call tools to read and edit your code. The dev board runs
 its work steps as seeded chat sessions, so most other features ultimately flow
 through here.
 
+![A chat session in yamca](img/chat.png)
+
 ## Sessions and the session limit
 
 Up to **4 concurrent sessions** run at once (`ChatSessionManager.MaxSessions`).

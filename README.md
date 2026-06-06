@@ -4,6 +4,8 @@ Yamca is a local-first Blazor agent / chat UI distributed as a .NET global
 tool. Launch `yamca` from any directory and the current folder becomes the
 agent's sandboxed workspace.
 
+![Yamca chat session](https://raw.githubusercontent.com/keithwill/yamca/main/doc/img/chat.png)
+
 ## Requirements
 
 - [.NET 10 runtime](https://dotnet.microsoft.com/download) (the ASP.NET Core
@@ -58,6 +60,8 @@ Each feature has its own page under [`doc/`](https://github.com/keithwill/yamca/
 - **[Scripts](https://github.com/keithwill/yamca/blob/main/doc/scripts.md)** — registered vs. discovered scripts, with distinct execution permissions.
 - **[Custom Instructions](https://github.com/keithwill/yamca/blob/main/doc/custom-instructions.md)** — system prompt and instruction files folded into every session.
 - **[Settings & Backup](https://github.com/keithwill/yamca/blob/main/doc/settings-and-backup.md)** — Project vs. User settings tiers, preferences, and user-settings export/import.
+
+![Yamca dev board](https://raw.githubusercontent.com/keithwill/yamca/main/doc/img/board.png)
 
 ## Troubleshooting
 
