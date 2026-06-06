@@ -293,42 +293,7 @@
 
     <RawContextDialog @bind-Visible="_ctxDialogOpen" Preview="_ctxPreview" />
 
-    <div class="yamca-scroll" @ref="_scrollContainer">
-        <MudContainer MaxWidth="MaxWidth.Large" Class="pa-2">
-            @for (var i = 0; i < Chat.Turns.Count; i++)
-            {
-                if (Chat.CompactionBoundaryUiTurnIndex is int boundary && i == boundary && boundary > 0)
-                {
-                    <div class="d-flex align-center my-3" style="gap: 8px;">
-                        <span style="flex: 1 1 0; border-top: 1px solid var(--mud-palette-divider);"></span>
-                        <MudButton Variant="Variant.Text" Size="Size.Small"
-                                   Disabled="@(string.IsNullOrEmpty(Chat.LastCompactionSummary))"
-                                   StartIcon="@Icons.Material.Filled.UnfoldMore"
-                                   OnClick="OpenCompactionSummary"
-                                   Style="flex-shrink: 0;">
-                            Chat summarized
-                        </MudButton>
-                        <span style="flex: 1 1 0; border-top: 1px solid var(--mud-palette-divider);"></span>
-                    </div>
-                }
-                <ChatTurnView Turn="Chat.Turns[i]" OnContinue="OnContinue" />
-            }
-
-            @foreach (var approval in Chat.Approvals.ToList())
-            {
-                <ApprovalPrompt Approval="approval"
-                                OnResolve="@(d => Chat.ResolveApproval(approval, d.Approved, d.Persistence))"
-                                OnRegisterAndAllow="@(desc => Chat.RegisterAndAllow(approval, desc))" />
-            }
-
-            @if (Chat.Error is not null && (Chat.Turns.Count == 0 || Chat.Turns[^1].Error is null))
-            {
-                <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@Chat.Error</MudAlert>
-            }
-
-            <div @ref="_scrollAnchor"></div>
-        </MudContainer>
-    </div>
+    <ChatLog Chat="Chat" OnContinue="OnContinue" OnShowCompactionSummary="OpenCompactionSummary" />
 </div>
 
 @code {
@@ -348,8 +313,6 @@
 
     private ChatViewModel? _subscribed;
     private string _prompt = "";
-    private ElementReference _scrollAnchor;
-    private ElementReference _scrollContainer;
     private ElementReference _composer;
     private DotNetObjectReference<ChatSessionPanel>? _selfRef;
     private readonly List<Attachment> _attachments = new();
@@ -463,9 +426,6 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await SafeInvokeAsync("yamcaChat.init", _scrollContainer);
-        await SafeInvokeAsync("yamcaChat.scrollIfSticky", _scrollAnchor);
-
         if (firstRender)
         {
             _selfRef = DotNetObjectReference.Create(this);
@@ -572,8 +532,24 @@
     {
         DetectCompactionTransition();
         DetectRunCompletionForDiff();
+
+        // Chat.Changed fires per streamed token (hundreds/sec). The chat log streams via its own
+        // ChatLog subscription; the toolbar/composer/header here depend only on coarse session
+        // state, so re-render only when that signature changes — otherwise the (heavy MudBlazor)
+        // toolbar would re-render on every token. Local interactions (typing, dialogs, attachments,
+        // the diff badge) render through their own StateHasChanged paths, unaffected by this gate.
+        var sig = ToolbarSignature();
+        if (sig.Equals(_lastToolbarSig)) return;
+        _lastToolbarSig = sig;
         InvokeAsync(StateHasChanged);
     }
+
+    private object? _lastToolbarSig;
+
+    private object ToolbarSignature() => (
+        Chat.IsReadOnly, Chat.YoloMode, Chat.IsBusy, Chat.IsRunning, Chat.IsCompacting,
+        Chat.IsEndpointLocked, Chat.IsGitRepository, Chat.Turns.Count, Chat.WorktreeInfo is not null,
+        Chat.CurrentContextTokens, Chat.MaxContextTokens, Chat.Title, Chat.SelectedEndpointId);
 
     // A turn just finished (running → idle): the worktree may have new edits, so refresh the badge.
     private void DetectRunCompletionForDiff()

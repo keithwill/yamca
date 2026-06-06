@@ -1,0 +1,90 @@
+@implements IDisposable
+@using Microsoft.JSInterop
+@using Yamca.Web.Services
+
+<div class="yamca-scroll" @ref="_scrollContainer">
+    <MudContainer MaxWidth="MaxWidth.Large" Class="pa-2">
+        @for (var i = 0; i < Chat.Turns.Count; i++)
+        {
+            if (Chat.CompactionBoundaryUiTurnIndex is int boundary && i == boundary && boundary > 0)
+            {
+                <div class="d-flex align-center my-3" style="gap: 8px;">
+                    <span style="flex: 1 1 0; border-top: 1px solid var(--mud-palette-divider);"></span>
+                    <MudButton Variant="Variant.Text" Size="Size.Small"
+                               Disabled="@(string.IsNullOrEmpty(Chat.LastCompactionSummary))"
+                               StartIcon="@Icons.Material.Filled.UnfoldMore"
+                               OnClick="@(() => OnShowCompactionSummary.InvokeAsync())"
+                               Style="flex-shrink: 0;">
+                        Chat summarized
+                    </MudButton>
+                    <span style="flex: 1 1 0; border-top: 1px solid var(--mud-palette-divider);"></span>
+                </div>
+            }
+            <ChatTurnView @key="Chat.Turns[i]" Turn="Chat.Turns[i]" OnContinue="OnContinue" />
+        }
+
+        @foreach (var approval in Chat.Approvals.ToList())
+        {
+            <ApprovalPrompt Approval="approval"
+                            OnResolve="@(d => Chat.ResolveApproval(approval, d.Approved, d.Persistence))"
+                            OnRegisterAndAllow="@(desc => Chat.RegisterAndAllow(approval, desc))" />
+        }
+
+        @if (Chat.Error is not null && (Chat.Turns.Count == 0 || Chat.Turns[^1].Error is null))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@Chat.Error</MudAlert>
+        }
+
+        <div @ref="_scrollAnchor"></div>
+    </MudContainer>
+</div>
+
+@code {
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    [Parameter, EditorRequired] public ChatViewModel Chat { get; set; } = default!;
+
+    /// <summary>Resume a turn parked at the tool-call iteration cap (forwarded to each turn view).</summary>
+    [Parameter] public EventCallback OnContinue { get; set; }
+
+    /// <summary>Open the compaction-summary dialog (owned by the parent panel) from the
+    /// "Chat summarized" divider button.</summary>
+    [Parameter] public EventCallback OnShowCompactionSummary { get; set; }
+
+    private ChatViewModel? _subscribed;
+    private ElementReference _scrollContainer;
+    private ElementReference _scrollAnchor;
+
+    // The log owns its own Changed subscription so it can stream tokens independently of the
+    // (heavy) toolbar/composer in ChatSessionPanel, which re-renders only on coarse state changes.
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_subscribed, Chat)) return;
+        if (_subscribed is not null) _subscribed.Changed -= OnChanged;
+        Chat.Changed += OnChanged;
+        _subscribed = Chat;
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await SafeInvokeAsync("yamcaChat.init", _scrollContainer);
+        await SafeInvokeAsync("yamcaChat.scrollIfSticky", _scrollAnchor);
+    }
+
+    private async Task SafeInvokeAsync(string identifier, params object?[] args)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync(identifier, args);
+        }
+        catch (JSDisconnectedException) { /* circuit gone */ }
+        catch (TaskCanceledException)   { /* tab closing */ }
+    }
+
+    public void Dispose()
+    {
+        if (_subscribed is not null) _subscribed.Changed -= OnChanged;
+    }
+}

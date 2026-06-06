@@ -1,0 +1,36 @@
+@using Yamca.Web.Services
+
+<MudPaper Class="pa-2 mb-2 yamca-markdown" Elevation="0">
+    @if (Session.MarkdownEnabled)
+    {
+        @((MarkupString)MarkdownRenderer.ToHtml(Item.Text))
+    }
+    else
+    {
+        <MudText Typo="Typo.body1" Style="white-space: pre-wrap;">@Item.Text</MudText>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public AssistantTextItem Item { get; set; } = default!;
+
+    [Inject] private SessionSettings Session { get; set; } = default!;
+
+    // The item is a mutable reference whose buffer only grows, so the streamed length plus the
+    // completion flag is a sufficient change signature. Markdown rendering (the expensive part)
+    // only runs when this signature changes — historical text items short-circuit on every token.
+    private int _lastLen = -1;
+    private bool _lastComplete;
+    private bool _lastMarkdown;
+
+    protected override bool ShouldRender()
+    {
+        var len = Item.Text.Length;
+        if (len == _lastLen && Item.IsComplete == _lastComplete && Session.MarkdownEnabled == _lastMarkdown)
+            return false;
+        _lastLen = len;
+        _lastComplete = Item.IsComplete;
+        _lastMarkdown = Session.MarkdownEnabled;
+        return true;
+    }
+}

@@ -103,6 +103,28 @@
     // Surface file changes by default — the diff is the point. Other tool cards stay collapsed.
     protected override void OnInitialized() => _expanded = FileChangeArgs.IsDiffTool(Item.ToolName);
 
+    // A tool card only changes when its execution state advances, its result arrives, its
+    // (streamed) arguments grow, or the user toggles it open. Cards from earlier turns
+    // short-circuit on every streamed token.
+    private ToolCallState _lastState = (ToolCallState)(-1);
+    private int _lastResultLen = -2;
+    private int _lastArgsLen = -1;
+    private bool _lastExpanded;
+
+    protected override bool ShouldRender()
+    {
+        var resultLen = Item.Result?.Length ?? -1;
+        var argsLen = Item.ArgumentsJson.Length;
+        if (Item.State == _lastState && resultLen == _lastResultLen
+            && argsLen == _lastArgsLen && _expanded == _lastExpanded)
+            return false;
+        _lastState = Item.State;
+        _lastResultLen = resultLen;
+        _lastArgsLen = argsLen;
+        _lastExpanded = _expanded;
+        return true;
+    }
+
     private bool IsSubagentCall => Item.ToolName == SubagentRunTool.ToolName;
 
     private async Task OpenSubagentSession()

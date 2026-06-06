@@ -55,6 +55,23 @@
     private bool _initialized;
     private bool _userToggled;
 
+    // Streamed reasoning text only grows, so length + completion + the expand state form a
+    // sufficient change signature. Collapsed historical cards short-circuit on every token.
+    private int _lastLen = -1;
+    private bool _lastComplete;
+    private bool _lastExpanded;
+
+    protected override bool ShouldRender()
+    {
+        var len = Item.Text.Length;
+        if (len == _lastLen && Item.IsComplete == _lastComplete && _expanded == _lastExpanded)
+            return false;
+        _lastLen = len;
+        _lastComplete = Item.IsComplete;
+        _lastExpanded = _expanded;
+        return true;
+    }
+
     protected override void OnParametersSet()
     {
         if (!_initialized)
