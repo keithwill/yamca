@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Text.Json;
+using Yamca.Agent.Chat;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Subagents;
@@ -32,7 +33,7 @@ public class SubagentRunnerTests
     {
         var registry = new ToolRegistry(tools);
         var services = new SingleServiceProvider(typeof(IToolRegistry), registry);
-        var runner = new SubagentRunner(_settings, services, _approvals, new ThrowingHttpClientFactory());
+        var runner = new SubagentRunner(_settings, services, _approvals, new EndpointClientFactory(new ThrowingHttpClientFactory()));
         runner.Bind(_llm);
         return runner;
     }

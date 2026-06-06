@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Text;
 using Yamca.Agent.Chat;
 using Yamca.Agent.Settings;
@@ -19,12 +18,12 @@ public sealed class ContextCompactor
         "Drop social pleasantries and verbatim code blocks. Write in past tense. " +
         "Output the summary text only — no headers, no preamble.";
 
-    private readonly IHttpClientFactory _httpFactory;
+    private readonly EndpointClientFactory _clientFactory;
 
-    public ContextCompactor(IHttpClientFactory httpFactory)
+    public ContextCompactor(EndpointClientFactory clientFactory)
     {
-        ArgumentNullException.ThrowIfNull(httpFactory);
-        _httpFactory = httpFactory;
+        ArgumentNullException.ThrowIfNull(clientFactory);
+        _clientFactory = clientFactory;
     }
 
     /// <summary>Summarize <c>session.Messages[1 .. keepFromMessageIndex)</c>. The
@@ -44,9 +43,7 @@ public sealed class ContextCompactor
         var transcript = BuildTranscript(session.Messages, keepFromMessageIndex);
         if (transcript.Length == 0) return string.Empty;
 
-        var http = CreateHttpClient(endpoint);
-        var modelId = string.IsNullOrWhiteSpace(endpoint.Model) ? "local-model" : endpoint.Model;
-        var client = new OpenAIChatCompletionClient(http, modelId);
+        var client = _clientFactory.CreateCompletionClient(endpoint);
 
         var messages = new List<ChatMessage>
         {
@@ -62,18 +59,6 @@ public sealed class ContextCompactor
                 sb.Append(delta.Text);
         }
         return sb.ToString().Trim();
-    }
-
-    private HttpClient CreateHttpClient(EndpointSettings endpoint)
-    {
-        var baseUrl = endpoint.BaseUrl.EndsWith('/') ? endpoint.BaseUrl : endpoint.BaseUrl + "/";
-        var http = _httpFactory.CreateClient("yamca-llm");
-        http.BaseAddress = new Uri(baseUrl);
-        http.DefaultRequestHeaders.Authorization = string.IsNullOrWhiteSpace(endpoint.ApiKey)
-            ? null
-            : new AuthenticationHeaderValue("Bearer", endpoint.ApiKey);
-        http.Timeout = Timeout.InfiniteTimeSpan;
-        return http;
     }
 
     private static string BuildTranscript(IReadOnlyList<ChatMessage> messages, int keepFromMessageIndex)

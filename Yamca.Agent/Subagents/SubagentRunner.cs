@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Yamca.Agent.Chat;
@@ -22,7 +21,7 @@ public sealed class SubagentRunner : ISubagentRunner
     private readonly ISessionSettings _settings;
     private readonly IServiceProvider _services;
     private readonly IApprovalCoordinator _approvals;
-    private readonly IHttpClientFactory _httpFactory;
+    private readonly EndpointClientFactory _clientFactory;
     private readonly ISubagentObserver _observer;
 
     private IChatCompletionClient? _parentClient;
@@ -36,17 +35,17 @@ public sealed class SubagentRunner : ISubagentRunner
         ISessionSettings settings,
         IServiceProvider services,
         IApprovalCoordinator approvals,
-        IHttpClientFactory httpFactory,
+        EndpointClientFactory clientFactory,
         ISubagentObserver? observer = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(approvals);
-        ArgumentNullException.ThrowIfNull(httpFactory);
+        ArgumentNullException.ThrowIfNull(clientFactory);
         _settings = settings;
         _services = services;
         _approvals = approvals;
-        _httpFactory = httpFactory;
+        _clientFactory = clientFactory;
         _observer = observer ?? NoopSubagentObserver.Instance;
     }
 
@@ -273,27 +272,12 @@ public sealed class SubagentRunner : ISubagentRunner
         if (def.EndpointId is Guid id)
         {
             var endpoint = _settings.Endpoints.FindById(id);
-            return endpoint is null ? null : BuildClient(endpoint);
+            return endpoint is null ? null : _clientFactory.CreateCompletionClient(endpoint);
         }
 
         // Default: inherit the parent's client. Fall back to the configured default endpoint
         // when the runner was never bound (e.g. invoked outside a live chat).
-        return _parentClient ?? BuildClient(_settings.Endpoints.Default);
-    }
-
-    private IChatCompletionClient BuildClient(EndpointSettings endpoint)
-    {
-        var modelId = string.IsNullOrWhiteSpace(endpoint.Model) ? "local-model" : endpoint.Model;
-        var baseUrl = endpoint.BaseUrl.EndsWith('/') ? endpoint.BaseUrl : endpoint.BaseUrl + "/";
-
-        var http = _httpFactory.CreateClient("yamca-llm");
-        http.BaseAddress = new Uri(baseUrl);
-        http.DefaultRequestHeaders.Authorization = string.IsNullOrWhiteSpace(endpoint.ApiKey)
-            ? null
-            : new AuthenticationHeaderValue("Bearer", endpoint.ApiKey);
-        http.Timeout = Timeout.InfiniteTimeSpan;
-
-        return new OpenAIChatCompletionClient(http, modelId);
+        return _parentClient ?? _clientFactory.CreateCompletionClient(_settings.Endpoints.Default);
     }
 
     private static string FailureMessage(string name, TurnCompletionReason? reason, string lastAssistant)

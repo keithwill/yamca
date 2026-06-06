@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using Yamca.Agent.Chat;
 using Yamca.Agent.Chat.Persistence;
 using Yamca.Agent.Chat.Prompts;
@@ -24,7 +23,7 @@ public sealed class ChatViewModel : IDisposable
     private readonly IPermissionStore _permissionStore;
     private readonly SessionSettings _settings;
     private readonly InstructionFilesLoader _instructionLoader;
-    private readonly IHttpClientFactory _httpFactory;
+    private readonly EndpointClientFactory _clientFactory;
     private readonly EndpointHealthService _endpointHealth;
     private readonly LoadedToolSet _loadedTools;
     private readonly ContextCompactor _compactor;
@@ -56,7 +55,7 @@ public sealed class ChatViewModel : IDisposable
         IPermissionStore permissionStore,
         SessionSettings settings,
         InstructionFilesLoader instructionLoader,
-        IHttpClientFactory httpFactory,
+        EndpointClientFactory clientFactory,
         EndpointHealthService endpointHealth,
         LoadedToolSet loadedTools,
         ContextCompactor compactor,
@@ -72,7 +71,7 @@ public sealed class ChatViewModel : IDisposable
         _permissionStore = permissionStore;
         _settings = settings;
         _instructionLoader = instructionLoader;
-        _httpFactory = httpFactory;
+        _clientFactory = clientFactory;
         _endpointHealth = endpointHealth;
         _loadedTools = loadedTools;
         _compactor = compactor;
@@ -476,17 +475,7 @@ public sealed class ChatViewModel : IDisposable
         var endpoint = ResolveStartEndpoint();
         LockedEndpoint = endpoint;
 
-        var modelId = string.IsNullOrWhiteSpace(endpoint.Model) ? "local-model" : endpoint.Model;
-        var baseUrl = endpoint.BaseUrl.EndsWith('/') ? endpoint.BaseUrl : endpoint.BaseUrl + "/";
-
-        var http = _httpFactory.CreateClient("yamca-llm");
-        http.BaseAddress = new Uri(baseUrl);
-        http.DefaultRequestHeaders.Authorization = string.IsNullOrWhiteSpace(endpoint.ApiKey)
-            ? null
-            : new AuthenticationHeaderValue("Bearer", endpoint.ApiKey);
-        http.Timeout = Timeout.InfiniteTimeSpan;
-
-        var completion = new OpenAIChatCompletionClient(http, modelId);
+        var completion = _clientFactory.CreateCompletionClient(endpoint);
 
         // Hand the subagent runner this chat's completion client so subagents launched from this
         // session inherit its endpoint/model by default (the workspace flows through ToolContext).

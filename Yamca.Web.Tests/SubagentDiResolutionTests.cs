@@ -22,6 +22,7 @@ public class SubagentDiResolutionTests
     {
         var services = new ServiceCollection();
         services.AddHttpClient();
+        services.AddSingleton<EndpointClientFactory>();
 
         services.AddScoped<SessionSettings>();
         services.AddScoped<ISessionSettings>(sp => sp.GetRequiredService<SessionSettings>());

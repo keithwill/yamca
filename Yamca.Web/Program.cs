@@ -124,6 +124,10 @@ builder.Services.AddMudServices();
 
 builder.Services.AddHttpClient();
 
+// Shared "endpoint → configured HttpClient → OpenAIChatCompletionClient" factory, so the chat
+// loop, subagent runner, and context compactor all build their LLM client identically.
+builder.Services.AddSingleton<EndpointClientFactory>();
+
 // --- Agent services -----------------------------------------------------------
 // Workspace is bound once at process start, either to a path supplied as the
 // first positional CLI argument or, if none was supplied, to the directory the
