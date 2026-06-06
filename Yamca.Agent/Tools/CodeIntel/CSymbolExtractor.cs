@@ -61,7 +61,7 @@ public sealed class CSymbolExtractor : ISymbolExtractor
 
                 case "preproc_def":
                 case "preproc_function_def":
-                    var macro = child.GetChildForField("name")?.Text ?? "<anonymous>";
+                    var macro = child.NameOrAnonymous();
                     sink.Add(Symbol.From("macro", $"#define {macro}", macro, child, depth));
                     break;
 
@@ -73,7 +73,7 @@ public sealed class CSymbolExtractor : ISymbolExtractor
                     break;
 
                 case "enumerator":
-                    var enumName = child.GetChildForField("name")?.Text ?? string.Empty;
+                    var enumName = child.NameOrEmpty();
                     if (enumName.Length > 0)
                         sink.Add(Symbol.From("enum_value", enumName, enumName, child, depth));
                     break;
@@ -107,8 +107,8 @@ public sealed class CSymbolExtractor : ISymbolExtractor
             "enum_specifier" => "enum",
             _ => "type",
         };
-        var name = spec.GetChildForField("name")?.Text ?? "<anonymous>";
-        sink.Add(Symbol.From(kind, $"{kind} {name}", spec.GetChildForField("name")?.Text ?? string.Empty, spec, depth));
+        var name = spec.NameOrAnonymous();
+        sink.Add(Symbol.From(kind, $"{kind} {name}", spec.NameOrEmpty(), spec, depth));
 
         if (depth < SymbolDepth.MaxContainerDepth)
         {

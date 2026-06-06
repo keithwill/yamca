@@ -30,14 +30,14 @@ public sealed class RubySymbolExtractor : ISymbolExtractor
                 case "class":
                     var kind = child.Type;
                     var body = child.GetChildForField("body");
-                    sink.Add(Symbol.From(kind, SignatureFormatter.SliceHeader(child, body, source), NameText(child), child, depth));
+                    sink.Add(Symbol.From(kind, SignatureFormatter.SliceHeader(child, body, source), child.NameOrEmpty(), child, depth));
                     if (depth < SymbolDepth.MaxContainerDepth && body is not null)
                         Walk(body, depth + 1, sink, source);
                     break;
 
                 case "method":
                 case "singleton_method":
-                    sink.Add(Symbol.From("method", MethodDisplay(child, source), NameText(child), child, depth));
+                    sink.Add(Symbol.From("method", MethodDisplay(child, source), child.NameOrEmpty(), child, depth));
                     break;
 
                 case "singleton_class":
@@ -65,8 +65,6 @@ public sealed class RubySymbolExtractor : ISymbolExtractor
         }
     }
 
-    private static string NameText(Node node) => node.GetChildForField("name")?.Text ?? string.Empty;
-
     private static string MethodDisplay(Node node, string source)
     {
         // Slice up to the body (or the parameter list, for an abstract-ish bodyless def). The
@@ -77,7 +75,7 @@ public sealed class RubySymbolExtractor : ISymbolExtractor
 
         // `def foo; end` with no params and no body: build a minimal signature by hand so we
         // don't slice in the trailing `end`.
-        var name = node.GetChildForField("name")?.Text ?? string.Empty;
+        var name = node.NameOrEmpty();
         var receiver = node.GetChildForField("object")?.Text;
         return receiver is not null ? $"def {receiver}.{name}" : $"def {name}";
     }

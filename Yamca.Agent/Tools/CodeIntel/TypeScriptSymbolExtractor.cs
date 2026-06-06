@@ -43,16 +43,15 @@ public sealed class TypeScriptSymbolExtractor : ISymbolExtractor
                     break;
 
                 case "type_alias_declaration":
-                    var taNameNode = target.GetChildForField("name");
-                    var taName = taNameNode?.Text ?? "<anonymous>";
-                    sink.Add(Symbol.From("type", $"type {taName}", taNameNode?.Text ?? string.Empty, target, depth));
+                    var taName = target.NameOrAnonymous();
+                    sink.Add(Symbol.From("type", $"type {taName}", target.NameOrEmpty(), target, depth));
                     break;
 
                 case "function_declaration":
                 case "generator_function_declaration":
                     var fb = target.GetChildForField("body");
                     sink.Add(Symbol.From("function", SignatureFormatter.SliceHeader(target, fb, source),
-                        target.GetChildForField("name")?.Text ?? string.Empty, target, depth));
+                        target.NameOrEmpty(), target, depth));
                     break;
 
                 case "method_definition":
@@ -60,12 +59,12 @@ public sealed class TypeScriptSymbolExtractor : ISymbolExtractor
                 case "abstract_method_signature":
                     var mb = target.GetChildForField("body");
                     sink.Add(Symbol.From("method", SignatureFormatter.SliceHeader(target, mb, source),
-                        target.GetChildForField("name")?.Text ?? string.Empty, target, depth));
+                        target.NameOrEmpty(), target, depth));
                     break;
 
                 case "public_field_definition":
                     sink.Add(Symbol.From("field", SignatureFormatter.SliceHeader(target, null, source),
-                        target.GetChildForField("name")?.Text ?? string.Empty, target, depth));
+                        target.NameOrEmpty(), target, depth));
                     break;
 
                 case "program":
@@ -81,9 +80,8 @@ public sealed class TypeScriptSymbolExtractor : ISymbolExtractor
 
     private static void EmitContainer(Node node, string kind, int depth, List<Symbol> sink, string source)
     {
-        var nameNode = node.GetChildForField("name");
-        var name = nameNode?.Text ?? "<anonymous>";
-        sink.Add(Symbol.From(kind, $"{kind} {name}", nameNode?.Text ?? string.Empty, node, depth));
+        var name = node.NameOrAnonymous();
+        sink.Add(Symbol.From(kind, $"{kind} {name}", node.NameOrEmpty(), node, depth));
         if (depth < SymbolDepth.MaxContainerDepth)
         {
             var body = node.GetChildForField("body");

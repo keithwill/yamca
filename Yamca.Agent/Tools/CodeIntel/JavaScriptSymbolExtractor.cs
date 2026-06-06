@@ -26,9 +26,8 @@ public sealed class JavaScriptSymbolExtractor : ISymbolExtractor
             {
                 case "class_declaration":
                 case "class":
-                    var classNameNode = target.GetChildForField("name");
-                    var className = classNameNode?.Text ?? "<anonymous>";
-                    sink.Add(Symbol.From("class", $"class {className}", classNameNode?.Text ?? string.Empty, target, depth));
+                    var className = target.NameOrAnonymous();
+                    sink.Add(Symbol.From("class", $"class {className}", target.NameOrEmpty(), target, depth));
                     if (depth < SymbolDepth.MaxContainerDepth)
                     {
                         var body = target.GetChildForField("body");
@@ -40,13 +39,13 @@ public sealed class JavaScriptSymbolExtractor : ISymbolExtractor
                 case "generator_function_declaration":
                     var fb = target.GetChildForField("body");
                     sink.Add(Symbol.From("function", SignatureFormatter.SliceHeader(target, fb, source),
-                        target.GetChildForField("name")?.Text ?? string.Empty, target, depth));
+                        target.NameOrEmpty(), target, depth));
                     break;
 
                 case "method_definition":
                     var mb = target.GetChildForField("body");
                     sink.Add(Symbol.From("method", SignatureFormatter.SliceHeader(target, mb, source),
-                        target.GetChildForField("name")?.Text ?? string.Empty, target, depth));
+                        target.NameOrEmpty(), target, depth));
                     break;
 
                 case "program":

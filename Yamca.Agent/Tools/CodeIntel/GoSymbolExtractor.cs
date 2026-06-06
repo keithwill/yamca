@@ -22,20 +22,20 @@ public sealed class GoSymbolExtractor : ISymbolExtractor
                 case "function_declaration":
                     sink.Add(Symbol.From("func",
                         SignatureFormatter.SliceHeader(child, child.GetChildForField("body"), source),
-                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
+                        child.NameOrEmpty(), child, depth));
                     break;
 
                 case "method_declaration":
                     sink.Add(Symbol.From("method",
                         SignatureFormatter.SliceHeader(child, child.GetChildForField("body"), source),
-                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
+                        child.NameOrEmpty(), child, depth));
                     break;
 
                 case "type_declaration":
                     foreach (var spec in child.NamedChildren)
                     {
                         if (spec.Type != "type_spec" && spec.Type != "type_alias") continue;
-                        var name = spec.GetChildForField("name")?.Text ?? "<anonymous>";
+                        var name = spec.NameOrAnonymous();
                         var typeNode = spec.GetChildForField("type");
                         var kind = typeNode?.Type switch
                         {
@@ -43,7 +43,7 @@ public sealed class GoSymbolExtractor : ISymbolExtractor
                             "interface_type" => "interface",
                             _ => "type",
                         };
-                        sink.Add(Symbol.From(kind, $"{kind} {name}", spec.GetChildForField("name")?.Text ?? string.Empty, spec, depth));
+                        sink.Add(Symbol.From(kind, $"{kind} {name}", spec.NameOrEmpty(), spec, depth));
                     }
                     break;
 

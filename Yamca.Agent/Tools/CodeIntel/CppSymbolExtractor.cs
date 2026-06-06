@@ -84,12 +84,12 @@ public sealed class CppSymbolExtractor : ISymbolExtractor
 
             case "preproc_def":
             case "preproc_function_def":
-                var macro = child.GetChildForField("name")?.Text ?? "<anonymous>";
+                var macro = child.NameOrAnonymous();
                 sink.Add(Symbol.From("macro", $"#define {macro}", macro, child, depth));
                 break;
 
             case "enumerator":
-                var en = child.GetChildForField("name")?.Text ?? string.Empty;
+                var en = child.NameOrEmpty();
                 if (en.Length > 0) sink.Add(Symbol.From("enum_value", en, en, child, depth));
                 break;
 
@@ -110,7 +110,7 @@ public sealed class CppSymbolExtractor : ISymbolExtractor
     private static void EmitContainer(Node spec, string kind, int depth, bool inRecord, List<Symbol> sink, string source)
     {
         var body = spec.GetChildForField("body");
-        sink.Add(Symbol.From(kind, SignatureFormatter.SliceHeader(spec, body, source), spec.GetChildForField("name")?.Text ?? string.Empty, spec, depth));
+        sink.Add(Symbol.From(kind, SignatureFormatter.SliceHeader(spec, body, source), spec.NameOrEmpty(), spec, depth));
         if (depth < SymbolDepth.MaxContainerDepth && body is not null)
             Walk(body, depth + 1, inRecord, sink, source);
     }

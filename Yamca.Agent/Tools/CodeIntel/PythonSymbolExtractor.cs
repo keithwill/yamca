@@ -25,9 +25,8 @@ public sealed class PythonSymbolExtractor : ISymbolExtractor
             switch (target.Type)
             {
                 case "class_definition":
-                    var classNameNode = target.GetChildForField("name");
-                    var className = classNameNode?.Text ?? "<anonymous>";
-                    sink.Add(Symbol.From("class", $"class {className}", classNameNode?.Text ?? string.Empty, target, depth));
+                    var className = target.NameOrAnonymous();
+                    sink.Add(Symbol.From("class", $"class {className}", target.NameOrEmpty(), target, depth));
                     if (depth < SymbolDepth.MaxContainerDepth)
                     {
                         var body = target.GetChildForField("body");
@@ -38,7 +37,7 @@ public sealed class PythonSymbolExtractor : ISymbolExtractor
                 case "function_definition":
                     var body2 = target.GetChildForField("body");
                     var sig = SignatureFormatter.SliceHeader(target, body2, source);
-                    sink.Add(Symbol.From("def", sig, target.GetChildForField("name")?.Text ?? string.Empty, target, depth));
+                    sink.Add(Symbol.From("def", sig, target.NameOrEmpty(), target, depth));
                     break;
 
                 case "module":

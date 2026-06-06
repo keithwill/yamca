@@ -181,7 +181,7 @@ public sealed class CNodeProfile : GenericNodeProfile
             case "struct_specifier":
             case "union_specifier":
             case "enum_specifier":
-                name = node.GetChildForField("name")?.Text ?? string.Empty;
+                name = node.NameOrEmpty();
                 kind = node.Type[..node.Type.IndexOf('_')];
                 return name.Length > 0;
             default:
@@ -213,14 +213,14 @@ public sealed class CppNodeProfile : GenericNodeProfile
                 kind = "func";
                 return name.Length > 0;
             case "namespace_definition":
-                name = node.GetChildForField("name")?.Text ?? string.Empty;
+                name = node.NameOrEmpty();
                 kind = "namespace";
                 return name.Length > 0;
             case "class_specifier":
             case "struct_specifier":
             case "union_specifier":
             case "enum_specifier":
-                name = node.GetChildForField("name")?.Text ?? string.Empty;
+                name = node.NameOrEmpty();
                 kind = node.Type[..node.Type.IndexOf('_')];
                 return name.Length > 0;
             default:
@@ -262,7 +262,7 @@ public sealed class RubyNodeProfile : GenericNodeProfile
             default:
                 return false;
         }
-        name = node.GetChildForField("name")?.Text ?? string.Empty;
+        name = node.NameOrEmpty();
         return name.Length > 0;
     }
 }
@@ -293,7 +293,7 @@ public sealed class PhpNodeProfile : GenericNodeProfile
             case "member_call_expression":
             case "nullsafe_member_call_expression":
             case "scoped_call_expression":
-                calleeName = node.GetChildForField("name")?.Text ?? string.Empty;
+                calleeName = node.NameOrEmpty();
                 break;
             default:
                 return false;

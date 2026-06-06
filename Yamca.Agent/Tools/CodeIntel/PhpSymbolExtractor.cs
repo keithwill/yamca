@@ -82,7 +82,7 @@ public sealed class PhpSymbolExtractor : ISymbolExtractor
                     break;
 
                 case "enum_case":
-                    var caseName = child.GetChildForField("name")?.Text ?? string.Empty;
+                    var caseName = child.NameOrEmpty();
                     if (caseName.Length > 0)
                         sink.Add(Symbol.From("enum_value", caseName, caseName, child, currentDepth));
                     break;
@@ -99,7 +99,7 @@ public sealed class PhpSymbolExtractor : ISymbolExtractor
     private static void EmitContainer(Node node, string kind, int depth, List<Symbol> sink, string source)
     {
         var body = node.GetChildForField("body");
-        sink.Add(Symbol.From(kind, SignatureFormatter.SliceHeader(node, body, source), node.GetChildForField("name")?.Text ?? string.Empty, node, depth));
+        sink.Add(Symbol.From(kind, SignatureFormatter.SliceHeader(node, body, source), node.NameOrEmpty(), node, depth));
         if (depth < SymbolDepth.MaxContainerDepth && body is not null)
             Walk(body, depth + 1, sink, source);
     }
@@ -108,7 +108,7 @@ public sealed class PhpSymbolExtractor : ISymbolExtractor
     {
         // body is absent for abstract/interface methods; the slice then runs to the `;`.
         var body = node.GetChildForField("body");
-        sink.Add(Symbol.From(kind, SignatureFormatter.SliceHeader(node, body, source), node.GetChildForField("name")?.Text ?? string.Empty, node, depth));
+        sink.Add(Symbol.From(kind, SignatureFormatter.SliceHeader(node, body, source), node.NameOrEmpty(), node, depth));
     }
 
     private static void EmitProperties(Node declaration, int depth, List<Symbol> sink, string source)
@@ -117,7 +117,7 @@ public sealed class PhpSymbolExtractor : ISymbolExtractor
         foreach (var element in declaration.NamedChildren)
         {
             if (element.Type != "property_element") continue;
-            var varName = element.GetChildForField("name")?.Text ?? string.Empty; // e.g. "$id"
+            var varName = element.NameOrEmpty(); // e.g. "$id"
             if (varName.Length == 0) continue;
             var leaf = varName.TrimStart('$');
             var display = typeText is null ? $"field {varName}" : $"field {typeText} {varName}";

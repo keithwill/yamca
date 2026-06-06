@@ -20,8 +20,8 @@ public sealed class RustSymbolExtractor : ISymbolExtractor
             switch (child.Type)
             {
                 case "mod_item":
-                    var modName = child.GetChildForField("name")?.Text ?? "<anonymous>";
-                    sink.Add(Symbol.From("mod", $"mod {modName}", child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
+                    var modName = child.NameOrAnonymous();
+                    sink.Add(Symbol.From("mod", $"mod {modName}", child.NameOrEmpty(), child, depth));
                     if (depth < SymbolDepth.MaxContainerDepth)
                     {
                         var body = child.GetChildForField("body");
@@ -42,8 +42,8 @@ public sealed class RustSymbolExtractor : ISymbolExtractor
                     break;
 
                 case "trait_item":
-                    var traitName = child.GetChildForField("name")?.Text ?? "<anonymous>";
-                    sink.Add(Symbol.From("trait", $"trait {traitName}", child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
+                    var traitName = child.NameOrAnonymous();
+                    sink.Add(Symbol.From("trait", $"trait {traitName}", child.NameOrEmpty(), child, depth));
                     if (depth < SymbolDepth.MaxContainerDepth)
                     {
                         var body = child.GetChildForField("body");
@@ -54,33 +54,33 @@ public sealed class RustSymbolExtractor : ISymbolExtractor
                 case "struct_item":
                     sink.Add(Symbol.From("struct",
                         SignatureFormatter.SliceHeader(child, child.GetChildForField("body"), source),
-                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
+                        child.NameOrEmpty(), child, depth));
                     break;
 
                 case "enum_item":
                     sink.Add(Symbol.From("enum",
                         SignatureFormatter.SliceHeader(child, child.GetChildForField("body"), source),
-                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
+                        child.NameOrEmpty(), child, depth));
                     break;
 
                 case "function_item":
                 case "function_signature_item":
                     sink.Add(Symbol.From("fn",
                         SignatureFormatter.SliceHeader(child, child.GetChildForField("body"), source),
-                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
+                        child.NameOrEmpty(), child, depth));
                     break;
 
                 case "const_item":
                 case "static_item":
                     sink.Add(Symbol.From(child.Type == "const_item" ? "const" : "static",
                         SignatureFormatter.SliceHeader(child, null, source),
-                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
+                        child.NameOrEmpty(), child, depth));
                     break;
 
                 case "type_item":
                     sink.Add(Symbol.From("type",
                         SignatureFormatter.SliceHeader(child, null, source),
-                        child.GetChildForField("name")?.Text ?? string.Empty, child, depth));
+                        child.NameOrEmpty(), child, depth));
                     break;
 
                 case "source_file":

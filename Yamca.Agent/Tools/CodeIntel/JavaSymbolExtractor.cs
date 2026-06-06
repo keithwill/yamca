@@ -40,8 +40,8 @@ public sealed class JavaSymbolExtractor : ISymbolExtractor
 
             if (TryContainer(child, out var containerKind))
             {
-                var name = NameOrAnonymous(child);
-                sink.Add(Symbol.From(containerKind, $"{containerKind} {name}", BareName(child), child, currentDepth));
+                var name = child.NameOrAnonymous();
+                sink.Add(Symbol.From(containerKind, $"{containerKind} {name}", child.NameOrEmpty(), child, currentDepth));
                 if (currentDepth < SymbolDepth.MaxContainerDepth)
                 {
                     var body = child.GetChildForField("body");
@@ -109,15 +109,6 @@ public sealed class JavaSymbolExtractor : ISymbolExtractor
         _ => false,
     };
 
-    private static string NameOrAnonymous(Node node)
-    {
-        var name = node.GetChildForField("name");
-        return name?.Text ?? "<anonymous>";
-    }
-
-    /// <summary>Bare leaf name for lookup (empty when the node has no <c>name</c> field).</summary>
-    private static string BareName(Node node) => node.GetChildForField("name")?.Text ?? string.Empty;
-
     /// <summary>
     /// A package declaration carries its name as a child <c>identifier</c> /
     /// <c>scoped_identifier</c> rather than a <c>name</c> field. Take the first such child.
@@ -139,23 +130,12 @@ public sealed class JavaSymbolExtractor : ISymbolExtractor
         // rather than a `name` field. Take the first declarator.
         if (kind == "field")
         {
-            var declarator = FirstDescendant(node, "variable_declarator");
+            var declarator = node.FirstDescendant("variable_declarator");
             return declarator?.GetChildForField("name")?.Text
                 ?? declarator?.NamedChildren.FirstOrDefault(c => c.Type == "identifier")?.Text
                 ?? string.Empty;
         }
         return string.Empty;
-    }
-
-    private static Node? FirstDescendant(Node node, string type)
-    {
-        foreach (var child in node.NamedChildren)
-        {
-            if (child.Type == type) return child;
-            var found = FirstDescendant(child, type);
-            if (found is not null) return found;
-        }
-        return null;
     }
 
     private static string BuildMemberDisplay(string kind, Node node, string source)
