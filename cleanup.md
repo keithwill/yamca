@@ -63,7 +63,17 @@ tree-navigation helpers.)
 
 ## Architectural
 
-### 4. `ChatViewModel` constructor takes 15 dependencies
+### 4. `ChatViewModel` constructor takes 15 dependencies — DONE
+
+Introduced `AgentLoopFactory` (`Yamca.Agent/Chat/AgentLoopFactory.cs`) capturing the stable
+loop collaborators (tool registry, permission/availability resolvers, approval coordinator,
+permission store, loaded tool set); `Create` takes only the per-session pieces (session,
+completion client, workspace, options). `ChatViewModel` dropped its three loop-only deps
+(`IAvailabilityResolver`, `IPermissionStore`, `LoadedToolSet`), down from 15 to 12. The
+endpoint client factory (item #1) stays a direct dep because the completion client is also
+bound to the subagent runner, not solely threaded into the loop.
+
+Original note:
 
 `Yamca.Web/Services/ChatViewModel.cs:49-64`. The class is cohesive (per-circuit
 orchestrator) so this isn't wrong, but it's at the threshold where it's hard to test and

@@ -263,6 +263,7 @@ builder.Services.AddScoped<IPermissionResolver, PermissionResolver>();
 builder.Services.AddScoped<IAvailabilityResolver, AvailabilityResolver>();
 builder.Services.AddScoped<IApprovalCoordinator, ApprovalCoordinator>();
 builder.Services.AddScoped<IPermissionStore, SessionSettingsPermissionStore>();
+builder.Services.AddScoped<AgentLoopFactory>();
 
 builder.Services.AddScoped<EndpointHealthService>();
 builder.Services.AddTransient<ContextCompactor>();

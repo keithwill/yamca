@@ -18,14 +18,12 @@ public sealed class ChatViewModel : IDisposable
     private readonly IWorkspace _workspace;
     private readonly IToolRegistry _tools;
     private readonly IPermissionResolver _permissions;
-    private readonly IAvailabilityResolver _availability;
     private readonly IApprovalCoordinator _approvals;
-    private readonly IPermissionStore _permissionStore;
     private readonly SessionSettings _settings;
     private readonly InstructionFilesLoader _instructionLoader;
     private readonly EndpointClientFactory _clientFactory;
     private readonly EndpointHealthService _endpointHealth;
-    private readonly LoadedToolSet _loadedTools;
+    private readonly AgentLoopFactory _loopFactory;
     private readonly ContextCompactor _compactor;
     private readonly ChatStore _store;
     private readonly ISubagentRunner _subagentRunner;
@@ -50,14 +48,12 @@ public sealed class ChatViewModel : IDisposable
         IWorkspace workspace,
         IToolRegistry tools,
         IPermissionResolver permissions,
-        IAvailabilityResolver availability,
         IApprovalCoordinator approvals,
-        IPermissionStore permissionStore,
         SessionSettings settings,
         InstructionFilesLoader instructionLoader,
         EndpointClientFactory clientFactory,
         EndpointHealthService endpointHealth,
-        LoadedToolSet loadedTools,
+        AgentLoopFactory loopFactory,
         ContextCompactor compactor,
         ChatStore store,
         ISubagentRunner subagentRunner)
@@ -66,14 +62,12 @@ public sealed class ChatViewModel : IDisposable
         _workspace = workspace;
         _tools = tools;
         _permissions = permissions;
-        _availability = availability;
         _approvals = approvals;
-        _permissionStore = permissionStore;
         _settings = settings;
         _instructionLoader = instructionLoader;
         _clientFactory = clientFactory;
         _endpointHealth = endpointHealth;
-        _loadedTools = loadedTools;
+        _loopFactory = loopFactory;
         _compactor = compactor;
         _store = store;
         _subagentRunner = subagentRunner;
@@ -509,8 +503,8 @@ public sealed class ChatViewModel : IDisposable
             session = new ChatSession(_workspace, prompt, instructions);
         }
 
-        _loop = new AgentLoop(
-            session, completion, _tools, _permissions, _availability, _approvals, _permissionStore, _workspace, _loadedTools,
+        _loop = _loopFactory.Create(
+            session, completion, _workspace,
             new AgentLoopOptions { MaxIterations = _settings.MaxToolIterations, OwnerId = Id.ToString() },
             isYoloEnabled: () => YoloMode,
             diagnostics: _diagnostics);
