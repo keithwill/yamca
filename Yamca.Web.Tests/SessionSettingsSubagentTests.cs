@@ -28,10 +28,8 @@ public class SessionSettingsSubagentTests
         Assert.That(settings.UserSubagents.Agents.Select(a => a.Name), Does.Contain("code"));
         var code = settings.UserSubagents.Agents.Single(a => a.Name == "code");
 
-        // The implementer leans on the symbol tools and can run registered scripts to build/test.
-        Assert.That(code.AllowedTools, Does.Contain("code_edit_symbol"));
+        // The implementer edits files directly and can run registered scripts to build/test.
         Assert.That(code.AllowedTools, Does.Contain("write_file"));
-        // edit_file covers file types the code_* symbol tools don't (css, html, etc.).
         Assert.That(code.AllowedTools, Does.Contain("edit_file"));
         Assert.That(code.AllowedTools, Does.Contain("execute_registered_script"));
         // It is gated to registered scripts, not free-form command execution, by default.
