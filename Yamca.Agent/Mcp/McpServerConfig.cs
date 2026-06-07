@@ -95,6 +95,33 @@ public static class McpServerConfigJson
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
+    /// <summary>The servers seeded into a fresh <c>mcp.json</c> on first run: the two
+    /// browser-automation MCPs, shipped <b>disabled</b>. They're the common ones users reach
+    /// for, and pre-listing them (rather than making the user hand-write the JSON) means
+    /// enabling is a one-click toggle. Both launch via <c>npx</c>, so the only host requirement
+    /// is Node.js on PATH; <c>chrome-devtools</c> drives an existing Chrome, while
+    /// <c>playwright</c> is pinned to <c>--channel chrome</c> so it reuses installed Chrome
+    /// instead of triggering a multi-hundred-MB browser download on first enable.
+    /// Tools stay <see cref="Availability.Deferred"/> — each server exposes ~30 tools, so they
+    /// belong behind <c>lookup_tool</c> rather than in every turn's prompt prefix.</summary>
+    public static IReadOnlyList<McpServerConfig> DefaultConfigs() => new[]
+    {
+        new McpServerConfig(
+            Id: "chrome-devtools",
+            Enabled: false,
+            Stdio: new McpStdioConfig("npx", new[] { "-y", "chrome-devtools-mcp@latest" }),
+            Http: null,
+            CallTimeoutSeconds: null,
+            DefaultToolAvailability: Availability.Deferred),
+        new McpServerConfig(
+            Id: "playwright",
+            Enabled: false,
+            Stdio: new McpStdioConfig("npx", new[] { "-y", "@playwright/mcp@latest", "--channel", "chrome" }),
+            Http: null,
+            CallTimeoutSeconds: null,
+            DefaultToolAvailability: Availability.Deferred),
+    };
+
     /// <summary>Identifier rules: kebab/snake-case slug, ASCII letters/digits/underscore/hyphen,
     /// 1–48 chars. The id is embedded in tool names — keep it predictable.</summary>
     public static bool IsValidId(string? id)

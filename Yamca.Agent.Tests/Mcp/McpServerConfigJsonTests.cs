@@ -8,6 +8,36 @@ namespace Yamca.Agent.Tests.Mcp;
 public class McpServerConfigJsonTests
 {
     [Test]
+    public void DefaultConfigs_AreBrowserMcpsShippedDisabled()
+    {
+        var defaults = McpServerConfigJson.DefaultConfigs();
+
+        Assert.That(defaults.Select(c => c.Id),
+            Is.EquivalentTo(new[] { "chrome-devtools", "playwright" }));
+        // Shipped disabled so enabling is an explicit user opt-in.
+        Assert.That(defaults.All(c => !c.Enabled), Is.True);
+        // Deferred keeps the browser tool schemas out of the prompt prefix.
+        Assert.That(defaults.All(c => c.DefaultToolAvailability == Availability.Deferred), Is.True);
+        // All launch via npx — Node is the only host requirement.
+        Assert.That(defaults.All(c => c.Stdio!.Command == "npx"), Is.True);
+
+        var playwright = defaults.Single(c => c.Id == "playwright");
+        // Pinned to installed Chrome so first enable doesn't trigger a browser download.
+        Assert.That(playwright.Stdio!.Args, Does.Contain("--channel").And.Contains("chrome"));
+    }
+
+    [Test]
+    public void DefaultConfigs_RoundtripThroughJson()
+    {
+        var json = McpServerConfigJson.SerializeList(McpServerConfigJson.DefaultConfigs());
+        var parsed = McpServerConfigJson.DeserializeList(json);
+
+        Assert.That(parsed, Has.Count.EqualTo(2));
+        Assert.That(parsed.Select(c => c.Id),
+            Is.EquivalentTo(new[] { "chrome-devtools", "playwright" }));
+    }
+
+    [Test]
     public void DeserializeList_AcceptsWrappedShape()
     {
         var json = """

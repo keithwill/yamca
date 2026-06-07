@@ -39,11 +39,24 @@ public sealed class McpConfigStore
     /// re-applying the same list is a no-op inside the registry's diff.</summary>
     public async Task HydrateAsync(CancellationToken cancellationToken = default)
     {
+        bool seeded = false;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var json = _storage.Load();
-            var parsed = McpServerConfigJson.DeserializeList(json).ToList();
+            // A null blob means mcp.json doesn't exist yet (fresh install) — seed the default
+            // servers. A present-but-empty "[]" is a deliberate user state (they removed every
+            // server) and must be respected, so only the null case re-seeds.
+            List<McpServerConfig> parsed;
+            if (json is null)
+            {
+                parsed = McpServerConfigJson.DefaultConfigs().ToList();
+                seeded = true;
+            }
+            else
+            {
+                parsed = McpServerConfigJson.DeserializeList(json).ToList();
+            }
             ReplaceLocked(parsed);
             _hydrated = true;
         }
@@ -51,6 +64,9 @@ public sealed class McpConfigStore
         {
             _gate.Release();
         }
+        // Materialize the seed to disk so the user can see/edit the defaults and so the
+        // null-means-seed check above fires exactly once across runs.
+        if (seeded) await PersistAsync().ConfigureAwait(false);
         await _registry.ReplaceAsync(_configs, cancellationToken).ConfigureAwait(false);
     }
 
@@ -158,6 +174,34 @@ public sealed class McpConfigStore
             await PersistAsync().ConfigureAwait(false);
             await _registry.ReplaceAsync(_configs, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>Add back any shipped default server (<see cref="McpServerConfigJson.DefaultConfigs"/>)
+    /// whose id is currently absent, leaving existing servers — including user-customized copies of a
+    /// default — untouched. This is additive only: a default the user deleted reappears, but their edits
+    /// to a default they kept are preserved. Returns the number of servers added (0 = nothing missing).</summary>
+    public async Task<int> RestoreMissingDefaultsAsync(CancellationToken cancellationToken = default)
+    {
+        int added = 0;
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var present = new HashSet<string>(_configs.Select(c => c.Id), StringComparer.Ordinal);
+            var missing = McpServerConfigJson.DefaultConfigs().Where(d => !present.Contains(d.Id)).ToList();
+            if (missing.Count == 0) return 0;
+
+            var next = new List<McpServerConfig>(_configs);
+            next.AddRange(missing);
+            ReplaceLocked(next);
+            added = missing.Count;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+        await PersistAsync().ConfigureAwait(false);
+        await _registry.ReplaceAsync(_configs, cancellationToken).ConfigureAwait(false);
+        return added;
     }
 
     private void ReplaceLocked(List<McpServerConfig> next) => _configs = next;
