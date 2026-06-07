@@ -162,6 +162,10 @@ window.yamcaChat = (function () {
             if (!anchor) return;
             const scroller = findScrollerFor(anchor);
             if (!scroller) return;
+            // Attach the scroll listener lazily so anchor-only callers (e.g. the subagent
+            // transcript, which has no separate init call) still let the user break the stick
+            // by scrolling up.
+            attach(scroller);
             const s = getState(scroller);
             if (!s.stick || s.pending) return;
             s.pending = true;

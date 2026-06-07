@@ -1,3 +1,4 @@
+@using Microsoft.JSInterop
 @using Yamca.Agent.Chat
 @using Yamca.Web.Services
 
@@ -50,6 +51,8 @@
             </MudText>
             <pre class="yamca-subagent-result @(Session.Status == SubagentRunStatus.Failed ? "is-error" : "")">@Session.Result</pre>
         }
+
+        <div @ref="_scrollAnchor"></div>
     </div>
 </div>
 
@@ -82,9 +85,25 @@
 </style>
 
 @code {
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
     [Parameter, EditorRequired] public SubagentLiveSession Session { get; set; } = default!;
 
     private bool _ctxOpen;
+    private ElementReference _scrollAnchor;
+
+    // The transcript re-renders on every streamed event (the dialog calls StateHasChanged from
+    // the registry's Changed event), so following the anchor here keeps a running subagent's
+    // output pinned to the bottom unless the viewer scrolls up — same behaviour as the main chat.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("yamcaChat.scrollIfSticky", _scrollAnchor);
+        }
+        catch (JSDisconnectedException) { /* circuit gone */ }
+        catch (TaskCanceledException)   { /* tab closing */ }
+    }
 
     private static readonly EventCallback NoOp = EventCallback.Empty;
 
