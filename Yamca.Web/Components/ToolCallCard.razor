@@ -24,17 +24,31 @@
         }
         @if (IsSubagentCall)
         {
-            <span @onclick:stopPropagation="true">
-                <MudTooltip Text="View subagent session">
-                    <MudIconButton Icon="@Icons.Material.Filled.AccountTree" Size="Size.Small"
-                                   OnClick="OpenSubagentSession" aria-label="View subagent session" />
-                </MudTooltip>
-            </span>
+            <MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="Size.Small" Class="tool-call-chevron" />
         }
-        <MudIcon Icon="@(_expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
-                 Size="Size.Small" Class="tool-call-chevron" />
+        else if (IsLoopCall)
+        {
+            <MudIcon Icon="@Icons.Material.Filled.Loop" Size="Size.Small" Class="tool-call-chevron" />
+        }
+        else
+        {
+            <MudIcon Icon="@(_expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                     Size="Size.Small" Class="tool-call-chevron" />
+        }
     </div>
-    @if (_expanded)
+    @if (IsLoopCall)
+    {
+        @* Loops are user-requested and expensive, and their click opens the session modal rather
+           than an inline expand — so surface just the aggregate roll-up line (success / followup /
+           failed counts) in the log by default. Per-item detail lives in the modal. *@
+        @if (LoopSummaryLine is { } summary)
+        {
+            <div class="tool-call-body">
+                <span class="tool-call-rollup">@summary</span>
+            </div>
+        }
+    }
+    else if (_expanded)
     {
         <div class="tool-call-body">
             @if (Change is { } change)
@@ -93,6 +107,7 @@
     .tool-call-body { padding: 4px 8px 8px 8px; border-top: 1px solid var(--mud-palette-lines-default); }
     .tool-call-pre { overflow: auto; max-height: 200px; font-size: 0.75rem; margin: 2px 0; }
     .tool-call-pre-result { max-height: 300px; }
+    .tool-call-rollup { font-size: 0.78rem; color: var(--mud-palette-text-secondary); }
 </style>
 
 @code {
@@ -126,6 +141,13 @@
     }
 
     private bool IsSubagentCall => Item.ToolName == SubagentRunTool.ToolName;
+    private bool IsLoopCall => Item.ToolName == LoopTool.ToolName;
+
+    // The roll-up's first line is the aggregate ("Loop over N items ...: A success, B needs_followup,
+    // C failed."); the rest is per-item detail that belongs in the modal, not the log.
+    private string? LoopSummaryLine => Item.Result?
+        .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .FirstOrDefault();
 
     private async Task OpenSubagentSession()
     {
@@ -134,7 +156,30 @@
         await Dialogs.ShowAsync<SubagentSessionsDialog>("Subagent sessions", parameters, options);
     }
 
-    private void Toggle() => _expanded = !_expanded;
+    // A loop fans out to N child runs that all share this loop call's id, so scope the modal's
+    // list to just this loop's children (GroupCallId) rather than the whole chat.
+    private async Task OpenLoopSessions()
+    {
+        var parameters = new DialogParameters { ["GroupCallId"] = Item.CallId };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true };
+        await Dialogs.ShowAsync<SubagentSessionsDialog>("Loop sessions", parameters, options);
+    }
+
+    // Subagent and loop calls open the rich session modal instead of expanding the raw tool JSON.
+    private async Task Toggle()
+    {
+        if (IsSubagentCall)
+        {
+            await OpenSubagentSession();
+            return;
+        }
+        if (IsLoopCall)
+        {
+            await OpenLoopSessions();
+            return;
+        }
+        _expanded = !_expanded;
+    }
 
     // A file-mutating call reduced to a before/after pair, or null for other tools / partial
     // (still-streaming) arguments — in which case the body falls back to raw arguments.
@@ -148,6 +193,7 @@
         "delete_file"     => "Delete",
         "list_directory"  => "List",
         "execute_command" => "Run",
+        "loop"            => "Loop",
         _ => Item.ToolName,
     };
 
@@ -160,6 +206,21 @@
             {
                 using var doc = JsonDocument.Parse(Item.ArgumentsJson);
                 var root = doc.RootElement;
+
+                // A loop reads best as "<agent> · N items" rather than a single path/command arg.
+                if (Item.ToolName == "loop")
+                {
+                    if (root.TryGetProperty("agent", out var agentProp)
+                        && agentProp.ValueKind == JsonValueKind.String)
+                    {
+                        var agent = agentProp.GetString() ?? "";
+                        var count = root.TryGetProperty("items", out var items)
+                            && items.ValueKind == JsonValueKind.Array ? items.GetArrayLength() : 0;
+                        return count > 0 ? $"{agent} · {count} item{(count == 1 ? "" : "s")}" : agent;
+                    }
+                    return "";
+                }
+
                 var argName = Item.ToolName switch
                 {
                     "execute_command" => "command",

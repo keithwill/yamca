@@ -47,6 +47,14 @@ public sealed class SubagentSessionRegistry : ISubagentObserver
         lock (_gate) return _sessions.Where(s => s.LoopRunId == loopRunId).ToArray();
     }
 
+    /// <summary>All runs launched by a given parent tool-call id, oldest first. For a
+    /// <c>loop</c> every child shares the loop tool call's id, so this returns the whole
+    /// batch; for a single <c>subagent_run</c> it returns the one run.</summary>
+    public IReadOnlyList<SubagentLiveSession> SessionsByParentCall(string parentCallId)
+    {
+        lock (_gate) return _sessions.Where(s => s.ParentCallId == parentCallId).ToArray();
+    }
+
     /// <summary>How many of a chat session's runs are still in progress (drives the toolbar badge).</summary>
     public int RunningCountFor(string ownerId)
     {

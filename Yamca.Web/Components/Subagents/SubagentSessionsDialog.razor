@@ -91,9 +91,16 @@
     /// from the selected run.</summary>
     [Parameter] public string? OwnerId { get; set; }
 
+    /// <summary>When set, list only the runs launched by this parent tool-call id — the
+    /// <c>loop</c> card passes the loop's call id so the sidebar shows exactly that loop's
+    /// child runs (every child shares the loop call's id). Takes priority over
+    /// <see cref="OwnerId"/> for the list.</summary>
+    [Parameter] public string? GroupCallId { get; set; }
+
     private IReadOnlyList<SubagentLiveSession> _sessions = Array.Empty<SubagentLiveSession>();
     private SubagentLiveSession? _selected;
     private string? _ownerFilter;
+    private string? _groupFilter;
 
     protected override void OnInitialized()
     {
@@ -101,9 +108,14 @@
 
         // Card entry: infer the owning chat from the clicked run so the list stays scoped to it.
         var initial = InitialCallId is not null ? Registry.ByCallId(InitialCallId) : null;
+        _groupFilter = GroupCallId;
         _ownerFilter = OwnerId ?? initial?.OwnerId;
 
         Refresh();
+        // For a loop-grouped open there is no single clicked run; scope Clear-All to the loop's
+        // owning chat (inferred from a child) so it matches what the list shows.
+        if (_groupFilter is not null)
+            _ownerFilter ??= _sessions.FirstOrDefault()?.OwnerId;
         _selected = initial
             ?? _sessions.FirstOrDefault(s => s.Status == SubagentRunStatus.Running)
             ?? _sessions.FirstOrDefault();
@@ -117,7 +129,9 @@
 
     private void Refresh()
     {
-        var all = _ownerFilter is not null ? Registry.SessionsFor(_ownerFilter) : Registry.Sessions;
+        var all = _groupFilter is not null ? Registry.SessionsByParentCall(_groupFilter)
+            : _ownerFilter is not null ? Registry.SessionsFor(_ownerFilter)
+            : Registry.Sessions;
         // Newest first so an in-flight run sits at the top of the list.
         _sessions = all.Reverse().ToArray();
         if (_selected is not null && !_sessions.Contains(_selected))
