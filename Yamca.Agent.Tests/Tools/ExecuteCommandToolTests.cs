@@ -16,7 +16,7 @@ public class ExecuteCommandToolTests
     public void SetUp()
     {
         _ws = new TempWorkspace();
-        _tool = new ExecuteCommandTool(new ShellResolver(new InterpreterResolver()));
+        _tool = new ExecuteCommandTool(new ShellResolver(new InterpreterResolver()), new InMemorySessionSettings());
     }
 
     [TearDown]

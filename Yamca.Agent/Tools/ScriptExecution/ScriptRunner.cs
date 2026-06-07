@@ -68,12 +68,13 @@ public sealed class ScriptRunner
         int? maxOutputLines,
         ToolContext context,
         CancellationToken cancellationToken,
-        bool suppressOutputOnSuccess = false)
+        bool suppressOutputOnSuccess = false,
+        ShellPreference shellPreference = ShellPreference.Auto)
     {
         ArgumentException.ThrowIfNullOrEmpty(command);
         ArgumentNullException.ThrowIfNull(context);
 
-        var psi = _shells.BuildCommandStartInfo(command, context.Workspace.RootPath);
+        var psi = _shells.BuildCommandStartInfo(command, context.Workspace.RootPath, shellPreference);
         return await ProcessRunner.RunAsync(psi, timeoutSeconds, maxOutputLines, "Script", cancellationToken, suppressOutputOnSuccess)
             .ConfigureAwait(false);
     }

@@ -17,7 +17,7 @@ public class PermissionResolverTests
         {
             new ReadFileTool(),       // default Allow
             new WriteFileTool(),      // default Ask
-            new ExecuteCommandTool(new ShellResolver(new InterpreterResolver())), // default Ask, not sandboxable
+            new ExecuteCommandTool(new ShellResolver(new InterpreterResolver()), new InMemorySessionSettings()), // default Ask, not sandboxable
         });
         var settings = new InMemorySessionSettings();
         return (new PermissionResolver(registry, settings), settings);

@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @implements IDisposable
 @using Yamca.Agent.Chat
+@using Yamca.Agent.Tools.ShellExecution
 
 <PageTitle>Preferences — yamca</PageTitle>
 
@@ -72,6 +73,32 @@ else
         <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
             The most LLM round-trips allowed in a single turn before the agent stops. Each round-trip is one model response; a turn keeps looping while the model requests tool calls. Raise this for long autonomous tasks; lower it to cap runaway tool-calling.
         </MudText>
+
+        <MudSelect T="ShellPreference" Value="Session.ShellPreference"
+                   ValueChanged="@((ShellPreference v) => Session.SetShellPreference(v))"
+                   Label="Command shell"
+                   Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense"
+                   Class="mt-3" Style="max-width: 360px;">
+            <MudSelectItem T="ShellPreference" Value="ShellPreference.Auto">Auto-detect (default)</MudSelectItem>
+            @foreach (var pref in _availableShells)
+            {
+                <MudSelectItem T="ShellPreference" Value="pref">@ShellLabel(pref)</MudSelectItem>
+            }
+            @* Keep a previously-saved choice visible even if that shell is no longer installed,
+               so the selection isn't silently swapped out from under the user. *@
+            @if (Session.ShellPreference != ShellPreference.Auto && !_availableShells.Contains(Session.ShellPreference))
+            {
+                <MudSelectItem T="ShellPreference" Value="Session.ShellPreference">@ShellLabel(Session.ShellPreference) (not detected)</MudSelectItem>
+            }
+        </MudSelect>
+        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+            Which shell the <code>execute_command</code> tool and registered inline scripts run through. Only shells detected on this machine are listed; auto-detect picks pwsh → Windows PowerShell → cmd.exe on Windows, and bash → sh elsewhere.
+            @if (_resolvedShell is not null)
+            {
+                <br />
+                <span>Currently resolves to: <strong>@_resolvedShell.Shell.DisplayName</strong> at <code>@_resolvedShell.Shell.ExecutablePath</code>@(_resolvedShell.FellBack ? " (configured shell unavailable — fell back to auto-detect)" : "")</span>
+            }
+        </MudText>
     </MudPaper>
 }
 
@@ -80,8 +107,11 @@ else
 @code {
     [Inject] private SessionSettings Session { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
+    [Inject] private ShellResolver Shells { get; set; } = default!;
 
     private bool _hydrated;
+    private ShellResolution? _resolvedShell;
+    private IReadOnlyList<ShellPreference> _availableShells = System.Array.Empty<ShellPreference>();
 
     protected override void OnInitialized()
     {
@@ -93,10 +123,28 @@ else
         if (!firstRender) return;
         await Hydrator.HydrateAsync();
         _hydrated = true;
+        _availableShells = Shells.AvailablePreferences();
+        _resolvedShell = Shells.ResolveDetailed(Session.ShellPreference);
         StateHasChanged();
     }
 
-    private void OnSettingsChanged(SettingsTier _) => InvokeAsync(StateHasChanged);
+    private void OnSettingsChanged(SettingsTier _)
+    {
+        _resolvedShell = Shells.ResolveDetailed(Session.ShellPreference);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private static string ShellLabel(ShellPreference preference) => preference switch
+    {
+        ShellPreference.Auto => "Auto-detect (default)",
+        ShellPreference.Pwsh => "PowerShell 7+ (pwsh)",
+        ShellPreference.WindowsPowerShell => "Windows PowerShell 5.1",
+        ShellPreference.Cmd => "Command Prompt (cmd.exe)",
+        ShellPreference.GitBash => "Git Bash",
+        ShellPreference.Bash => "Bash",
+        ShellPreference.Sh => "POSIX sh",
+        _ => preference.ToString(),
+    };
 
     public void Dispose()
     {

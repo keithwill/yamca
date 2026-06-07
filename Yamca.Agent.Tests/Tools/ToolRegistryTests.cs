@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using Yamca.Agent.Chat;
 using Yamca.Agent.Permissions;
+using Yamca.Agent.Tests.Support;
 using Yamca.Agent.Tools;
 using Yamca.Agent.Tools.ScriptExecution;
 using Yamca.Agent.Tools.ShellExecution;
@@ -16,7 +17,7 @@ public class ToolRegistryTests
         new WriteFileTool(),
         new DeleteFileTool(),
         new ListDirectoryTool(),
-        new ExecuteCommandTool(new ShellResolver(new InterpreterResolver())),
+        new ExecuteCommandTool(new ShellResolver(new InterpreterResolver()), new InMemorySessionSettings()),
     });
 
     [Test]

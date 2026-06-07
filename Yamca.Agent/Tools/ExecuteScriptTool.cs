@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Yamca.Agent.Permissions;
+using Yamca.Agent.Settings;
 using Yamca.Agent.Tools.ScriptExecution;
 
 namespace Yamca.Agent.Tools;
@@ -16,6 +17,7 @@ public sealed class ExecuteScriptTool : ITool
 {
     private readonly ScriptRunner _runner;
     private readonly ScriptRegistryLookup _registry;
+    private readonly ISessionSettings _settings;
     // Permission services are resolved lazily from the scope to break a DI cycle:
     // PermissionResolver depends on IToolRegistry, and IToolRegistry's factory
     // enumerates ITool services — so taking IPermissionResolver here directly
@@ -25,13 +27,16 @@ public sealed class ExecuteScriptTool : ITool
     public ExecuteScriptTool(
         ScriptRunner runner,
         ScriptRegistryLookup registry,
+        ISessionSettings settings,
         IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(runner);
         ArgumentNullException.ThrowIfNull(registry);
+        ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(services);
         _runner = runner;
         _registry = registry;
+        _settings = settings;
         _services = services;
     }
 
@@ -139,7 +144,7 @@ public sealed class ExecuteScriptTool : ITool
             return ToolResult.Error($"Permission denied for '{effectiveName}'.");
 
         return isInline
-            ? await _runner.RunInlineAsync(inlineEntry.Command, timeoutSeconds, maxOutputLines, context, cancellationToken, suppressOutputOnSuccess).ConfigureAwait(false)
+            ? await _runner.RunInlineAsync(inlineEntry.Command, timeoutSeconds, maxOutputLines, context, cancellationToken, suppressOutputOnSuccess, _settings.ShellPreference).ConfigureAwait(false)
             : await _runner.RunAsync(resolved, args, timeoutSeconds, maxOutputLines, context, cancellationToken, suppressOutputOnSuccess).ConfigureAwait(false);
     }
 }

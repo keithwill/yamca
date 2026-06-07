@@ -1,4 +1,5 @@
 using Yamca.Agent.Settings;
+using Yamca.Agent.Tools.ShellExecution;
 
 namespace Yamca.Agent.Tests.Support;
 
@@ -14,4 +15,5 @@ internal sealed class InMemorySessionSettings : ISessionSettings
     public SubagentRegistry UserSubagents { get; set; } = SubagentRegistry.Empty;
     public DeferredToolsHint DeferredToolsHint { get; set; } = DeferredToolsHint.Names;
     public int MaxToolIterations { get; set; } = 10;
+    public ShellPreference ShellPreference { get; set; } = ShellPreference.Auto;
 }

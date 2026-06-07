@@ -39,4 +39,9 @@ public interface ISessionSettings
     /// <summary>Maximum LLM round-trips per turn. Used as the default iteration cap for a
     /// subagent run when the subagent does not override it.</summary>
     int MaxToolIterations { get; }
+
+    /// <summary>Which host shell <c>execute_command</c> (and registered inline scripts) drive.
+    /// <see cref="Tools.ShellExecution.ShellPreference.Auto"/> keeps per-OS auto-detection; any
+    /// other value forces a specific shell, falling back to Auto when it is not installed.</summary>
+    Tools.ShellExecution.ShellPreference ShellPreference { get; }
 }

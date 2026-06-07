@@ -4,6 +4,7 @@ using Yamca.Agent.Chat;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
+using Yamca.Agent.Tools.ShellExecution;
 
 namespace Yamca.Web.Services;
 
@@ -32,6 +33,7 @@ public sealed class SessionSettings : ISessionSettings
     private const int MinMaxToolIterations = 1;
     private const int MaxMaxToolIterations = 100;
     private const DeferredToolsHint DefaultDeferredToolsHint = DeferredToolsHint.Names;
+    private const ShellPreference DefaultShellPreference = ShellPreference.Auto;
 
     public static readonly IReadOnlyList<string> DefaultUserInstructionFiles =
         new[] { "AGENTS.md", "CLAUDE.md", "GEMINI.md" };
@@ -50,6 +52,8 @@ public sealed class SessionSettings : ISessionSettings
     public int MaxToolIterations { get; private set; } = AgentLoopOptions.Default.MaxIterations;
 
     public DeferredToolsHint DeferredToolsHint { get; private set; } = DefaultDeferredToolsHint;
+
+    public ShellPreference ShellPreference { get; private set; } = DefaultShellPreference;
 
     public IReadOnlyList<string> UserInstructionFiles { get; private set; } = DefaultUserInstructionFiles;
     public IReadOnlyList<string> ProjectInstructionFiles { get; private set; } = Array.Empty<string>();
@@ -174,6 +178,13 @@ public sealed class SessionSettings : ISessionSettings
         Changed?.Invoke(SettingsTier.User);
     }
 
+    public void SetShellPreference(ShellPreference preference)
+    {
+        if (ShellPreference == preference) return;
+        ShellPreference = preference;
+        Changed?.Invoke(SettingsTier.User);
+    }
+
     public void SetInstructionFiles(SettingsTier tier, IReadOnlyList<string> paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -239,6 +250,7 @@ public sealed class SessionSettings : ISessionSettings
         AutoCompactionKeepRecentTurns = DefaultAutoCompactionKeepRecentTurns;
         MaxToolIterations = AgentLoopOptions.Default.MaxIterations;
         DeferredToolsHint = DefaultDeferredToolsHint;
+        ShellPreference = DefaultShellPreference;
         User = DefaultUserToolSettings();
         MaterializeUserToolDefaults(settingsTools);
         UserInstructionFiles = DefaultUserInstructionFiles;
@@ -351,6 +363,7 @@ public sealed class SessionSettings : ISessionSettings
             ? Math.Clamp(mi, MinMaxToolIterations, MaxMaxToolIterations)
             : AgentLoopOptions.Default.MaxIterations;
         DeferredToolsHint = blob.DeferredToolsHint ?? DefaultDeferredToolsHint;
+        ShellPreference = blob.ShellPreference ?? DefaultShellPreference;
         User = firstRun ? DefaultUserToolSettings() : MapFromDto(blob.Tools);
         UserInstructionFiles = firstRun
             ? DefaultUserInstructionFiles
@@ -471,6 +484,7 @@ public sealed class SessionSettings : ISessionSettings
             AutoCompactionKeepRecentTurns = AutoCompactionKeepRecentTurns,
             MaxToolIterations = MaxToolIterations,
             DeferredToolsHint = DeferredToolsHint,
+            ShellPreference = ShellPreference,
             Tools = MapToDto(User),
             InstructionFiles = NonEmpty(UserInstructionFiles),
             Scripts = ScriptsToDto(UserScripts),
@@ -607,6 +621,7 @@ public sealed class SessionSettings : ISessionSettings
         public int? AutoCompactionKeepRecentTurns { get; set; }
         public int? MaxToolIterations { get; set; }
         public DeferredToolsHint? DeferredToolsHint { get; set; }
+        public ShellPreference? ShellPreference { get; set; }
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
         public List<string>? InstructionFiles { get; set; }
         public ScriptsDto? Scripts { get; set; }
