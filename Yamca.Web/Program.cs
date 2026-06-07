@@ -15,6 +15,7 @@ using Yamca.Agent.Subagents;
 using Yamca.Agent.Tools;
 using Yamca.Agent.Tools.Board;
 using Yamca.Agent.Tools.CodeIntel;
+using Yamca.Agent.Tools.Git;
 using Yamca.Agent.Tools.ScriptExecution;
 using Yamca.Agent.Tools.ShellExecution;
 using Yamca.Agent.Workspace;
@@ -218,6 +219,13 @@ builder.Services.AddScoped<ScriptRegistryLookup>();
 builder.Services.AddScoped<ITool, ExecuteRegisteredScriptTool>();
 builder.Services.AddScoped<ITool, ExecuteDiscoveredScriptTool>();
 builder.Services.AddScoped<ITool, ExecuteScriptTool>();
+
+// Git tool. One LLM-facing 'git' tool runs a curated set of subcommands; it resolves the real
+// permission under the git_read / git_write identities (the two rows shown in settings). Scoped
+// so the facade's IServiceProvider is the per-session scope that owns IPermissionResolver.
+builder.Services.AddScoped<ITool, GitReadTool>();
+builder.Services.AddScoped<ITool, GitWriteTool>();
+builder.Services.AddScoped<ITool, GitTool>();
 
 // Subagents: subagent_run lets a chat delegate a task to a headless subagent session driven by
 // SubagentRunner. Both are scoped — the runner reads per-circuit settings and is bound with the

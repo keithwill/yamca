@@ -13,6 +13,7 @@ through a **permission** check first. Configure both at `/tools`.
 | **Files** | `read_file`, `write_file`, `edit_file`, `delete_file`, `list_directory` |
 | **Search** | `grep`, `find_files` |
 | **Execution** | `execute_command`, `execute_script`, `execute_registered_script`, `execute_discovered_script` |
+| **Git** | `git` (the LLM-facing tool); `git_read`, `git_write` (its permission identities) |
 | **Code intelligence** | `code_search`, `code_list_symbols`, `code_find_definitions`, `code_find_calls`, `code_find_references`, `code_extract_symbol`, `code_edit_symbol`, `code_surrounding_context` |
 | **Dev board** | `board_list`, `board_get_card`, `board_get_step_instructions`, `board_move_card`, `board_update_card`, `board_reinit` |
 | **Subagents** | `subagent_run`, `loop` |
@@ -23,6 +24,28 @@ Java, JavaScript, TypeScript/TSX, Python, Ruby, PHP, Rust, Go, …) so the agent
 can extract or edit a function/class by name instead of by line range.
 
 [MCP servers](mcp.md) contribute additional tools beyond this built-in set.
+
+### The `git` tool
+
+The agent runs git through a single `git` tool that accepts an `operation` (a
+curated subcommand) and `arguments` passed verbatim as argv. Because it spawns
+`git` directly with no shell, shell metacharacters in the arguments (`;`, `&&`,
+`|`, `$()`) are inert — unlike a raw `execute_command`, there is no command-line
+to inject into. The model only sees this one tool; it never appears as dozens of
+per-subcommand entries.
+
+Permissions are split into two identities so reads and writes can be governed
+separately:
+
+- **`git_read`** — non-mutating subcommands (`status`, `log`, `diff`, `show`,
+  `blame`). Defaults to **Allow**: these cannot change the repository no matter
+  what arguments are supplied.
+- **`git_write`** — mutating subcommands (`add`, `restore`, `commit`, `switch`,
+  `branch`, `stash`, `fetch`, `pull`, `push`). Defaults to **Ask**.
+
+The curated list is intentionally small — the common day-to-day subcommands. For
+anything outside it (e.g. `rebase`, `reset`, `cherry-pick`), the agent falls back
+to `execute_command`, or you run it yourself outside yamca.
 
 ## Permission levels
 
