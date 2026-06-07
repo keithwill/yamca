@@ -1,0 +1,154 @@
+@page "/processes"
+@rendermode InteractiveServer
+@implements IDisposable
+@using Yamca.Agent.Tools.ProcessManagement
+@using Yamca.Web.Components.Processes
+@inject IBackgroundProcessManager Manager
+@inject IDialogService Dialogs
+
+<PageTitle>Processes — yamca</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.h6">Background processes</MudText>
+            <MudSpacer />
+            <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small"
+                           OnClick="@(() => StateHasChanged())" aria-label="Refresh" />
+        </div>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            Long-lived processes started by the <code>start_process</code> tool. They are OS-wide and
+            keep running after the chat session that started them ends; they are stopped gracefully
+            when Yamca shuts down. Shared by every chat session in this Yamca process.
+        </MudText>
+
+        @{
+            var processes = Manager.Snapshot();
+        }
+
+        @if (processes.Count == 0)
+        {
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">
+                No background processes. The agent starts one with <code>start_process</code>.
+            </MudText>
+        }
+        else
+        {
+            <MudTable Items="processes" Hover="true" Dense="true" Class="mud-table-bordered">
+                <HeaderContent>
+                    <MudTh>Name</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>PID</MudTh>
+                    <MudTh>Ports</MudTh>
+                    <MudTh>Uptime</MudTh>
+                    <MudTh>Command</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd><code>@context.Name</code></MudTd>
+                    <MudTd>
+                        <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">
+                            @StatusLabel(context)
+                        </MudChip>
+                    </MudTd>
+                    <MudTd>@(context.Pid?.ToString() ?? "—")</MudTd>
+                    <MudTd>@(context.Ports.Count > 0 ? string.Join(", ", context.Ports) : "—")</MudTd>
+                    <MudTd>@FormatUptime(context)</MudTd>
+                    <MudTd>
+                        <MudTooltip Text="@context.Command" Placement="Placement.Top">
+                            <code class="yamca-proc-cmd">@context.Command</code>
+                        </MudTooltip>
+                    </MudTd>
+                    <MudTd>
+                        <MudTooltip Text="View output">
+                            <MudIconButton Icon="@Icons.Material.Filled.Article" Size="Size.Small"
+                                           OnClick="@(() => ViewOutput(context.Name))"
+                                           aria-label="View output" />
+                        </MudTooltip>
+                        <MudTooltip Text="Restart">
+                            <MudIconButton Icon="@Icons.Material.Filled.RestartAlt" Size="Size.Small"
+                                           OnClick="@(() => Restart(context.Name))"
+                                           aria-label="Restart" />
+                        </MudTooltip>
+                        <MudTooltip Text="Stop">
+                            <MudIconButton Icon="@Icons.Material.Filled.Stop" Size="Size.Small"
+                                           Color="Color.Error"
+                                           Disabled="@(context.Status != ProcessStatus.Running)"
+                                           OnClick="@(() => Stop(context.Name))"
+                                           aria-label="Stop" />
+                        </MudTooltip>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+</MudContainer>
+
+<style>
+    .yamca-proc-cmd {
+        display: inline-block;
+        max-width: 320px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+</style>
+
+@code {
+    private DateTimeOffset _now = DateTimeOffset.Now;
+
+    protected override void OnInitialized() => Manager.Changed += OnChanged;
+
+    private void OnChanged() => InvokeAsync(() =>
+    {
+        _now = DateTimeOffset.Now;
+        StateHasChanged();
+    });
+
+    private async Task ViewOutput(string name)
+    {
+        var parameters = new DialogParameters { [nameof(ProcessOutputDialog.ProcessName)] = name };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true };
+        await Dialogs.ShowAsync<ProcessOutputDialog>(name, parameters, options);
+    }
+
+    private async Task Stop(string name)
+    {
+        await Manager.Stop(name);
+        StateHasChanged();
+    }
+
+    private async Task Restart(string name)
+    {
+        await Manager.Restart(name);
+        StateHasChanged();
+    }
+
+    private static Color StatusColor(ProcessStatus status) => status switch
+    {
+        ProcessStatus.Running => Color.Info,
+        ProcessStatus.Exited => Color.Success,
+        ProcessStatus.Failed => Color.Error,
+        _ => Color.Default,
+    };
+
+    private static string StatusLabel(BackgroundProcess p) => p.Status switch
+    {
+        ProcessStatus.Running => "running",
+        ProcessStatus.Exited => p.ExitCode is int c ? $"exited ({c})" : "exited",
+        ProcessStatus.Failed => p.ExitCode is int c ? $"failed ({c})" : "failed",
+        _ => p.Status.ToString().ToLowerInvariant(),
+    };
+
+    private string FormatUptime(BackgroundProcess p)
+    {
+        var elapsed = (p.ExitedAt ?? _now) - p.StartedAt;
+        if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+        if (elapsed.TotalHours >= 1) return $"{(int)elapsed.TotalHours}h {elapsed.Minutes}m";
+        if (elapsed.TotalMinutes >= 1) return $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s";
+        return $"{elapsed.Seconds}s";
+    }
+
+    public void Dispose() => Manager.Changed -= OnChanged;
+}

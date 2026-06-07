@@ -16,6 +16,7 @@ using Yamca.Agent.Tools;
 using Yamca.Agent.Tools.Board;
 using Yamca.Agent.Tools.CodeIntel;
 using Yamca.Agent.Tools.Git;
+using Yamca.Agent.Tools.ProcessManagement;
 using Yamca.Agent.Tools.ScriptExecution;
 using Yamca.Agent.Tools.ShellExecution;
 using Yamca.Agent.Workspace;
@@ -239,6 +240,18 @@ builder.Services.AddScoped<ITool, SubagentRunTool>();
 // (which reuses SubagentRunner) and returns a single mechanical roll-up. Scoped like the runner.
 builder.Services.AddScoped<IBatchRunner, BatchRunner>();
 builder.Services.AddScoped<ITool, LoopTool>();
+
+// Background processes: one process-wide manager owns long-lived child processes that outlive the
+// chat session that started them. BackgroundProcessHost (IHostedService) stops them all gracefully
+// on app shutdown so started dev servers are not orphaned. The four tools are deferred (schemas stay
+// out of the prompt prefix) and scoped, reading the per-circuit ISessionSettings shell preference.
+builder.Services.AddSingleton<BackgroundProcessManager>();
+builder.Services.AddSingleton<IBackgroundProcessManager>(sp => sp.GetRequiredService<BackgroundProcessManager>());
+builder.Services.AddHostedService<BackgroundProcessHost>();
+builder.Services.AddScoped<ITool, StartProcessTool>();
+builder.Services.AddScoped<ITool, GetProcessOutputTool>();
+builder.Services.AddScoped<ITool, StopProcessTool>();
+builder.Services.AddScoped<ITool, ListProcessesTool>();
 
 // Live subagent transcripts: the runner mirrors each run's event stream into this per-circuit
 // registry via ISubagentObserver; the UI reads the same instance to render a read-only view.

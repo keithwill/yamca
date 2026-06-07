@@ -1,0 +1,107 @@
+@using Microsoft.JSInterop
+@using Yamca.Agent.Tools.ProcessManagement
+@implements IDisposable
+@inject IBackgroundProcessManager Manager
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center" style="gap:6px;">
+            <MudIcon Icon="@Icons.Material.Filled.Terminal" Size="Size.Small" />
+            <MudText Typo="Typo.h6">@ProcessName</MudText>
+            @{
+                var p = Manager.Get(ProcessName);
+                var status = p?.Status ?? ProcessStatus.Exited;
+            }
+            @switch (status)
+            {
+                case ProcessStatus.Running:
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Info"
+                                         Style="width:14px;height:14px;" />
+                    <span class="yamca-proc-status">running</span>
+                    break;
+                case ProcessStatus.Exited:
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                    <span class="yamca-proc-status">exited@(p?.ExitCode is int c ? $" ({c})" : "")</span>
+                    break;
+                case ProcessStatus.Failed:
+                    <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Small" />
+                    <span class="yamca-proc-status">failed@(p?.ExitCode is int fc ? $" ({fc})" : "")</span>
+                    break;
+            }
+            <MudSpacer />
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="Close" aria-label="Close" />
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <pre class="yamca-proc-output yamca-scroll">@{
+                var snapshot = Manager.GetOutput(ProcessName, sinceSeq: null);
+            }@if (snapshot is null)
+        {
+            <text>(process no longer exists)</text>
+        }
+        else
+        {
+            if (snapshot.Truncated)
+            {
+                <span class="yamca-proc-line is-meta">…[earlier output truncated]
+</span>
+            }
+            @foreach (var line in snapshot.Lines)
+            {
+                <span class="yamca-proc-line @(line.IsError ? "is-err" : "")">@line.Text
+</span>
+            }
+        }<div @ref="_scrollAnchor"></div></pre>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .yamca-proc-status { font-size: 0.75rem; text-transform: uppercase; color: var(--mud-palette-text-secondary); }
+    .yamca-proc-output {
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: var(--mud-typography-body2-family);
+        font-size: 0.8rem;
+        margin: 0;
+        height: 60vh;
+        overflow: auto;
+        padding: 8px;
+        border-radius: 4px;
+        background: var(--mud-palette-background-grey);
+    }
+    .yamca-proc-line.is-err { color: var(--mud-palette-error); }
+    .yamca-proc-line.is-meta { color: var(--mud-palette-text-disabled); }
+</style>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    /// <summary>Name of the background process whose output this dialog streams.</summary>
+    [Parameter, EditorRequired] public string ProcessName { get; set; } = default!;
+
+    private ElementReference _scrollAnchor;
+
+    protected override void OnInitialized() => Manager.Changed += OnChanged;
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    // Re-renders on every captured output line; follow the anchor so a running process stays pinned
+    // to the bottom unless the viewer scrolls up — same behaviour as the chat and subagent views.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("yamcaChat.scrollIfSticky", _scrollAnchor);
+        }
+        catch (JSDisconnectedException) { /* circuit gone */ }
+        catch (TaskCanceledException)   { /* tab closing */ }
+    }
+
+    private void Close() => MudDialog.Close();
+
+    public void Dispose() => Manager.Changed -= OnChanged;
+}
