@@ -1,15 +1,18 @@
 @using Yamca.Web.Services
 
-<MudPaper Class="pa-2 mb-2 yamca-markdown" Elevation="0">
-    @if (Session.MarkdownEnabled)
-    {
-        @((MarkupString)MarkdownRenderer.ToHtml(Item.Text))
-    }
-    else
-    {
-        <MudText Typo="Typo.body1" Style="white-space: pre-wrap;">@Item.Text</MudText>
-    }
-</MudPaper>
+<div class="yamca-message-wrap">
+    <MudPaper Class="pa-2 mb-2 yamca-markdown" Elevation="0">
+        @if (Session.MarkdownEnabled)
+        {
+            @((MarkupString)MarkdownRenderer.ToHtml(Item.Text))
+        }
+        else
+        {
+            <MudText Typo="Typo.body1" Style="white-space: pre-wrap;">@Item.Text</MudText>
+        }
+    </MudPaper>
+    <CopyMessageButton Text="@Item.Text" />
+</div>
 
 @code {
     [Parameter, EditorRequired] public AssistantTextItem Item { get; set; } = default!;

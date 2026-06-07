@@ -619,6 +619,31 @@ h1:focus {
     border: 1px solid var(--mud-palette-lines-default, gray);
 }
 
+/* Hover-reveal copy button anchored to a chat message bubble. */
+.yamca-message-wrap {
+    position: relative;
+}
+.yamca-user-message-wrap {
+    max-width: 80%;
+}
+.yamca-user-message-wrap .yamca-user-message {
+    max-width: 100%;
+}
+.yamca-copy-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    background: var(--mud-palette-surface);
+    border: 1px solid var(--mud-palette-divider);
+    z-index: 1;
+}
+.yamca-message-wrap:hover .yamca-copy-btn,
+.yamca-copy-btn:focus-visible {
+    opacity: 1;
+}
+
 .yamca-markdown > :first-child { margin-top: 0; }
 .yamca-markdown > :last-child { margin-bottom: 0; }
 .yamca-markdown p { margin: 0 0 0.6em 0; }

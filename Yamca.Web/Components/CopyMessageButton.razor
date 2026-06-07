@@ -1,0 +1,25 @@
+@using Yamca.Web.Services
+
+<MudIconButton Icon="@Icons.Material.Outlined.ContentCopy"
+               Size="Size.Small"
+               Class="yamca-copy-btn"
+               aria-label="Copy message"
+               title="Copy message"
+               OnClick="Copy" />
+
+@code {
+    /// <summary>The text copied to the clipboard when the button is clicked.</summary>
+    [Parameter, EditorRequired] public string Text { get; set; } = default!;
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private async Task Copy()
+    {
+        if (string.IsNullOrEmpty(Text)) return;
+        try { await JS.InvokeVoidAsync("yamcaChat.copyText", Text); }
+        catch (JSDisconnectedException) { return; }
+        catch (TaskCanceledException) { return; }
+        Snackbar.Add("Message copied to clipboard.", Severity.Normal);
+    }
+}

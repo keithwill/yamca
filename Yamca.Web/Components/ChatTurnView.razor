@@ -1,17 +1,20 @@
 <div class="yamca-turn mb-4">
     <div class="d-flex mb-2 yamca-user-row">
-        <MudPaper Class="pa-2 yamca-user-message" Elevation="0">
-            @if (Turn.Images.Count > 0)
-            {
-                <div class="yamca-user-images">
-                    @foreach (var img in Turn.Images)
-                    {
-                        <img class="yamca-user-image" src="@($"data:{img.MimeType};base64,{img.Base64Data}")" alt="attached image" />
-                    }
-                </div>
-            }
-            <MudText Typo="Typo.body1" Style="white-space: pre-wrap;">@Turn.UserMessage</MudText>
-        </MudPaper>
+        <div class="yamca-message-wrap yamca-user-message-wrap">
+            <MudPaper Class="pa-2 yamca-user-message" Elevation="0">
+                @if (Turn.Images.Count > 0)
+                {
+                    <div class="yamca-user-images">
+                        @foreach (var img in Turn.Images)
+                        {
+                            <img class="yamca-user-image" src="@($"data:{img.MimeType};base64,{img.Base64Data}")" alt="attached image" />
+                        }
+                    </div>
+                }
+                <MudText Typo="Typo.body1" Style="white-space: pre-wrap;">@Turn.UserMessage</MudText>
+            </MudPaper>
+            <CopyMessageButton Text="@Turn.UserMessage" />
+        </div>
     </div>
 
     <div class="d-flex">
