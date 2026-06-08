@@ -115,6 +115,14 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 });
 builder.WebHost.UseUrls($"http://127.0.0.1:{bindPort}");
 
+// Log levels live in code, not appsettings.json: yamca ships as a .NET global tool, so its
+// content files sit behind the tool-shim install directory where no user would ever go to edit
+// them. `--verbose` drops the default floor from Information to Debug; the framework categories
+// stay at Warning to keep ASP.NET/HttpClient request chatter out of the console.
+builder.Logging.AddFilter(null, cli.Verbose ? LogLevel.Debug : LogLevel.Information);
+builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
+builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     // Pasted images arrive as a single base64 JS->.NET argument that exceeds SignalR's
@@ -315,11 +323,10 @@ builder.Services.AddScoped<McpConfigStore>();
 
 var app = builder.Build();
 
-if (!app.Environment.IsDevelopment())
-{
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    app.UseHsts();
-}
+// yamca is a single-user localhost tool whose one user is also the admin, so there's nobody to
+// hide exception detail from: always show the full developer error page. (No HSTS either — the app
+// only ever serves http on the loopback interface.)
+app.UseDeveloperExceptionPage();
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
 app.UseAntiforgery();
@@ -400,6 +407,7 @@ static void PrintHelp(TextWriter? writer = null)
     writer.WriteLine("  -p, --port <n>        Listen on a specific port (default: 9001, or an");
     writer.WriteLine("                        OS-assigned port when 9001 is already in use).");
     writer.WriteLine("      --no-browser      Do not open the default browser on startup.");
+    writer.WriteLine("  -v, --verbose         Enable debug-level logging.");
     writer.WriteLine("      --wipe            (board reinit) Delete all cards instead of moving to idea.");
     writer.WriteLine("  -h, --help            Show this help and exit.");
     writer.WriteLine("      --version         Print the tool version and exit.");
@@ -412,6 +420,7 @@ internal sealed record CliOptions(
     string? WorkspacePath,
     int? Port,
     bool NoBrowser,
+    bool Verbose,
     bool Wipe,
     bool ShowHelp,
     bool ShowVersion,
@@ -423,6 +432,7 @@ internal sealed record CliOptions(
         string? workspace = null;
         int? port = null;
         bool noBrowser = false;
+        bool verbose = false;
         bool wipe = false;
         bool help = false;
         bool version = false;
@@ -443,6 +453,10 @@ internal sealed record CliOptions(
                     break;
                 case "--no-browser":
                     noBrowser = true;
+                    break;
+                case "-v":
+                case "--verbose":
+                    verbose = true;
                     break;
                 case "--wipe":
                     wipe = true;
@@ -490,7 +504,7 @@ internal sealed record CliOptions(
             if (error is not null) break;
         }
 
-        return new CliOptions(mode, workspace, port, noBrowser, wipe, help, version, error);
+        return new CliOptions(mode, workspace, port, noBrowser, verbose, wipe, help, version, error);
     }
 }
 
