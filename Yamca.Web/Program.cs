@@ -115,6 +115,15 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 });
 builder.WebHost.UseUrls($"http://127.0.0.1:{bindPort}");
 
+// Load the static-web-assets manifest explicitly. The framework only auto-loads the dev manifest
+// (Yamca.Web.staticwebassets.runtime.json — which maps MudBlazor's CSS/JS, blazor.web.js and the
+// scoped-CSS bundle from their source folders) when the environment is Development. We dropped
+// launchSettings.json, so `dotnet run` now boots in Production and that auto-load is skipped,
+// leaving MapStaticAssets() with nothing to serve and the UI without its CSS/JS. Calling this here
+// forces the load regardless of environment; it no-ops when the manifest is absent (the packed
+// global tool, which serves a real published wwwroot instead), so it's safe in both modes.
+builder.WebHost.UseStaticWebAssets();
+
 // Log levels live in code, not appsettings.json: yamca ships as a .NET global tool, so its
 // content files sit behind the tool-shim install directory where no user would ever go to edit
 // them. `--verbose` drops the default floor from Information to Debug; the framework categories
