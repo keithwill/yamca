@@ -1,0 +1,214 @@
+@page "/commands"
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>Commands — yamca</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+
+@if (!_hydrated)
+{
+    <MudProgressCircular Indeterminate="true" />
+    <MudText Typo="Typo.body2" Class="ml-2 d-inline">Loading settings&hellip;</MudText>
+}
+else
+{
+    <SettingsSection Title="Registered Commands" Tier="_tier" TierChanged="OnTierChanged">
+        <Description>
+            One-line CLI commands with no file in the repo (e.g. <code>npm install</code>, <code>dotnet build</code>).
+            The LLM runs them exactly as written via <code>execute_script</code> &mdash; no arguments are appended.
+            Give one an optional <em>name</em> to let the LLM reference it by that handle and to use as the
+            default process name when it is launched in the background.
+            Check <em>Background</em> for a watcher or dev server: running it then launches a long-lived
+            process (managed on the Processes page) instead of running to completion.
+            @if (_tier == SettingsTier.Project)
+            {
+                <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
+            }
+            else { <text> Stored on disk in <code>@Keys.UserFile</code>.</text> }
+        </Description>
+        <ChildContent>
+        @{ var inlineRows = CurrentInlineRows; }
+        @if (inlineRows.Count == 0)
+        {
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled); display:block;" Class="mb-1">No registered commands.</MudText>
+        }
+        else
+        {
+            <div class="mb-2">
+                @foreach (var row in inlineRows)
+                {
+                    <div @key="row.Id" class="d-flex align-center mb-1" style="gap: 4px;">
+                        <MudTextField T="string" Value="@(row.Name ?? string.Empty)"
+                                      ValueChanged="@((string v) => OnNameChanged(row, v))"
+                                      DebounceInterval="400"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Style="max-width: 140px;"
+                                      Placeholder="name (optional)" />
+                        <MudTextField T="string" Value="@row.Command"
+                                      ValueChanged="@((string v) => OnCommandChanged(row, v))"
+                                      DebounceInterval="400"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Class="flex-grow-1"
+                                      Placeholder="npm install" />
+                        <MudTextField T="string" Value="@(row.Description ?? string.Empty)"
+                                      ValueChanged="@((string v) => OnDescriptionChanged(row, v))"
+                                      DebounceInterval="400"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Class="flex-grow-1"
+                                      Placeholder="Description (optional)" />
+                        <MudTooltip Text="Background: launch this command as a long-lived process (a watcher or dev server) when it is run, instead of running it to completion. Managed via the Processes page and the get_process_output / list_processes / stop_process tools.">
+                            <MudCheckBox T="bool" Value="@row.Background"
+                                         ValueChanged="@((bool v) => OnBackgroundChanged(row, v))"
+                                         Label="Background"
+                                         Dense="true" Size="Size.Small" />
+                        </MudTooltip>
+                        <MudTooltip Text="No output on success: on a successful (exit 0) run, return only the status to the LLM — withhold stdout/stderr to save context. Failures still return full output.">
+                            <MudCheckBox T="bool" Value="@row.SuppressOutputOnSuccess"
+                                         ValueChanged="@((bool v) => OnSuppressOutputChanged(row, v))"
+                                         Label="Hide Success"
+                                         Disabled="@row.Background"
+                                         Dense="true" Size="Size.Small" />
+                        </MudTooltip>
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       OnClick="@(() => RemoveRow(row))"
+                                       aria-label="Remove" />
+                    </div>
+                }
+            </div>
+        }
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Terminal"
+                   OnClick="AddRow">
+            Add command
+        </MudButton>
+        </ChildContent>
+    </SettingsSection>
+}
+
+</MudContainer>
+
+@code {
+    [Inject] private SessionSettings Session { get; set; } = default!;
+    [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
+    [Inject] private SettingsLocation Keys { get; set; } = default!;
+
+    private bool _hydrated;
+    private SettingsTier _tier = SettingsTier.User; // User shown by default
+
+    private sealed class InlineRow
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public string Command { get; set; } = string.Empty;
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public bool SuppressOutputOnSuccess { get; set; }
+        public bool Background { get; set; }
+    }
+
+    private readonly List<InlineRow> _projectInline = new();
+    private readonly List<InlineRow> _userInline = new();
+
+    private List<InlineRow> CurrentInlineRows => _tier == SettingsTier.Project ? _projectInline : _userInline;
+
+    private void OnTierChanged(SettingsTier tier)
+    {
+        _tier = tier;
+        StateHasChanged();
+    }
+
+    protected override void OnInitialized()
+    {
+        Session.Changed += OnSettingsChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Hydrator.HydrateAsync();
+        SyncRowsFromSession();
+        _hydrated = true;
+        StateHasChanged();
+    }
+
+    private void OnSettingsChanged(SettingsTier _) => InvokeAsync(StateHasChanged);
+
+    private void SyncRowsFromSession()
+    {
+        SyncInlineRows(Session.ProjectScripts, _projectInline);
+        SyncInlineRows(Session.UserScripts, _userInline);
+    }
+
+    private static void SyncInlineRows(ScriptRegistry registry, List<InlineRow> inline)
+    {
+        inline.Clear();
+        foreach (var i in registry.Inline)
+            inline.Add(new InlineRow { Command = i.Command, Name = i.Name, Description = i.Description, SuppressOutputOnSuccess = i.SuppressOutputOnSuccess, Background = i.Background });
+    }
+
+    private void PersistCommands()
+    {
+        // The Scripts page owns Registered + Directories for this tier; carry them over
+        // verbatim so saving commands here doesn't wipe them.
+        var current = _tier == SettingsTier.Project ? Session.ProjectScripts : Session.UserScripts;
+        var inline = CurrentInlineRows
+            .Where(r => !string.IsNullOrWhiteSpace(r.Command))
+            .Select(r => new RegisteredInlineScript(r.Command.Trim(), NullIfBlank(r.Description), r.SuppressOutputOnSuccess && !r.Background, NullIfBlank(r.Name), r.Background))
+            .ToList();
+        Session.SetScripts(_tier, new ScriptRegistry(current.Registered, current.Directories, inline));
+    }
+
+    private void AddRow() => CurrentInlineRows.Add(new InlineRow());
+
+    private void RemoveRow(InlineRow row)
+    {
+        CurrentInlineRows.Remove(row);
+        PersistCommands();
+    }
+
+    private void OnCommandChanged(InlineRow row, string value)
+    {
+        var next = (value ?? string.Empty).Trim();
+        if (row.Command == next) return;
+        row.Command = next;
+        PersistCommands();
+    }
+
+    private void OnNameChanged(InlineRow row, string value)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        if (string.Equals(row.Name, trimmed, StringComparison.Ordinal)) return;
+        row.Name = trimmed;
+        PersistCommands();
+    }
+
+    private void OnBackgroundChanged(InlineRow row, bool value)
+    {
+        if (row.Background == value) return;
+        row.Background = value;
+        // "Hide Success" is meaningless for a long-lived process, so clear it when backgrounding.
+        if (value) row.SuppressOutputOnSuccess = false;
+        PersistCommands();
+    }
+
+    private void OnSuppressOutputChanged(InlineRow row, bool value)
+    {
+        if (row.SuppressOutputOnSuccess == value) return;
+        row.SuppressOutputOnSuccess = value;
+        PersistCommands();
+    }
+
+    private void OnDescriptionChanged(InlineRow row, string value)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        if (string.Equals(row.Description, trimmed, StringComparison.Ordinal)) return;
+        row.Description = trimmed;
+        PersistCommands();
+    }
+
+    private static string? NullIfBlank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSettingsChanged;
+    }
+}
