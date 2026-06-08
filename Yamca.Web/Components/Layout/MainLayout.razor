@@ -17,7 +17,7 @@
     <MudAppBar Fixed="true" Dense="true" Elevation="0" Class="yamca-appbar" Style="height: var(--yamca-appbar-h)">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
                        OnClick="ToggleDrawer" aria-label="Toggle chats" />
-        <div class="yamca-brand" @onclick="ToggleDrawer" role="button" aria-label="Toggle chats">
+        <div class="yamca-brand" @onclick="GoToChats" role="button" aria-label="Go to chats">
             <img src="yamca.png" alt="yamca" height="32" width="32" style="border-radius: 4px" />
         </div>
         <MudTooltip Text="New Chat">
@@ -121,6 +121,18 @@
     // The drawer overlays content, so dismiss it once the user has chosen a destination.
     private void CloseDrawer() => _drawerOpen = false;
 
+    // The chat view lives at the root. Showing/creating a chat only updates split-pane
+    // state, so a user parked on the board (or another page) wouldn't see it — route them
+    // back to the chat view first, but skip the navigation if they're already there.
+    private void EnsureChatView()
+    {
+        if (!IsActive(""))
+            Nav.NavigateTo("/");
+    }
+
+    // The brand logo doubles as a shortcut back to the chat view.
+    private void GoToChats() => EnsureChatView();
+
     private const int RecentInSidebar = 8;
     private IReadOnlyList<ChatListItem> _recent = Array.Empty<ChatListItem>();
 
@@ -164,12 +176,17 @@
     private void NewChat()
     {
         CloseDrawer();
+        EnsureChatView();
         Sessions.Create(); // auto-shown in a pane; the single split view reflows
     }
 
     /// <summary>Bring an already-loaded chat into a split pane (replacing the last pane
     /// when the grid is full). Leaves the drawer open so the user can compose a layout.</summary>
-    private void ShowChat(int id) => Sessions.Show(id);
+    private void ShowChat(int id)
+    {
+        EnsureChatView();
+        Sessions.Show(id);
+    }
 
     /// <summary>Fully unload a chat. The grid reflows on its own; an emptied grid is
     /// re-filled by the view's ensure-at-least-one-visible.</summary>
@@ -185,6 +202,7 @@
     /// (Rehydrate shows it automatically).</summary>
     private void LoadRecent(Guid id)
     {
+        EnsureChatView();
         var existing = Sessions.FindByPersistentId(id);
         if (existing is not null)
         {
