@@ -14,7 +14,44 @@
 <MudSnackbarProvider />
 
 <MudLayout>
-    <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Variant="DrawerVariant.Mini" OpenMiniOnHover="true" Style="top: 0; height: 100vh">
+    <MudAppBar Fixed="true" Dense="true" Elevation="2" Class="yamca-appbar" Style="height: var(--yamca-appbar-h)">
+        <div class="yamca-brand">
+            <img src="yamca.png" alt="yamca" height="32" width="32" style="border-radius: 4px" />
+        </div>
+        <MudSpacer />
+        <MudTooltip Text="Dev Board">
+            <MudIconButton Href="board" Icon="@Icons.Material.Filled.ViewKanban"
+                           Color="@(IsActive("board") ? Color.Primary : Color.Inherit)" aria-label="Dev Board" />
+        </MudTooltip>
+        <MudTooltip Text="Workspace">
+            <MudIconButton Href="workspace" Icon="@Icons.Material.Filled.FolderOpen"
+                           Color="@(IsActive("workspace") ? Color.Primary : Color.Inherit)" aria-label="Workspace" />
+        </MudTooltip>
+        <MudTooltip Text="Processes">
+            <MudIconButton Href="processes" Icon="@Icons.Material.Filled.Terminal"
+                           Color="@(IsActive("processes") ? Color.Primary : Color.Inherit)" aria-label="Processes" />
+        </MudTooltip>
+        <MudTooltip Text="Settings">
+            <MudMenu Icon="@Icons.Material.Filled.Settings"
+                     Color="@(IsSettingsActive() ? Color.Primary : Color.Inherit)"
+                     AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                <MudMenuItem Href="endpoints" Icon="@Icons.Material.Filled.Cloud">Endpoints</MudMenuItem>
+                <MudMenuItem Href="tools" Icon="@Icons.Material.Filled.Build">Tools</MudMenuItem>
+                <MudMenuItem Href="scripts" Icon="@Icons.Material.Filled.FileOpen">Scripts</MudMenuItem>
+                <MudMenuItem Href="commands" Icon="@Icons.Material.Filled.Terminal">Commands</MudMenuItem>
+                <MudMenuItem Href="subagents" Icon="@Icons.Material.Filled.AccountTree">Subagents</MudMenuItem>
+                <MudMenuItem Href="instructions" Icon="@Icons.Material.Filled.MenuBook">Instructions</MudMenuItem>
+                <MudMenuItem Href="mcp" Icon="@Icons.Material.Filled.Extension">MCP</MudMenuItem>
+                <MudMenuItem Href="preferences" Icon="@Icons.Material.Filled.Tune">Preferences</MudMenuItem>
+                <MudMenuItem Href="backup" Icon="@Icons.Material.Filled.Backup">Backup</MudMenuItem>
+            </MudMenu>
+        </MudTooltip>
+        <MudTooltip Text="Exit yamca">
+            <MudIconButton Icon="@Icons.Material.Filled.PowerSettingsNew" Color="Color.Inherit"
+                           OnClick="ExitApp" aria-label="Exit yamca" />
+        </MudTooltip>
+    </MudAppBar>
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Variant="DrawerVariant.Mini" OpenMiniOnHover="true" Style="top: var(--yamca-appbar-h); height: calc(100vh - var(--yamca-appbar-h))">
         <MudNavMenu>
             @for (var i = 0; i < Sessions.Sessions.Count; i++)
             {
@@ -67,24 +104,6 @@
                 </MudNavGroup>
             }
 
-            <MudNavLink Href="board" Icon="@Icons.Material.Filled.ViewKanban">Dev Board</MudNavLink>
-            <MudNavLink Href="workspace" Icon="@Icons.Material.Filled.FolderOpen">Workspace</MudNavLink>
-            <MudNavLink Href="processes" Icon="@Icons.Material.Filled.Terminal">Processes</MudNavLink>
-
-            <MudNavGroup Title="Settings" Icon="@Icons.Material.Filled.Settings"
-                         @bind-Expanded="_settingsExpanded">
-                <MudNavLink Href="endpoints" Icon="@Icons.Material.Filled.Cloud">Endpoints</MudNavLink>
-                <MudNavLink Href="tools" Icon="@Icons.Material.Filled.Build">Tools</MudNavLink>
-                <MudNavLink Href="scripts" Icon="@Icons.Material.Filled.FileOpen">Scripts</MudNavLink>
-                <MudNavLink Href="commands" Icon="@Icons.Material.Filled.Terminal">Commands</MudNavLink>
-                <MudNavLink Href="subagents" Icon="@Icons.Material.Filled.AccountTree">Subagents</MudNavLink>
-                <MudNavLink Href="instructions" Icon="@Icons.Material.Filled.MenuBook">Instructions</MudNavLink>
-                <MudNavLink Href="mcp" Icon="@Icons.Material.Filled.Extension">MCP</MudNavLink>
-                <MudNavLink Href="preferences" Icon="@Icons.Material.Filled.Tune">Preferences</MudNavLink>
-                <MudNavLink Href="backup" Icon="@Icons.Material.Filled.Backup">Backup</MudNavLink>
-            </MudNavGroup>
-
-            <MudNavLink Icon="@Icons.Material.Filled.PowerSettingsNew" OnClick="ExitApp">Exit</MudNavLink>
         </MudNavMenu>
     </MudDrawer>
 
@@ -109,14 +128,29 @@
     // user's expand/collapse toggle.
     private bool _recentExpanded;
 
-    // Settings group starts collapsed; bound so re-renders don't fight the user's toggle.
-    private bool _settingsExpanded;
+    // Pages reachable from the top app bar. Used to highlight the active destination.
+    private static readonly string[] SettingsPaths =
+        { "endpoints", "tools", "scripts", "commands", "subagents", "instructions", "mcp", "preferences", "backup" };
 
     protected override void OnInitialized()
     {
         Sessions.Changed += OnSessionsChanged;
+        Nav.LocationChanged += OnLocationChanged;
         RefreshRecent();
     }
+
+    // The app bar highlights whichever destination is current, so it has to re-render
+    // when the route changes (page components re-render themselves, the layout does not).
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) =>
+        InvokeAsync(StateHasChanged);
+
+    private bool IsActive(string href)
+    {
+        var uri = Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/');
+        return string.Equals(uri, href, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsSettingsActive() => SettingsPaths.Any(IsActive);
 
     private void OnSessionsChanged()
     {
@@ -289,5 +323,6 @@
     public void Dispose()
     {
         Sessions.Changed -= OnSessionsChanged;
+        Nav.LocationChanged -= OnLocationChanged;
     }
 }

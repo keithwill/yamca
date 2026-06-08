@@ -2,8 +2,29 @@ html, body {
     overscroll-behavior: none;
 }
 
+/* Height of the top app bar. Drives the bar itself, the main-content offset, and
+   every full-height page (yamca-page / yamca-board-root / yamca-split) so they all
+   stay in lockstep — change it here and the whole layout follows. */
+:root {
+    --yamca-appbar-h: 48px;
+}
+
 .mud-main-content {
-    padding-top: 0 !important;
+    padding-top: var(--yamca-appbar-h) !important;
+}
+
+/* Drop the app bar's left gutter so the brand logo can sit in a fixed slot the exact
+   width of the mini nav rail (56px) below it — the logo then caps the sidebar column
+   instead of floating in from the edge. */
+.yamca-appbar .mud-toolbar {
+    padding-left: 0;
+}
+.yamca-brand {
+    width: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
 }
 h1:focus {
     outline: none;
@@ -45,7 +66,7 @@ h1:focus {
 }
 
 .yamca-page {
-    height: 100vh;
+    height: calc(100vh - var(--yamca-appbar-h));
     display: flex;
     flex-direction: column;
 }
@@ -156,7 +177,7 @@ h1:focus {
 .yamca-split {
     display: grid;
     gap: 4px;
-    height: 100vh;
+    height: calc(100vh - var(--yamca-appbar-h));
     width: 100%;
 }
 .yamca-split-1 { grid-template: 1fr / 1fr; }
@@ -179,7 +200,7 @@ h1:focus {
 .yamca-board-root {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    height: calc(100vh - var(--yamca-appbar-h));
     box-sizing: border-box;
     overflow: hidden;
 }
