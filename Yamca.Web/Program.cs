@@ -248,6 +248,11 @@ builder.Services.AddScoped<ITool, LoopTool>();
 builder.Services.AddSingleton<BackgroundProcessManager>();
 builder.Services.AddSingleton<IBackgroundProcessManager>(sp => sp.GetRequiredService<BackgroundProcessManager>());
 builder.Services.AddHostedService<BackgroundProcessHost>();
+// start_process is an LLM-facing facade (hidden from the settings table): it runs registered inline
+// commands under the execute_registered_script permission and arbitrary commands under the
+// start_process_command identity (the Ask-by-default settings row). Scoped so the facade's
+// IServiceProvider is the per-session scope owning IPermissionResolver.
+builder.Services.AddScoped<ITool, StartProcessCommandTool>();
 builder.Services.AddScoped<ITool, StartProcessTool>();
 builder.Services.AddScoped<ITool, GetProcessOutputTool>();
 builder.Services.AddScoped<ITool, StopProcessTool>();

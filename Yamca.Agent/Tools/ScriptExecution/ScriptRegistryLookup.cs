@@ -89,6 +89,37 @@ public sealed class ScriptRegistryLookup
         return false;
     }
 
+    /// <summary>Resolves a registered inline script by its <see cref="RegisteredInlineScript.Name"/>
+    /// (case-insensitive) or, failing that, its exact command line (case-sensitive, as
+    /// <see cref="TryGetInline"/>). Lets the LLM reference an inline command by a stable name
+    /// instead of reproducing the exact command line. Project tier wins over user tier.</summary>
+    public bool TryResolveInline(string token, out RegisteredInlineScript entry)
+    {
+        entry = null!;
+        if (string.IsNullOrWhiteSpace(token)) return false;
+        var needle = token.Trim();
+
+        foreach (var tier in new[] { _settings.ProjectScripts, _settings.UserScripts })
+        {
+            foreach (var inline in tier.Inline)
+            {
+                if (!string.IsNullOrWhiteSpace(inline.Name)
+                    && string.Equals(inline.Name!.Trim(), needle, StringComparison.OrdinalIgnoreCase))
+                {
+                    entry = inline;
+                    return true;
+                }
+                if (string.Equals(inline.Command.Trim(), needle, StringComparison.Ordinal))
+                {
+                    entry = inline;
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     public IEnumerable<(RegisteredInlineScript Entry, SettingsTierTag Tier)> AllInline()
     {
         foreach (var i in _settings.ProjectScripts.Inline) yield return (i, SettingsTierTag.Project);

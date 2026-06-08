@@ -131,6 +131,10 @@ else
         <MudText Typo="Typo.caption" Class="mb-1" Style="display:block;">
             One-line CLI commands with no file in the repo (e.g. <code>npm install</code>, <code>dotnet build</code>).
             The LLM runs them exactly as written via <code>execute_script</code> &mdash; no arguments are appended.
+            Give one an optional <em>name</em> to let the LLM reference it by that handle and to use as the
+            default process name when it is launched in the background.
+            Check <em>Background</em> for a watcher or dev server: running it then launches a long-lived
+            process (managed on the Processes page) instead of running to completion.
         </MudText>
         @{ var inlineRows = CurrentScriptInlineRows; }
         @if (inlineRows.Count == 0)
@@ -143,6 +147,12 @@ else
                 @foreach (var row in inlineRows)
                 {
                     <div @key="row.Id" class="d-flex align-center mb-1" style="gap: 4px;">
+                        <MudTextField T="string" Value="@(row.Name ?? string.Empty)"
+                                      ValueChanged="@((string v) => OnInlineNameChanged(row, v))"
+                                      DebounceInterval="400"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Style="max-width: 140px;"
+                                      Placeholder="name (optional)" />
                         <MudTextField T="string" Value="@row.Path"
                                       ValueChanged="@((string v) => OnScriptValueChanged(row, v, ScriptKind.Inline))"
                                       DebounceInterval="400"
@@ -155,10 +165,17 @@ else
                                       Variant="Variant.Outlined" Margin="Margin.Dense"
                                       Class="flex-grow-1"
                                       Placeholder="Description (optional)" />
+                        <MudTooltip Text="Background: launch this command as a long-lived process (a watcher or dev server) when it is run, instead of running it to completion. Managed via the Processes page and the get_process_output / list_processes / stop_process tools.">
+                            <MudCheckBox T="bool" Value="@row.Background"
+                                         ValueChanged="@((bool v) => OnInlineBackgroundChanged(row, v))"
+                                         Label="Background"
+                                         Dense="true" Size="Size.Small" />
+                        </MudTooltip>
                         <MudTooltip Text="No output on success: on a successful (exit 0) run, return only the status to the LLM — withhold stdout/stderr to save context. Failures still return full output.">
                             <MudCheckBox T="bool" Value="@row.SuppressOutputOnSuccess"
                                          ValueChanged="@((bool v) => OnSuppressOutputChanged(row, v))"
                                          Label="Hide Success"
+                                         Disabled="@row.Background"
                                          Dense="true" Size="Size.Small" />
                         </MudTooltip>
                         <MudIconButton Icon="@Icons.Material.Filled.Delete"
@@ -192,8 +209,10 @@ else
     {
         public Guid Id { get; } = Guid.NewGuid();
         public string Path { get; set; } = string.Empty;
+        public string? Name { get; set; } // inline commands only
         public string? Description { get; set; }
         public bool SuppressOutputOnSuccess { get; set; }
+        public bool Background { get; set; } // inline commands only
     }
 
     private readonly List<ScriptRow> _projectScriptFiles = new();
@@ -247,7 +266,7 @@ else
             dirs.Add(new ScriptRow { Path = d.Path, Description = d.Description, SuppressOutputOnSuccess = d.SuppressOutputOnSuccess });
         inline.Clear();
         foreach (var i in registry.Inline)
-            inline.Add(new ScriptRow { Path = i.Command, Description = i.Description, SuppressOutputOnSuccess = i.SuppressOutputOnSuccess });
+            inline.Add(new ScriptRow { Path = i.Command, Name = i.Name, Description = i.Description, SuppressOutputOnSuccess = i.SuppressOutputOnSuccess, Background = i.Background });
     }
 
     private void PersistScripts()
@@ -262,7 +281,7 @@ else
             .ToList();
         var inline = CurrentScriptInlineRows
             .Where(r => !string.IsNullOrWhiteSpace(r.Path))
-            .Select(r => new RegisteredInlineScript(r.Path.Trim(), NullIfBlank(r.Description), r.SuppressOutputOnSuccess))
+            .Select(r => new RegisteredInlineScript(r.Path.Trim(), NullIfBlank(r.Description), r.SuppressOutputOnSuccess && !r.Background, NullIfBlank(r.Name), r.Background))
             .ToList();
         Session.SetScripts(CurrentScriptTier, new ScriptRegistry(files, dirs, inline));
     }
@@ -301,6 +320,23 @@ else
     {
         if (row.SuppressOutputOnSuccess == value) return;
         row.SuppressOutputOnSuccess = value;
+        PersistScripts();
+    }
+
+    private void OnInlineNameChanged(ScriptRow row, string value)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        if (string.Equals(row.Name, trimmed, StringComparison.Ordinal)) return;
+        row.Name = trimmed;
+        PersistScripts();
+    }
+
+    private void OnInlineBackgroundChanged(ScriptRow row, bool value)
+    {
+        if (row.Background == value) return;
+        row.Background = value;
+        // "Hide Success" is meaningless for a long-lived process, so clear it when backgrounding.
+        if (value) row.SuppressOutputOnSuccess = false;
         PersistScripts();
     }
 

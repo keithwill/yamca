@@ -39,7 +39,28 @@ The `/scripts` page registers three kinds of entry:
   files within a registered directory count as registered.
 - **Inline command** — a one-line CLI command with no file in the repo (e.g.
   `npm install`, `dotnet build`). The LLM runs it verbatim by passing the exact
-  command line as the script path; no arguments are appended.
+  command line — or the command's optional **name** (see below) — as the script
+  path; no arguments are appended.
+
+Inline commands also take an optional **name** — a short, stable handle (e.g.
+`dev`) the LLM can use instead of reproducing the exact command line, which avoids
+brittle whitespace/quoting mismatches. The name is also the default process name
+when the command is launched in the background (see
+[tools-and-permissions.md](tools-and-permissions.md#background-process-tools)): a
+registered inline command started that way runs under the registered-script
+permission, so allowing it for one-shot runs also allows backgrounding it.
+
+### Background commands
+
+An inline command can be flagged **Background** for a watcher or dev server. When a
+background-flagged command is run, `execute_script` doesn't run it to completion —
+it hands it to the background-process manager (the same one behind `start_process`)
+and returns immediately. So "run the watch script" launches a managed long-lived
+process without the model needing to know to pick `start_process`, and without the
+awkwardness of running a never-exiting command to a timeout. The resulting process
+is managed on the Processes page and via `get_process_output`, `list_processes`,
+and `stop_process`. (*Hide Success* doesn't apply to a background command and is
+cleared when *Background* is set.)
 
 Each entry also has:
 

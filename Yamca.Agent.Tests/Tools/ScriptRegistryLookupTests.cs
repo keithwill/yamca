@@ -68,6 +68,33 @@ public class ScriptRegistryLookupTests
     }
 
     [Test]
+    public void TryResolveInline_MatchesByName_CaseInsensitive()
+    {
+        var settings = new InMemorySessionSettings
+        {
+            UserScripts = InlineOnly(new RegisteredInlineScript("npm run dev", "Dev server", Name: "dev")),
+        };
+        var lookup = new ScriptRegistryLookup(settings);
+
+        Assert.That(lookup.TryResolveInline("DEV", out var entry), Is.True);
+        Assert.That(entry.Command, Is.EqualTo("npm run dev"));
+    }
+
+    [Test]
+    public void TryResolveInline_FallsBackToCommandLine()
+    {
+        var settings = new InMemorySessionSettings
+        {
+            UserScripts = InlineOnly(new RegisteredInlineScript("npm run dev", null, Name: "dev")),
+        };
+        var lookup = new ScriptRegistryLookup(settings);
+
+        Assert.That(lookup.TryResolveInline("npm run dev", out var byCommand), Is.True);
+        Assert.That(byCommand.Name, Is.EqualTo("dev"));
+        Assert.That(lookup.TryResolveInline("nope", out _), Is.False);
+    }
+
+    [Test]
     public void AllInline_TagsTiers()
     {
         var settings = new InMemorySessionSettings

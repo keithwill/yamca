@@ -711,8 +711,10 @@ public sealed class SessionSettings : ISessionSettings
     private sealed class InlineScriptDto
     {
         public string? Command { get; set; }
+        public string? Name { get; set; }
         public string? Description { get; set; }
         public bool? SuppressOutputOnSuccess { get; set; }
+        public bool? Background { get; set; }
     }
 
     private static ScriptRegistry ScriptsFromDto(ScriptsDto? dto)
@@ -729,7 +731,7 @@ public sealed class SessionSettings : ISessionSettings
             .ToList();
         var inline = (dto.Inline ?? new List<InlineScriptDto>())
             .Where(e => !string.IsNullOrWhiteSpace(e.Command))
-            .Select(e => new RegisteredInlineScript(e.Command!.Trim(), Trim(e.Description), e.SuppressOutputOnSuccess ?? false))
+            .Select(e => new RegisteredInlineScript(e.Command!.Trim(), Trim(e.Description), e.SuppressOutputOnSuccess ?? false, Trim(e.Name), e.Background ?? false))
             .ToList();
 
         if (files.Count == 0 && dirs.Count == 0 && inline.Count == 0) return ScriptRegistry.Empty;
@@ -750,7 +752,7 @@ public sealed class SessionSettings : ISessionSettings
                 : registry.Directories.Select(d => new ScriptEntryDto { Path = d.Path, Description = d.Description, SuppressOutputOnSuccess = d.SuppressOutputOnSuccess ? true : null }).ToList(),
             Inline = registry.Inline.Count == 0
                 ? null
-                : registry.Inline.Select(i => new InlineScriptDto { Command = i.Command, Description = i.Description, SuppressOutputOnSuccess = i.SuppressOutputOnSuccess ? true : null }).ToList(),
+                : registry.Inline.Select(i => new InlineScriptDto { Command = i.Command, Name = i.Name, Description = i.Description, SuppressOutputOnSuccess = i.SuppressOutputOnSuccess ? true : null, Background = i.Background ? true : null }).ToList(),
         };
     }
 

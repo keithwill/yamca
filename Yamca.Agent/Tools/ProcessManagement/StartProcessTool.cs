@@ -1,23 +1,45 @@
-using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
+using Yamca.Agent.Tools.ScriptExecution;
 
 namespace Yamca.Agent.Tools.ProcessManagement;
 
-/// <summary>Starts a long-lived background process that keeps running after the chat turn (and
-/// session) ends. Deferred so its schema stays out of the prompt prefix.</summary>
+/// <summary>LLM-facing facade for starting a long-lived background process that keeps running after
+/// the chat turn (and session) ends. Like <c>execute_script</c> / <c>git</c>, it passes the
+/// AgentLoop permission gate (<see cref="DefaultPermission"/> = Allow) and runs the real check
+/// internally under one of two identities so each is independently configurable:
+/// <list type="bullet">
+/// <item><c>execute_registered_script</c> when the target names a registered inline command — the
+/// same green-light that governs running that command one-shot, so allowing it there also allows
+/// backgrounding it.</item>
+/// <item><c>start_process_command</c> (default Ask) for an arbitrary command line.</item>
+/// </list>
+/// Deferred so its schema stays out of the prompt prefix.</summary>
 public sealed class StartProcessTool : ITool
 {
     private readonly IBackgroundProcessManager _manager;
     private readonly ISessionSettings _settings;
+    private readonly ScriptRegistryLookup _registry;
+    // Permission services are resolved lazily from the scope to break a DI cycle — see the
+    // matching note on ExecuteScriptTool.
+    private readonly IServiceProvider _services;
 
-    public StartProcessTool(IBackgroundProcessManager manager, ISessionSettings settings)
+    public StartProcessTool(
+        IBackgroundProcessManager manager,
+        ISessionSettings settings,
+        ScriptRegistryLookup registry,
+        IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(manager);
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(registry);
+        ArgumentNullException.ThrowIfNull(services);
         _manager = manager;
         _settings = settings;
+        _registry = registry;
+        _services = services;
     }
 
     public string Name => "start_process";
@@ -25,43 +47,51 @@ public sealed class StartProcessTool : ITool
     public string Description =>
         "Start a long-lived background process (e.g. a dev server or watcher) and return immediately. " +
         "The process keeps running after this chat session ends; manage it with get_process_output, " +
-        "list_processes, and stop_process. Reuses an existing process of the same name if one is already running.";
+        "list_processes, and stop_process. Reuses an existing process of the same name if one is already running. " +
+        "To launch a registered command, pass its name (or exact command line) as 'command'; it then runs " +
+        "under the registered-script permission instead of asking.";
 
     public string ParametersSchema => """
     {
       "type": "object",
       "properties": {
-        "name":              { "type": "string", "description": "Stable, human-readable id for the process (e.g. \"web\"). Used by the other process tools." },
-        "command":           { "type": "string", "description": "The shell command line to run. Uses the session's configured shell." },
+        "name":              { "type": "string", "description": "Stable, human-readable id for the process (e.g. \"web\"). Optional when launching a registered command that has a name — that name is used. Used by the other process tools." },
+        "command":           { "type": "string", "description": "The shell command line to run, or the name (or exact command line) of a registered command to launch in the background." },
         "working_directory": { "type": "string", "description": "Directory to run in. Defaults to the workspace root." },
         "stop_command":      { "type": "string", "description": "Optional command run to shut the process down gracefully before it is force-killed." },
         "ports":             { "type": "array", "items": { "type": "integer" }, "description": "Ports this process listens on, surfaced in list_processes to spot conflicts." }
       },
-      "required": ["name", "command"],
+      "required": ["command"],
       "additionalProperties": false
     }
     """;
 
     public bool SupportsWorkspaceRestriction => false;
 
-    public PermissionLevel DefaultPermission => PermissionLevel.Ask;
+    // Allow so the AgentLoop passes through; the real check runs internally under
+    // execute_registered_script (registered command) or start_process_command (arbitrary).
+    public PermissionLevel DefaultPermission => PermissionLevel.Allow;
+
+    public bool ExposedInSettings => false;
 
     public bool Deferred => true;
 
-    public Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
+    public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
-        if (!ToolArguments.TryGetString(arguments, "name", out var name, out var nameError))
-            return Task.FromResult(ToolResult.Error(nameError));
-        if (string.IsNullOrWhiteSpace(name))
-            return Task.FromResult(ToolResult.Error("Argument 'name' must not be empty."));
         if (!ToolArguments.TryGetString(arguments, "command", out var command, out var commandError))
-            return Task.FromResult(ToolResult.Error(commandError));
+            return ToolResult.Error(commandError);
+        if (string.IsNullOrWhiteSpace(command))
+            return ToolResult.Error("Argument 'command' must not be empty.");
+
+        string? name = null;
+        if (arguments.TryGetProperty("name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String)
+            name = nameProp.GetString();
 
         var workingDirectory = context.Workspace.RootPath;
         if (arguments.TryGetProperty("working_directory", out var wdProp) && wdProp.ValueKind == JsonValueKind.String)
         {
             if (!ToolArguments.TryResolvePath(context, wdProp.GetString() ?? string.Empty, out workingDirectory, out var wdError))
-                return Task.FromResult(ToolResult.Error(wdError));
+                return ToolResult.Error(wdError);
         }
 
         string? stopCommand = null;
@@ -69,22 +99,38 @@ public sealed class StartProcessTool : ITool
             stopCommand = scProp.GetString();
 
         if (!TryGetPorts(arguments, out var ports, out var portsError))
-            return Task.FromResult(ToolResult.Error(portsError));
+            return ToolResult.Error(portsError);
 
-        var request = new StartRequest(name, command, workingDirectory, stopCommand, ports, _settings.ShellPreference);
-        var outcome = _manager.Start(request);
-        var p = outcome.Process;
+        // A registered inline command (matched by name or verbatim) rides the registered-script
+        // permission; anything else is an arbitrary background command gated by start_process_command.
+        var registered = _registry.TryResolveInline(command, out var inlineEntry);
+        var effectiveName = registered ? "execute_registered_script" : "start_process_command";
 
-        var sb = new StringBuilder();
-        if (outcome.AlreadyRunning)
-            sb.Append("A process named '").Append(name).Append("' is already running (pid ").Append(p.Pid).Append("); reused it.\n");
-        else if (p.Status == ProcessStatus.Failed)
-            return Task.FromResult(ToolResult.Error($"Failed to start '{name}':\n{p.RenderTail()}"));
-        else
-            sb.Append("Started '").Append(name).Append("' (pid ").Append(p.Pid).Append(").\n");
+        var permissions = _services.GetRequiredService<IPermissionResolver>();
+        var level = permissions.Resolve(effectiveName);
+        if (level == PermissionLevel.Ask)
+        {
+            var approvals = _services.GetRequiredService<IApprovalCoordinator>();
+            var decision = await approvals.RequestApprovalAsync(effectiveName, arguments, cancellationToken).ConfigureAwait(false);
+            level = decision.Approved ? PermissionLevel.Allow : PermissionLevel.Deny;
+            if (decision.Persistence != ApprovalPersistence.None)
+                _services.GetRequiredService<IPermissionStore>().Persist(effectiveName, level, decision.Persistence);
+        }
+        if (level == PermissionLevel.Deny)
+            return ToolResult.Error($"Permission denied for '{effectiveName}'.");
 
-        sb.Append("status: ").Append(p.Status.ToString().ToLowerInvariant());
-        return Task.FromResult(ToolResult.Ok(sb.ToString()));
+        // For a registered command, launch its stored command line; the supplied token may have been a name.
+        var commandLine = registered ? inlineEntry.Command : command;
+
+        // Process name: an explicit name wins; otherwise fall back to a registered command's name.
+        var processName = !string.IsNullOrWhiteSpace(name)
+            ? name!.Trim()
+            : (registered ? inlineEntry.Name?.Trim() ?? string.Empty : string.Empty);
+        if (string.IsNullOrWhiteSpace(processName))
+            return ToolResult.Error("Argument 'name' is required (the registered command has no name to fall back to).");
+
+        var request = new StartRequest(processName, commandLine, workingDirectory, stopCommand, ports, _settings.ShellPreference);
+        return BackgroundProcessLauncher.Start(_manager, request);
     }
 
     /// <summary>Parse the optional integer <c>ports</c> array.</summary>
