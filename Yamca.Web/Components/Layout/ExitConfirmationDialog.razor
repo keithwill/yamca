@@ -1,0 +1,57 @@
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-2">
+            This stops the yamca server running in your terminal. The app won't be reachable in the
+            browser until you run yamca again, and any other tabs pointed at this instance will stop
+            working.
+        </MudText>
+
+        @if (Chats.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-3">
+                @Chats.Count open @(Chats.Count == 1 ? "chat" : "chats") will be closed
+            </MudText>
+            <MudList T="string" Dense="true" ReadOnly="true">
+                @foreach (var name in Chats)
+                {
+                    <MudListItem T="string" Icon="@Icons.Material.Filled.Chat">@name</MudListItem>
+                }
+            </MudList>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Their history stays saved under History.</MudText>
+        }
+
+        @if (Processes.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-3" Color="Color.Warning">
+                @Processes.Count background @(Processes.Count == 1 ? "process" : "processes") will be stopped
+            </MudText>
+            <MudList T="string" Dense="true" ReadOnly="true">
+                @foreach (var name in Processes)
+                {
+                    <MudListItem T="string" Icon="@Icons.Material.Filled.Terminal">@name</MudListItem>
+                }
+            </MudList>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Each is asked to stop, then force-killed (with its child processes) if it doesn't exit.
+            </MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Keep running</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" OnClick="Confirm">Exit yamca</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    /// <summary>Labels of the chats currently open in slots — all closed on exit.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<string> Chats { get; set; } = Array.Empty<string>();
+
+    /// <summary>Names of the running background (start_process) processes — all stopped on exit.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<string> Processes { get; set; } = Array.Empty<string>();
+
+    private void Cancel() => Dialog.Cancel();
+
+    private void Confirm() => Dialog.Close(DialogResult.Ok(true));
+}

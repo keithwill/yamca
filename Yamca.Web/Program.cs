@@ -335,6 +335,24 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
+// Graceful shutdown landing page. The sidebar's Exit action force-navigates the browser here,
+// which tears down the Blazor circuit cleanly (no "reconnecting" overlay) and lands on plain
+// static HTML that owns no circuit of its own — so stopping the host below can't surface a
+// connection error on screen. The response is fully flushed before the host is asked to stop a
+// short moment later; the page then polls the root URL and, once the server is gone, swaps its
+// message to confirm shutdown.
+app.MapGet("/goodbye", (IHostApplicationLifetime lifetime) =>
+{
+    // Stop after the response has flushed to the browser. Detached on purpose — the request
+    // completes immediately and the host winds down a beat later.
+    _ = Task.Run(async () =>
+    {
+        await Task.Delay(750).ConfigureAwait(false);
+        lifetime.StopApplication();
+    });
+    return Results.Content(GoodbyeHtml(), "text/html; charset=utf-8");
+});
+
 // The bound port may be OS-assigned (ephemeral fallback), so the actual listening URL isn't
 // known until Kestrel has started. Resolve it from the server's bound addresses once started,
 // then announce it and open the browser.
@@ -388,6 +406,54 @@ static void OpenBrowser(string url)
         Console.Error.WriteLine($"yamca: could not open browser ({ex.Message}). Visit {url} manually.");
     }
 }
+
+// Self-contained shutdown page: no Blazor, no external assets, so it survives the host stopping
+// underneath it. It polls the root URL and, once the fetch fails (server gone), swaps the status
+// line to confirm the process has fully exited.
+static string GoodbyeHtml() =>
+    """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>yamca — shutting down</title>
+      <style>
+        html, body { height: 100%; margin: 0; }
+        body {
+          display: flex; align-items: center; justify-content: center;
+          background: #1a1a27; color: #e0e0e6;
+          font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        }
+        .card { text-align: center; max-width: 30rem; padding: 2rem; }
+        h1 { font-weight: 600; font-size: 1.5rem; margin: 0 0 0.75rem; }
+        p { margin: 0.4rem 0; line-height: 1.5; color: #b5b5c2; }
+        #status { margin-top: 1.25rem; font-weight: 600; color: #8a8aa0; }
+        #status.stopped { color: #66bb6a; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <h1>yamca is shutting down</h1>
+        <p>The server process started in your terminal is closing. Your chats remain saved in history.</p>
+        <p>To use yamca again, run <code>yamca</code> from your terminal.</p>
+        <p id="status">Stopping the server…</p>
+      </div>
+      <script>
+        function ping() {
+          fetch('/', { cache: 'no-store' })
+            .then(function () { setTimeout(ping, 800); })
+            .catch(function () {
+              var s = document.getElementById('status');
+              s.textContent = 'Server stopped — you can safely close this tab.';
+              s.classList.add('stopped');
+            });
+        }
+        setTimeout(ping, 1000);
+      </script>
+    </body>
+    </html>
+    """;
 
 static void PrintHelp(TextWriter? writer = null)
 {

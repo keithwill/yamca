@@ -1,10 +1,12 @@
 @inherits LayoutComponentBase
 @implements IDisposable
+@using Yamca.Agent.Tools.ProcessManagement
 @using WorkspaceImpl = Yamca.Agent.Workspace.Workspace
 @inject ChatSessionManager Sessions
 @inject NavigationManager Nav
 @inject ChatStore Store
 @inject IDialogService Dialogs
+@inject IBackgroundProcessManager Processes
 
 <MudThemeProvider IsDarkMode="true" />
 <MudPopoverProvider />
@@ -81,6 +83,8 @@
                 <MudNavLink Href="preferences" Icon="@Icons.Material.Filled.Tune">Preferences</MudNavLink>
                 <MudNavLink Href="backup" Icon="@Icons.Material.Filled.Backup">Backup</MudNavLink>
             </MudNavGroup>
+
+            <MudNavLink Icon="@Icons.Material.Filled.PowerSettingsNew" OnClick="ExitApp">Exit</MudNavLink>
         </MudNavMenu>
     </MudDrawer>
 
@@ -257,6 +261,29 @@
     {
         if (IsOnSplit()) return;
         Nav.NavigateTo($"chat/{id}");
+    }
+
+    /// <summary>Confirm, then shut the whole server down. Force-navigates to the static /goodbye
+    /// endpoint (see Program.cs), which tears down this circuit cleanly and stops the host — so the
+    /// terminal-launched process exits without the user hunting for the window that started it.</summary>
+    private async Task ExitApp()
+    {
+        var chatNames = Sessions.Sessions.Select(SlotLabel).ToList();
+        var processNames = Processes.Snapshot()
+            .Where(p => p.Status == ProcessStatus.Running)
+            .Select(p => p.Name)
+            .ToList();
+
+        var parameters = new DialogParameters
+        {
+            ["Chats"] = (IReadOnlyList<string>)chatNames,
+            ["Processes"] = (IReadOnlyList<string>)processNames,
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true };
+        var dialog = await Dialogs.ShowAsync<ExitConfirmationDialog>("Exit yamca?", parameters, options);
+        var result = await dialog.Result;
+        if (result is not null && !result.Canceled && result.Data is true)
+            Nav.NavigateTo("goodbye", forceLoad: true);
     }
 
     public void Dispose()
