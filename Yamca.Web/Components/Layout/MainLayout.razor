@@ -86,25 +86,21 @@
             }
             @if (Store.IsEnabled)
             {
-                <MudNavGroup Title="History" Icon="@Icons.Material.Filled.History"
-                             @bind-Expanded="_recentExpanded">
-                    @foreach (var item in recentShown)
-                    {
-                        <div class="yamca-session-row">
-                            <MudNavLink Icon="@Icons.Material.Filled.Chat"
-                                        OnClick="@(() => LoadRecent(item.Id))">
-                                @(string.IsNullOrWhiteSpace(item.Title) ? "(untitled chat)" : item.Title)
-                            </MudNavLink>
-                            <MudIconButton Class="yamca-session-close"
-                                           Icon="@Icons.Material.Filled.Close"
-                                           Size="Size.Small"
-                                           OnClick="@(() => DeleteRecent(item.Id))"
-                                           aria-label="Delete chat" />
-                        </div>
-                    }
-                    <MudNavLink Icon="@Icons.Material.Filled.MoreHoriz" OnClick="OpenRecentModal"
-                                aria-label="All saved chats" />
-                </MudNavGroup>
+                <MudDivider DividerType="DividerType.Middle" Class="my-2" />
+                <MudNavLink Icon="@Icons.Material.Filled.History" OnClick="OpenRecentModal">History</MudNavLink>
+                @foreach (var item in recentShown)
+                {
+                    <div class="yamca-session-row">
+                        <MudNavLink OnClick="@(() => LoadRecent(item.Id))">
+                            @(string.IsNullOrWhiteSpace(item.Title) ? "(untitled chat)" : item.Title)
+                        </MudNavLink>
+                        <MudIconButton Class="yamca-session-close"
+                                       Icon="@Icons.Material.Filled.Close"
+                                       Size="Size.Small"
+                                       OnClick="@(() => DeleteRecent(item.Id))"
+                                       aria-label="Delete chat" />
+                    </div>
+                }
             }
 
         </MudNavMenu>
@@ -131,10 +127,6 @@
 
     private const int RecentInSidebar = 8;
     private IReadOnlyList<ChatListItem> _recent = Array.Empty<ChatListItem>();
-
-    // History starts expanded — the sidebar is dedicated to chats. Bound (not just set)
-    // so re-renders don't fight the user's expand/collapse toggle.
-    private bool _recentExpanded = true;
 
     // Pages reachable from the top app bar. Used to highlight the active destination.
     private static readonly string[] SettingsPaths =
