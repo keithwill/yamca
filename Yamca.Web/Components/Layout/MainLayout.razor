@@ -20,6 +20,10 @@
         <div class="yamca-brand" @onclick="ToggleDrawer" role="button" aria-label="Toggle chats">
             <img src="yamca.png" alt="yamca" height="32" width="32" style="border-radius: 4px" />
         </div>
+        <MudTooltip Text="New Chat">
+            <MudIconButton Icon="@Icons.Material.Filled.ChatBubbleOutline" Color="Color.Inherit"
+                           OnClick="NewChat" Disabled="@(!Sessions.CanCreate)" aria-label="New Chat" />
+        </MudTooltip>
         <MudSpacer />
         <MudTooltip Text="Dev Board">
             <MudIconButton Href="board" Icon="@Icons.Material.Filled.ViewKanban"
@@ -71,7 +75,7 @@
                                    aria-label="Close chat" />
                 </div>
             }
-            <MudNavLink Icon="@Icons.Material.Filled.Add"
+            <MudNavLink Icon="@Icons.Material.Filled.ChatBubbleOutline"
                         OnClick="NewChat"
                         Disabled="@(!Sessions.CanCreate)">
                 New Chat
