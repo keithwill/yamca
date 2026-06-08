@@ -13,18 +13,17 @@ html, body {
     padding-top: var(--yamca-appbar-h) !important;
 }
 
-/* Drop the app bar's left gutter so the brand logo can sit in a fixed slot the exact
-   width of the mini nav rail (56px) below it — the logo then caps the sidebar column
-   instead of floating in from the edge. */
+/* Keep a small left gutter so the hamburger toggle isn't flush to the window edge, then
+   let the brand logo sit immediately to its right (no fixed-width slot). */
 .yamca-appbar .mud-toolbar {
-    padding-left: 0;
+    padding-left: 8px;
 }
 .yamca-brand {
-    width: 56px;
     display: flex;
     align-items: center;
-    justify-content: center;
+    margin-left: 4px;
     flex: 0 0 auto;
+    cursor: pointer;
 }
 h1:focus {
     outline: none;

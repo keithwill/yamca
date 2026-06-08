@@ -15,7 +15,9 @@
 
 <MudLayout>
     <MudAppBar Fixed="true" Dense="true" Elevation="2" Class="yamca-appbar" Style="height: var(--yamca-appbar-h)">
-        <div class="yamca-brand">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
+                       OnClick="ToggleDrawer" aria-label="Toggle chats" />
+        <div class="yamca-brand" @onclick="ToggleDrawer" role="button" aria-label="Toggle chats">
             <img src="yamca.png" alt="yamca" height="32" width="32" style="border-radius: 4px" />
         </div>
         <MudSpacer />
@@ -51,14 +53,15 @@
                            OnClick="ExitApp" aria-label="Exit yamca" />
         </MudTooltip>
     </MudAppBar>
-    <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Variant="DrawerVariant.Mini" OpenMiniOnHover="true" Style="top: var(--yamca-appbar-h); height: calc(100vh - var(--yamca-appbar-h))">
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Variant="DrawerVariant.Temporary" Style="top: var(--yamca-appbar-h); height: calc(100vh - var(--yamca-appbar-h))">
         <MudNavMenu>
             @for (var i = 0; i < Sessions.Sessions.Count; i++)
             {
                 var s = Sessions.Sessions[i];
                 var label = s.Turns.Count == 0 && s.WorktreeInfo is null ? $"Chat {i + 1}" : s.Title;
                 <div class="yamca-session-row" @onmouseup="@(e => OnRowMouseUp(e, s.Id))">
-                    <MudNavLink Href="@($"chat/{s.Id}")" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Chat">
+                    <MudNavLink Href="@($"chat/{s.Id}")" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Chat"
+                                OnClick="CloseDrawer">
                         @label
                     </MudNavLink>
                     <MudIconButton Class="yamca-session-close"
@@ -73,7 +76,7 @@
                         Disabled="@(!Sessions.CanCreate)">
                 New Chat
             </MudNavLink>
-            <MudNavLink Href="split" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.GridView">Split View</MudNavLink>
+            <MudNavLink Href="split" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.GridView" OnClick="CloseDrawer">Split View</MudNavLink>
 
             @{
                 // Only chats not already open in a slot are "recent" — the rest are reachable
@@ -121,12 +124,17 @@
 @code {
     private bool _drawerOpen = false;
 
-    private const int RecentInSidebar = 5;
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    // The drawer overlays content, so dismiss it once the user has chosen a destination.
+    private void CloseDrawer() => _drawerOpen = false;
+
+    private const int RecentInSidebar = 8;
     private IReadOnlyList<ChatListItem> _recent = Array.Empty<ChatListItem>();
 
-    // History starts collapsed; bound (not just set) so re-renders don't fight the
-    // user's expand/collapse toggle.
-    private bool _recentExpanded;
+    // History starts expanded — the sidebar is dedicated to chats. Bound (not just set)
+    // so re-renders don't fight the user's expand/collapse toggle.
+    private bool _recentExpanded = true;
 
     // Pages reachable from the top app bar. Used to highlight the active destination.
     private static readonly string[] SettingsPaths =
@@ -168,6 +176,7 @@
     private void NewChat()
     {
         if (!Sessions.CanCreate) return;
+        CloseDrawer();
         var vm = Sessions.Create();
         // Stay put when the user is in split view so they see the tile reflow.
         if (IsOnSplit()) return;
@@ -293,6 +302,7 @@
 
     private void NavigateToChat(int id)
     {
+        CloseDrawer();
         if (IsOnSplit()) return;
         Nav.NavigateTo($"chat/{id}");
     }
