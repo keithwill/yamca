@@ -161,6 +161,13 @@ h1:focus {
     display: none;
 }
 
+/* Our drawer nav links use OnClick handlers, not Href, so MudBlazor renders an <a> with no
+   href — and browsers drop the pointer cursor for hrefless anchors. Restore it: every link in
+   this menu is genuinely clickable. */
+.mud-nav-menu .mud-nav-link {
+    cursor: pointer;
+}
+
 .yamca-session-row {
     position: relative;
 }
