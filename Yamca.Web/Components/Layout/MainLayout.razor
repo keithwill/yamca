@@ -14,14 +14,14 @@
 <MudSnackbarProvider />
 
 <MudLayout>
-    <MudAppBar Fixed="true" Dense="true" Elevation="2" Class="yamca-appbar" Style="height: var(--yamca-appbar-h)">
+    <MudAppBar Fixed="true" Dense="true" Elevation="0" Class="yamca-appbar" Style="height: var(--yamca-appbar-h)">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
                        OnClick="ToggleDrawer" aria-label="Toggle chats" />
         <div class="yamca-brand" @onclick="ToggleDrawer" role="button" aria-label="Toggle chats">
             <img src="yamca.png" alt="yamca" height="32" width="32" style="border-radius: 4px" />
         </div>
         <MudTooltip Text="New Chat">
-            <MudIconButton Icon="@Icons.Material.Filled.ChatBubbleOutline" Color="Color.Inherit"
+            <MudIconButton Icon="@Icons.Material.Filled.Chat" Color="Color.Inherit"
                            OnClick="NewChat" aria-label="New Chat" />
         </MudTooltip>
         <MudSpacer />
@@ -77,9 +77,6 @@
                                    aria-label="Close chat" />
                 </div>
             }
-            <MudNavLink Icon="@Icons.Material.Filled.ChatBubbleOutline" OnClick="NewChat">
-                New Chat
-            </MudNavLink>
 
             @{
                 // Only chats not already loaded are "closed" — the rest are reachable

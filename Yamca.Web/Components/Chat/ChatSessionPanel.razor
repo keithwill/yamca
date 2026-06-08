@@ -10,17 +10,6 @@
 @using WorkspaceImpl = Yamca.Agent.Workspace.Workspace
 
 <div class="yamca-page">
-    @if (ShowHeader)
-    {
-        <div class="yamca-tile-header">
-            <span class="yamca-tile-title" title="@TileTitle">@TileTitle</span>
-            <MudIconButton Icon="@Icons.Material.Filled.CloseFullscreen"
-                           Size="Size.Small"
-                           OnClick="OnCloseClicked"
-                           aria-label="Remove from view" />
-        </div>
-    }
-
     @if (Chat.IsReadOnly)
     {
         <MudAlert Severity="Severity.Info" Dense="true" Class="ma-2">
@@ -29,6 +18,24 @@
     }
 
     <div class="yamca-input-dock">
+        @if (ShowHeader)
+        {
+            <div class="yamca-tile-header">
+                <span class="yamca-tile-title" title="@TileTitle">@TileTitle</span>
+                <MudTooltip Text="Hide (stays active)">
+                    <MudIconButton Icon="@Icons.Material.Filled.Remove"
+                                   Size="Size.Small"
+                                   OnClick="OnCloseClicked"
+                                   aria-label="Hide from view" />
+                </MudTooltip>
+                <MudTooltip Text="Close">
+                    <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                   Size="Size.Small"
+                                   OnClick="OnCloseChatClicked"
+                                   aria-label="Close chat" />
+                </MudTooltip>
+            </div>
+        }
         <div class="@ComposerClass" @ref="_composer">
             @if (Chat.YoloMode)
             {
@@ -352,7 +359,17 @@
         public string DataUrl => Image is null ? "" : $"data:{Image.MimeType};base64,{Image.Base64Data}";
     }
 
-    private string ComposerClass => Chat.YoloMode ? "yamca-composer yamca-composer-yolo" : "yamca-composer";
+    private string ComposerClass
+    {
+        get
+        {
+            var cls = Chat.YoloMode ? "yamca-composer yamca-composer-yolo" : "yamca-composer";
+            // When the tile header is shown it sits flush on the composer's top edge, so square
+            // off the composer's top corners to join the two into one connected card.
+            if (ShowHeader) cls += " yamca-composer-attached";
+            return cls;
+        }
+    }
 
     private string TileTitle
     {
@@ -852,6 +869,10 @@
     }
 
     private Task OnCloseClicked() => OnClose.InvokeAsync();
+
+    // The X fully unloads the chat (vs. the minus, which only hides this pane). Mirrors the
+    // direct Manager.Close used by the merge/delete handlers; the grid reflows on its own.
+    private void OnCloseChatClicked() => Manager.Close(Chat.Id);
 
     private string ContextBadgeText()
     {

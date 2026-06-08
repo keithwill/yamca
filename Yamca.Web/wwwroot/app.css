@@ -77,9 +77,10 @@ h1:focus {
 .yamca-input-dock {
     flex: 0 0 auto;
     z-index: 10;
-    padding: 1rem 1rem 0.5rem;
+    padding: 0.375rem 1rem 0.5rem;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
 }
 
 .yamca-composer {
@@ -87,10 +88,15 @@ h1:focus {
     max-width: 768px;
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(127, 127, 127, 0.35);
-    border-radius: 24px;
+    border-radius: 18px;
     padding: 0.5rem 1.0rem 0.5rem 1rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
     transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+/* When the tile header is shown it sits flush on top, so square the composer's top corners
+   to join header + composer into one connected card (rounded only along the bottom). */
+.yamca-composer-attached {
+    border-radius: 0 0 18px 18px;
 }
 .yamca-composer:focus-within {
     border-color: rgba(127, 127, 127, 0.6);
@@ -415,14 +421,24 @@ h1:focus {
     }
 }
 
+/* The chat-name strip sits flush on top of the composer, sharing its width and side borders.
+   Its top corners are rounded to match the composer's bottom, and it drops its bottom border
+   so the composer's own top edge reads as the divider — joining the two into one card. */
 .yamca-tile-header {
     flex: 0 0 auto;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 768px;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.25rem 0.5rem 0.25rem 0.75rem;
-    border-bottom: 1px solid rgba(127, 127, 127, 0.25);
-    background: rgba(255, 255, 255, 0.02);
+    /* Right padding matches the composer's so the hide button's right edge lines up with the
+       send button's below it (the filled send button reads larger, but the edges align). */
+    padding: 0.375rem 1rem;
+    border: 1px solid rgba(127, 127, 127, 0.35);
+    border-bottom: none;
+    border-radius: 18px 18px 0 0;
+    background: rgba(255, 255, 255, 0.03);
 }
 .yamca-tile-title {
     flex: 1 1 auto;
