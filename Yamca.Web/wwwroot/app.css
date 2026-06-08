@@ -161,10 +161,11 @@ h1:focus {
     display: none;
 }
 
-/* Our drawer nav links use OnClick handlers, not Href, so MudBlazor renders an <a> with no
-   href — and browsers drop the pointer cursor for hrefless anchors. Restore it: every link in
-   this menu is genuinely clickable. */
-.mud-nav-menu .mud-nav-link {
+/* Our drawer nav links use OnClick handlers, not Href, so MudBlazor renders a plain <div>
+   (cursor: auto) instead of an <a>, and ships no hover rule to restore the pointer. Add it:
+   every link in this menu is genuinely clickable. Note the container class is .mud-navmenu
+   (no hyphen) — .mud-nav-link is the link itself. */
+.mud-navmenu .mud-nav-link {
     cursor: pointer;
 }
 
