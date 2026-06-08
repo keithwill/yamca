@@ -69,14 +69,14 @@ AI chat session:
 4. You're navigated to the chat with the seeded prompt pre-filled and sent automatically.
 
 The play button appears on cards in work columns when at least one endpoint is
-configured. Up to 4 concurrent chat sessions are supported.
+configured. Each launched step opens as its own chat session, shown in a split
+pane (see [chat-sessions.md](chat-sessions.md)).
 
 ## Branch actions
 
 - **Open chat** — start an interactive session on the card's branch for
   follow-up work or conflict resolution. Offered for any card with a branch
-  defined (and a free chat slot); the branch and its worktree are created on
-  demand when none exists yet.
+  defined; the branch and its worktree are created on demand when none exists yet.
 
 When a card's branch has a live worktree, the card detail dialog additionally
 offers:

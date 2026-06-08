@@ -1,11 +1,11 @@
 @page "/"
-@page "/chat/{Id:int}"
 @rendermode InteractiveServer
+@implements IDisposable
 @using Yamca.Web.Components.Chat
 
 <PageTitle>Yamca - @System.IO.Path.GetFileName(Workspace.RootPath.TrimEnd('\\', '/'))</PageTitle>
 
-@if (!_hydrated || Chat is null)
+@if (!_hydrated || Manager.Visible.Count == 0)
 {
     <MudContainer MaxWidth="MaxWidth.Large" Class="pa-2">
         <MudProgressCircular Indeterminate="true" />
@@ -14,7 +14,14 @@
 }
 else
 {
-    <ChatSessionPanel Chat="Chat" @key="Chat.Id" />
+    <div class="yamca-split yamca-split-@Manager.Visible.Count">
+        @foreach (var s in Manager.Visible)
+        {
+            <ChatSessionPanel Chat="s" ShowHeader="true"
+                              OnClose="@(() => Manager.Hide(s.Id))"
+                              @key="s.Id" />
+        }
+    </div>
 }
 
 @code {
@@ -22,33 +29,17 @@ else
     [Inject] private ChatSessionManager Manager { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
     [Inject] private McpConfigStore McpStore { get; set; } = default!;
-    [Inject] private NavigationManager Nav { get; set; } = default!;
 
-    [Parameter] public int? Id { get; set; }
-
-    private ChatViewModel? Chat => Id is int id ? Manager.Get(id) : null;
     private bool _hydrated;
+
+    protected override void OnInitialized()
+    {
+        Manager.Changed += OnSessionsChanged;
+    }
 
     protected override void OnParametersSet()
     {
-        if (Id is null)
-        {
-            var target = Manager.Sessions.FirstOrDefault() ?? (Manager.CanCreate ? Manager.Create() : null);
-            if (target is not null)
-            {
-                Nav.NavigateTo($"chat/{target.Id}", replace: true);
-            }
-            return;
-        }
-
-        if (Manager.Get(Id.Value) is null)
-        {
-            var fallback = Manager.Sessions.FirstOrDefault();
-            if (fallback is not null)
-                Nav.NavigateTo($"chat/{fallback.Id}", replace: true);
-            else
-                Nav.NavigateTo("/", replace: true);
-        }
+        EnsureAtLeastOneVisible();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -67,5 +58,31 @@ else
             _hydrated = true;
             StateHasChanged();
         }
+    }
+
+    private void OnSessionsChanged()
+    {
+        EnsureAtLeastOneVisible();
+        InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>The grid is never empty: show the most-recently-active loaded chat, or
+    /// create a fresh one when nothing is loaded.</summary>
+    private void EnsureAtLeastOneVisible()
+    {
+        if (Manager.Visible.Count > 0) return;
+
+        var mostRecent = Manager.Sessions
+            .OrderByDescending(s => s.LastActivityUtc)
+            .FirstOrDefault();
+        if (mostRecent is not null)
+            Manager.Show(mostRecent.Id);
+        else
+            Manager.Create();
+    }
+
+    public void Dispose()
+    {
+        Manager.Changed -= OnSessionsChanged;
     }
 }

@@ -7,12 +7,21 @@ through here.
 
 ![A chat session in yamca](img/chat.png)
 
-## Sessions and the session limit
+## Active sessions vs. the split view
 
-Up to **4 concurrent sessions** run at once (`ChatSessionManager.MaxSessions`).
-When all 4 slots are in use, you must close one before starting another — the
-board surfaces this as an "All 4 chat slots are in use" message when launching a
-step or opening a card chat.
+`ChatSessionManager` keeps two separate notions:
+
+- **Active sessions** — chats loaded in memory (and possibly processing). There is
+  no fixed limit; you can keep as many open as you like.
+- **The visible set** — up to **4** active sessions shown as panes in the split
+  grid (`ChatSessionManager.MaxPanes`), the only view in yamca.
+
+The sidebar lists every chat in one place: active chats first (most recently
+active at the top), then closed chats below the divider. An active row carries an
+**X** to fully unload it; closed rows have none (deletion lives in the **History**
+dialog). Clicking a chat brings it into a pane — when the grid is already full of
+4, the **last** pane is replaced and the displaced chat stays active, just hidden.
+A pane's header button **removes it from view** without unloading it.
 
 Each session is bound to a workspace. A plain chat runs against the repository
 itself; a board step or branch chat runs against a git worktree (see
@@ -73,9 +82,11 @@ Sessions are saved under `<RepositoryRoot>/.yamca/chat` by `ChatStore`:
 
 ## Split view
 
-`/split` tiles all open sessions side by side so you can drive several at once —
-useful when running multiple board steps in parallel. Each tile is a full chat
-panel with its own header and close button.
+The split grid is the home view (`/`): it tiles the visible set (1–4 panes) side
+by side so you can drive several chats at once — useful when running multiple
+board steps in parallel. A single chat is simply a split of one. Each tile is a
+full chat panel with its own header; the header's button removes the tile from
+the grid (the chat stays active and reachable from the sidebar).
 
 ## See also
 

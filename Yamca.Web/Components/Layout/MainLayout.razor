@@ -22,7 +22,7 @@
         </div>
         <MudTooltip Text="New Chat">
             <MudIconButton Icon="@Icons.Material.Filled.ChatBubbleOutline" Color="Color.Inherit"
-                           OnClick="NewChat" Disabled="@(!Sessions.CanCreate)" aria-label="New Chat" />
+                           OnClick="NewChat" aria-label="New Chat" />
         </MudTooltip>
         <MudSpacer />
         <MudTooltip Text="Dev Board">
@@ -59,32 +59,32 @@
     </MudAppBar>
     <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Variant="DrawerVariant.Temporary" Style="top: var(--yamca-appbar-h); height: calc(100vh - var(--yamca-appbar-h))">
         <MudNavMenu>
-            @for (var i = 0; i < Sessions.Sessions.Count; i++)
+            @* Active chats — loaded in memory. Ordered most-recently-active first. The
+               trailing "X" unloads (closes); its presence is what marks a row "active".
+               A row shown in a split pane is highlighted via .yamca-visible. *@
+            @foreach (var s in Sessions.Sessions.OrderByDescending(s => s.LastActivityUtc))
             {
-                var s = Sessions.Sessions[i];
-                var label = s.Turns.Count == 0 && s.WorktreeInfo is null ? $"Chat {i + 1}" : s.Title;
-                <div class="yamca-session-row" @onmouseup="@(e => OnRowMouseUp(e, s.Id))">
-                    <MudNavLink Href="@($"chat/{s.Id}")" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Chat"
-                                OnClick="CloseDrawer">
-                        @label
+                var sid = s.Id;
+                var rowClass = Sessions.IsVisible(sid) ? "yamca-session-row yamca-visible" : "yamca-session-row";
+                <div class="@rowClass" @onmouseup="@(e => OnRowMouseUp(e, sid))" @key="sid">
+                    <MudNavLink Icon="@Icons.Material.Filled.Chat" OnClick="@(() => ShowChat(sid))">
+                        @(string.IsNullOrWhiteSpace(s.Title) ? "New Chat" : s.Title)
                     </MudNavLink>
                     <MudIconButton Class="yamca-session-close"
                                    Icon="@Icons.Material.Filled.Close"
                                    Size="Size.Small"
-                                   OnClick="@(() => CloseSession(s.Id))"
+                                   OnClick="@(() => CloseSession(sid))"
                                    aria-label="Close chat" />
                 </div>
             }
-            <MudNavLink Icon="@Icons.Material.Filled.ChatBubbleOutline"
-                        OnClick="NewChat"
-                        Disabled="@(!Sessions.CanCreate)">
+            <MudNavLink Icon="@Icons.Material.Filled.ChatBubbleOutline" OnClick="NewChat">
                 New Chat
             </MudNavLink>
-            <MudNavLink Href="split" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.GridView" OnClick="CloseDrawer">Split View</MudNavLink>
 
             @{
-                // Only chats not already open in a slot are "recent" — the rest are reachable
-                // directly above.
+                // Only chats not already loaded are "closed" — the rest are reachable
+                // directly above. Deletion lives in the History dialog, so closed rows
+                // carry no inline button (their lack of an "X" is what marks them closed).
                 var recentClosed = _recent.Where(r => Sessions.FindByPersistentId(r.Id) is null).ToList();
                 var recentShown = recentClosed.Take(RecentInSidebar).ToList();
             }
@@ -94,15 +94,10 @@
                 <MudNavLink Icon="@Icons.Material.Filled.History" OnClick="OpenRecentModal">History</MudNavLink>
                 @foreach (var item in recentShown)
                 {
-                    <div class="yamca-session-row">
+                    <div class="yamca-session-row" @key="item.Id">
                         <MudNavLink OnClick="@(() => LoadRecent(item.Id))">
                             @(string.IsNullOrWhiteSpace(item.Title) ? "(untitled chat)" : item.Title)
                         </MudNavLink>
-                        <MudIconButton Class="yamca-session-close"
-                                       Icon="@Icons.Material.Filled.Close"
-                                       Size="Size.Small"
-                                       OnClick="@(() => DeleteRecent(item.Id))"
-                                       aria-label="Delete chat" />
                     </div>
                 }
             }
@@ -171,57 +166,32 @@
 
     private void NewChat()
     {
-        if (!Sessions.CanCreate) return;
         CloseDrawer();
-        var vm = Sessions.Create();
-        // Stay put when the user is in split view so they see the tile reflow.
-        if (IsOnSplit()) return;
-        Nav.NavigateTo($"chat/{vm.Id}");
+        Sessions.Create(); // auto-shown in a pane; the single split view reflows
     }
 
-    private void CloseSession(int id)
-    {
-        var next = Sessions.PickNextActive(id);
-        var wasActive = CurrentChatId() == id;
-        Sessions.Close(id);
-        // In split view, closing a sidebar entry should never navigate away.
-        if (IsOnSplit()) return;
-        if (!wasActive) return;
-        if (next is int nextId)
-            Nav.NavigateTo($"chat/{nextId}");
-        else
-            Nav.NavigateTo("/");
-    }
+    /// <summary>Bring an already-loaded chat into a split pane (replacing the last pane
+    /// when the grid is full). Leaves the drawer open so the user can compose a layout.</summary>
+    private void ShowChat(int id) => Sessions.Show(id);
 
-    private bool IsOnSplit()
-    {
-        var uri = Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/');
-        return string.Equals(uri, "split", StringComparison.OrdinalIgnoreCase);
-    }
+    /// <summary>Fully unload a chat. The grid reflows on its own; an emptied grid is
+    /// re-filled by the view's ensure-at-least-one-visible.</summary>
+    private void CloseSession(int id) => Sessions.Close(id);
 
     private void OnRowMouseUp(MouseEventArgs e, int id)
     {
         if (e.Button == 1) CloseSession(id);
     }
 
-    private int? CurrentChatId()
-    {
-        var uri = Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/');
-        if (uri.StartsWith("chat/", StringComparison.OrdinalIgnoreCase)
-            && int.TryParse(uri.AsSpan(5), out var id))
-            return id;
-        return null;
-    }
-
-    /// <summary>Reopen a saved chat. If it's already in a slot, just navigate there.
-    /// Otherwise load it (prompting to free a slot when all 4 are full) and rehydrate
-    /// into the appropriate workspace / read-only mode.</summary>
-    private async Task LoadRecent(Guid id)
+    /// <summary>Reopen a saved chat. If it's already loaded, just show it in a pane.
+    /// Otherwise load it and rehydrate into the appropriate workspace / read-only mode
+    /// (Rehydrate shows it automatically).</summary>
+    private void LoadRecent(Guid id)
     {
         var existing = Sessions.FindByPersistentId(id);
         if (existing is not null)
         {
-            NavigateToChat(existing.Id);
+            Sessions.Show(existing.Id);
             return;
         }
 
@@ -234,17 +204,9 @@
             return;
         }
 
-        if (!Sessions.CanCreate)
-        {
-            var slot = await PickSlotToReplace();
-            if (slot is null) return; // user cancelled
-            Sessions.Close(slot.Value);
-        }
-
         var (workspace, readOnly) = ResolveWorkspace(doc);
-        var vm = Sessions.Rehydrate(doc, workspace, readOnly);
+        Sessions.Rehydrate(doc, workspace, readOnly);
         RefreshRecent();
-        NavigateToChat(vm.Id);
     }
 
     /// <summary>Decide the workspace and read-only state for a saved chat. A chat bound to
@@ -262,19 +224,6 @@
         return (null, false);
     }
 
-    private async Task<int?> PickSlotToReplace()
-    {
-        var choices = Sessions.Sessions
-            .Select((s, i) => new ReplaceSlotDialog.SlotChoice(s.Id, SlotLabel(s, i)))
-            .ToList();
-        var parameters = new DialogParameters { ["Slots"] = choices };
-        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true };
-        var dialog = await Dialogs.ShowAsync<ReplaceSlotDialog>("Replace a chat", parameters, options);
-        var result = await dialog.Result;
-        if (result is null || result.Canceled || result.Data is not int id) return null;
-        return id;
-    }
-
     private static string SlotLabel(ChatViewModel s, int index) =>
         s.Turns.Count == 0 && s.WorktreeInfo is null ? $"Chat {index + 1}" : s.Title;
 
@@ -286,21 +235,7 @@
         RefreshRecent();
         StateHasChanged();
         if (result is not null && !result.Canceled && result.Data is Guid id)
-            await LoadRecent(id);
-    }
-
-    private void DeleteRecent(Guid id)
-    {
-        Store.Delete(id);
-        RefreshRecent();
-        StateHasChanged();
-    }
-
-    private void NavigateToChat(int id)
-    {
-        CloseDrawer();
-        if (IsOnSplit()) return;
-        Nav.NavigateTo($"chat/{id}");
+            LoadRecent(id);
     }
 
     /// <summary>Confirm, then shut the whole server down. Force-navigates to the static /goodbye

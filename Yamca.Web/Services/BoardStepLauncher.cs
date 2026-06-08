@@ -23,11 +23,7 @@ public sealed class BoardStepLauncher
 
     public BoardStepLauncher(ChatSessionManager sessions) => _sessions = sessions;
 
-    /// <summary>True when a chat slot is free to host a new step session.</summary>
-    public bool HasFreeSlot => _sessions.CanCreate;
-
-    /// <summary>Create the session for a step. Throws <see cref="InvalidOperationException"/>
-    /// when all session slots are occupied (callers should guard with <see cref="HasFreeSlot"/>).</summary>
+    /// <summary>Create the session for a step, shown automatically in a split pane.</summary>
     public ChatViewModel ProvisionStepSession(StepRunRequest request)
     {
         var vm = request.Worktree is { } wt

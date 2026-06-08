@@ -148,7 +148,7 @@ else
                                     {
                                         <button type="button"
                                                 class="yamca-board-card-play"
-                                                disabled="@(_busyCards.Contains(c.Id) || !Manager.CanCreate)"
+                                                disabled="@(_busyCards.Contains(c.Id))"
                                                 @onclick:stopPropagation="true"
                                                 @onclick="@(() => QuickRunAsync(c, column))"
                                                 aria-label="Run step">
@@ -374,7 +374,6 @@ else
             ["ColumnDisplayName"] = column.DisplayName,
             ["IsWorkColumn"] = BoardSvc.HasInstructions(boardRoot, column.DirectoryName),
             ["NextColumnDisplayName"] = next?.DisplayName,
-            ["CanRunStep"] = Manager.CanCreate,
             ["Endpoints"] = Session.Endpoints.Items,
             ["DefaultEndpointId"] = Session.Endpoints.DefaultId,
             ["ExistingBranches"] = existingBranches,
@@ -468,19 +467,15 @@ else
     private async Task OpenCardChatAsync(BoardCard card)
     {
         if (string.IsNullOrWhiteSpace(card.Branch)) return;
-        if (!Manager.CanCreate)
-        {
-            Snackbar.Add("All 4 chat slots are in use — close one to open a chat.", Severity.Warning);
-            return;
-        }
 
         var worktree = await ResolveWorktreeForBranchAsync(card.Branch!);
         if (worktree is null) return; // error already surfaced
 
         try
         {
-            var vm = Manager.CreateForWorktree(new WorkspaceImpl(worktree.WorktreePath), worktree);
-            Nav.NavigateTo($"chat/{vm.Id}");
+            // CreateForWorktree shows the new session in a pane; jump to the chat view.
+            Manager.CreateForWorktree(new WorkspaceImpl(worktree.WorktreePath), worktree);
+            Nav.NavigateTo("/");
         }
         catch (Exception ex)
         {
@@ -636,12 +631,6 @@ else
 
     private async Task RunStepAsync(BoardCard card, BoardColumn column, CardDetailDialog.Result run)
     {
-        if (!Manager.CanCreate)
-        {
-            Snackbar.Add("All 4 chat slots are in use — close one to run a step.", Severity.Warning);
-            return;
-        }
-
         // 1. Bind the card to its branch by writing `branch:` frontmatter. The board is separate from
         //    the code worktree, so this is just a write to the card file. We (re)bind both for a card
         //    that has never had a branch and for one whose stale `branch:` attribute differs from the
@@ -664,12 +653,13 @@ else
         var instructions = BoardSvc.ReadInstructions(boardRoot, column.DirectoryName);
         var next = _snapshot.NextColumn(column);
 
-        // 4. Provision the seeded session and navigate to it (composer pre-filled, not sent).
+        // 4. Provision the seeded session (shown in a pane) and jump to the chat view
+        //    (composer pre-filled, not sent).
         try
         {
-            var vm = Launcher.ProvisionStepSession(
+            Launcher.ProvisionStepSession(
                 new StepRunRequest(card, column, next, run.EndpointId, worktree, instructions));
-            Nav.NavigateTo($"chat/{vm.Id}");
+            Nav.NavigateTo("/");
         }
         catch (Exception ex)
         {
@@ -679,7 +669,7 @@ else
 
     private async Task QuickRunAsync(BoardCard card, BoardColumn column)
     {
-        if (_busyCards.Contains(card.Id) || !Manager.CanCreate || Session.Endpoints.Items.Count == 0) return;
+        if (_busyCards.Contains(card.Id) || Session.Endpoints.Items.Count == 0) return;
         var branch = !string.IsNullOrWhiteSpace(card.Branch)
             ? card.Branch
             : BoardService.PresumptiveBranch(card.Id, card.Title);

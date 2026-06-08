@@ -42,6 +42,7 @@ public sealed class ChatViewModel : IDisposable
     private IReadOnlyList<ChatMessage>? _restoredMessages;
     private PersistedEndpoint? _restoredEndpoint;
     private DateTimeOffset _createdUtc = DateTimeOffset.UtcNow;
+    private DateTimeOffset _lastActivityUtc = DateTimeOffset.UtcNow;
 
     public ChatViewModel(
         int id,
@@ -85,6 +86,10 @@ public sealed class ChatViewModel : IDisposable
     /// saved chat is already open. Distinct from the volatile 1–4 slot <see cref="Id"/>.
     /// Rotated by <see cref="Clear"/> so a cleared chat becomes a new history entry.</summary>
     public Guid PersistentId { get; private set; } = Guid.NewGuid();
+
+    /// <summary>Timestamp of the most recent turn start or completion (or when the chat was
+    /// created / reopened). Drives the sidebar's "active chats, most recent first" ordering.</summary>
+    public DateTimeOffset LastActivityUtc => _lastActivityUtc;
 
     /// <summary>True when this chat was loaded as read-only history — its bound worktree
     /// no longer exists, so sending and branch operations are disabled and nothing is
@@ -269,6 +274,7 @@ public sealed class ChatViewModel : IDisposable
         turn.IsRunning = true;
         turn.Activity = TurnActivity.ProcessingPrompt;
         IsRunning = true;
+        _lastActivityUtc = DateTimeOffset.UtcNow;
         Error = null;
         Raise();
 
@@ -301,6 +307,7 @@ public sealed class ChatViewModel : IDisposable
             turn.IsRunning = false;
             turn.Activity = TurnActivity.Idle;
             IsRunning = false;
+            _lastActivityUtc = DateTimeOffset.UtcNow;
             _runCts?.Dispose();
             _runCts = null;
             Raise();
@@ -365,6 +372,7 @@ public sealed class ChatViewModel : IDisposable
         // intact so it remains under History.
         PersistentId = Guid.NewGuid();
         _createdUtc = DateTimeOffset.UtcNow;
+        _lastActivityUtc = _createdUtc;
         IsReadOnly = false;
         _restoredMessages = null;
         _restoredEndpoint = null;
@@ -647,6 +655,9 @@ public sealed class ChatViewModel : IDisposable
 
         PersistentId = doc.Id;
         _createdUtc = doc.CreatedUtc;
+        // A just-reopened chat is the most-recently-interacted-with — float it to the top
+        // of the sidebar's active group.
+        _lastActivityUtc = DateTimeOffset.UtcNow;
         IsReadOnly = readOnly;
 
         Turns.Clear();

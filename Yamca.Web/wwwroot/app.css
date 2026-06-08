@@ -158,6 +158,13 @@ h1:focus {
 .yamca-session-row {
     position: relative;
 }
+/* Marks a chat that is currently shown as a pane in the split grid. */
+.yamca-session-row.yamca-visible {
+    border-left: 2px solid var(--mud-palette-primary);
+}
+.yamca-session-row.yamca-visible .mud-nav-link {
+    font-weight: 600;
+}
 .yamca-session-row .yamca-session-close {
     position: absolute;
     right: 4px;

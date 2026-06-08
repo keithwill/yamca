@@ -145,7 +145,7 @@
         @* Open chat is offered for any card with a branch (not just branch-bound ones with a live
            worktree): the page creates the branch/worktree on demand when none exists yet. It only
            needs a free chat slot, so it stands apart from the work-column step affordances below. *@
-        @if (HasBranchAttribute && CanRunStep)
+        @if (HasBranchAttribute)
         {
             <MudTooltip Text="@($"Open chat on {Card.Branch}")">
                 <MudIconButton Icon="@Icons.Material.Filled.Forum"
@@ -153,7 +153,7 @@
                                OnClick="OpenChat" />
             </MudTooltip>
         }
-        @if (IsWorkColumn && CanRunStep)
+        @if (IsWorkColumn)
         {
             @if (Endpoints.Count == 0)
             {
@@ -210,7 +210,6 @@
     /// column. Null when the card is already in the last column (nothing to promote to).</summary>
     [Parameter] public string? NextColumnDisplayName { get; set; }
 
-    [Parameter] public bool CanRunStep { get; set; }
     [Parameter] public IReadOnlyList<EndpointSettings> Endpoints { get; set; } = Array.Empty<EndpointSettings>();
     [Parameter] public Guid DefaultEndpointId { get; set; }
     [Parameter] public IReadOnlyList<string> ExistingBranches { get; set; } = Array.Empty<string>();

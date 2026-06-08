@@ -14,10 +14,10 @@
     {
         <div class="yamca-tile-header">
             <span class="yamca-tile-title" title="@TileTitle">@TileTitle</span>
-            <MudIconButton Icon="@Icons.Material.Filled.Close"
+            <MudIconButton Icon="@Icons.Material.Filled.CloseFullscreen"
                            Size="Size.Small"
                            OnClick="OnCloseClicked"
-                           aria-label="Close chat" />
+                           aria-label="Remove from view" />
         </div>
     }
 
@@ -301,7 +301,6 @@
     [Inject] private ChatSessionManager Manager { get; set; } = default!;
     [Inject] private GitService Git { get; set; } = default!;
     [Inject] private IDialogService Dialogs { get; set; } = default!;
-    [Inject] private NavigationManager Nav { get; set; } = default!;
     [Inject] private ISessionSettings Session { get; set; } = default!;
     [Inject] private SessionSettings SessionConcrete { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
@@ -489,8 +488,8 @@
         try
         {
             var workspace = new WorkspaceImpl(info.WorktreePath);
-            var vm = Manager.CreateForWorktree(workspace, info);
-            Nav.NavigateTo($"chat/{vm.Id}");
+            // CreateForWorktree shows the new session in a pane; no navigation needed.
+            Manager.CreateForWorktree(workspace, info);
         }
         catch (Exception ex)
         {
@@ -509,9 +508,8 @@
 
         if (result.Data is BranchMergeDialog.MergeOutcome outcome && outcome.CleanupRequested)
         {
-            // Worktree is gone — close this session.
+            // Worktree is gone — unload this session; the grid reflows on its own.
             Manager.Close(Chat.Id);
-            Nav.NavigateTo("/");
         }
     }
 
@@ -525,7 +523,6 @@
         if (result is null || result.Canceled) return;
 
         Manager.Close(Chat.Id);
-        Nav.NavigateTo("/");
     }
 
     private void OnChanged()
