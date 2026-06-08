@@ -121,7 +121,7 @@ else
                          ValueChanged="OnFormBackgroundChanged"
                          Label="Background"
                          Dense="true" Size="Size.Small" />
-            <MudText Typo="Typo.caption" Class="mb-2" Component="@("div")"
+            <MudText Typo="Typo.caption" Class="mb-2" HtmlTag="div"
                      Style="color:var(--mud-palette-text-secondary)">
                 Launch this command as a long-lived process (a watcher or dev server) when it is run,
                 instead of running it to completion. Managed via the Processes page and the
@@ -131,7 +131,7 @@ else
                          Label="Hide Success"
                          Disabled="@_formBackground"
                          Dense="true" Size="Size.Small" />
-            <MudText Typo="Typo.caption" Component="@("div")"
+            <MudText Typo="Typo.caption" HtmlTag="div"
                      Style="color:var(--mud-palette-text-secondary)">
                 On a successful (exit 0) run, return only the status to the LLM — withhold stdout/stderr
                 to save context. Failures still return full output.

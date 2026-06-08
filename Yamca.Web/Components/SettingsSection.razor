@@ -13,7 +13,7 @@
             <MudText Typo="Typo.h6">@Title</MudText>
             @if (Description is not null)
             {
-                <MudText Typo="Typo.caption" Component="@("div")" Class="mt-1"
+                <MudText Typo="Typo.caption" HtmlTag="div" Class="mt-1"
                          Style="color:var(--mud-palette-text-secondary)">
                     @Description
                 </MudText>

@@ -114,7 +114,7 @@ else
             <MudCheckBox T="bool" @bind-Value="_formSuppress"
                          Label="Hide Success"
                          Dense="true" Size="Size.Small" />
-            <MudText Typo="Typo.caption" Component="@("div")"
+            <MudText Typo="Typo.caption" HtmlTag="div"
                      Style="color:var(--mud-palette-text-secondary)">
                 @if (_formKind == ScriptKind.Directory)
                 {
