@@ -27,6 +27,12 @@ else
             }
             else { <text> Stored on disk in <code>@Keys.UserFile</code>.</text> }
         </Description>
+        <Actions>
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Terminal"
+                       OnClick="OpenAddDialog">
+                Add command
+            </MudButton>
+        </Actions>
         <ChildContent>
         @{ var inlineRows = CurrentInlineRows; }
         @if (inlineRows.Count == 0)
@@ -35,54 +41,111 @@ else
         }
         else
         {
-            <div class="mb-2">
-                @foreach (var row in inlineRows)
-                {
-                    <div @key="row.Id" class="d-flex align-center mb-1" style="gap: 4px;">
-                        <MudTextField T="string" Value="@(row.Name ?? string.Empty)"
-                                      ValueChanged="@((string v) => OnNameChanged(row, v))"
-                                      DebounceInterval="400"
-                                      Variant="Variant.Outlined" Margin="Margin.Dense"
-                                      Style="max-width: 140px;"
-                                      Placeholder="name (optional)" />
-                        <MudTextField T="string" Value="@row.Command"
-                                      ValueChanged="@((string v) => OnCommandChanged(row, v))"
-                                      DebounceInterval="400"
-                                      Variant="Variant.Outlined" Margin="Margin.Dense"
-                                      Class="flex-grow-1"
-                                      Placeholder="npm install" />
-                        <MudTextField T="string" Value="@(row.Description ?? string.Empty)"
-                                      ValueChanged="@((string v) => OnDescriptionChanged(row, v))"
-                                      DebounceInterval="400"
-                                      Variant="Variant.Outlined" Margin="Margin.Dense"
-                                      Class="flex-grow-1"
-                                      Placeholder="Description (optional)" />
-                        <MudTooltip Text="Background: launch this command as a long-lived process (a watcher or dev server) when it is run, instead of running it to completion. Managed via the Processes page and the get_process_output / list_processes / stop_process tools.">
-                            <MudCheckBox T="bool" Value="@row.Background"
-                                         ValueChanged="@((bool v) => OnBackgroundChanged(row, v))"
-                                         Label="Background"
-                                         Dense="true" Size="Size.Small" />
+            <MudTable Items="inlineRows" Hover="true" Dense="true" Class="mud-table-bordered">
+                <HeaderContent>
+                    <MudTh Style="width: 160px;">Name</MudTh>
+                    <MudTh>Command</MudTh>
+                    <MudTh>Description</MudTh>
+                    <MudTh Style="width: 110px;">Background</MudTh>
+                    <MudTh Style="width: 110px;">Hide Success</MudTh>
+                    <MudTh Style="width: 120px;">Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        @if (!string.IsNullOrWhiteSpace(context.Name))
+                        {
+                            <MudText Typo="Typo.body2"><b>@context.Name</b></MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-disabled)">(unnamed)</MudText>
+                        }
+                    </MudTd>
+                    <MudTd><code>@context.Command</code></MudTd>
+                    <MudTd>
+                        @if (string.IsNullOrWhiteSpace(context.Description))
+                        {
+                            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">(none)</MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2">@context.Description</MudText>
+                        }
+                    </MudTd>
+                    <MudTd>
+                        @if (context.Background)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Check" Color="Color.Success" Size="Size.Small" />
+                        }
+                    </MudTd>
+                    <MudTd>
+                        @if (context.SuppressOutputOnSuccess)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Check" Color="Color.Success" Size="Size.Small" />
+                        }
+                    </MudTd>
+                    <MudTd>
+                        <MudTooltip Text="Edit command">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           OnClick="@(() => OpenEditDialog(context))"
+                                           aria-label="Edit command" />
                         </MudTooltip>
-                        <MudTooltip Text="No output on success: on a successful (exit 0) run, return only the status to the LLM — withhold stdout/stderr to save context. Failures still return full output.">
-                            <MudCheckBox T="bool" Value="@row.SuppressOutputOnSuccess"
-                                         ValueChanged="@((bool v) => OnSuppressOutputChanged(row, v))"
-                                         Label="Hide Success"
-                                         Disabled="@row.Background"
-                                         Dense="true" Size="Size.Small" />
+                        <MudTooltip Text="Remove command">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                           OnClick="@(() => RemoveRow(context))"
+                                           aria-label="Remove command" />
                         </MudTooltip>
-                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                       OnClick="@(() => RemoveRow(row))"
-                                       aria-label="Remove" />
-                    </div>
-                }
-            </div>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
         }
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Terminal"
-                   OnClick="AddRow">
-            Add command
-        </MudButton>
         </ChildContent>
     </SettingsSection>
+
+    <MudDialog @bind-Visible="_dialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
+        <TitleContent>@(_editRow is null ? "Add command" : "Edit command")</TitleContent>
+        <DialogContent>
+            <MudTextField T="string" @bind-Value="_formName"
+                          Label="Name (optional)"
+                          HelperText="Lets the LLM reference the command by this handle; also the default process name when run in the background."
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
+                          Placeholder="install" />
+            <MudTextField T="string" @bind-Value="_formCommand"
+                          Label="Command" Required="true"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
+                          Placeholder="npm install" />
+            <MudTextField T="string" @bind-Value="_formDescription"
+                          Label="Description (optional)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+            <MudCheckBox T="bool" Value="_formBackground"
+                         ValueChanged="OnFormBackgroundChanged"
+                         Label="Background"
+                         Dense="true" Size="Size.Small" />
+            <MudText Typo="Typo.caption" Class="mb-2" Component="@("div")"
+                     Style="color:var(--mud-palette-text-secondary)">
+                Launch this command as a long-lived process (a watcher or dev server) when it is run,
+                instead of running it to completion. Managed via the Processes page and the
+                <code>get_process_output</code> / <code>list_processes</code> / <code>stop_process</code> tools.
+            </MudText>
+            <MudCheckBox T="bool" @bind-Value="_formSuppress"
+                         Label="Hide Success"
+                         Disabled="@_formBackground"
+                         Dense="true" Size="Size.Small" />
+            <MudText Typo="Typo.caption" Component="@("div")"
+                     Style="color:var(--mud-palette-text-secondary)">
+                On a successful (exit 0) run, return only the status to the LLM — withhold stdout/stderr
+                to save context. Failures still return full output.
+            </MudText>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _dialogOpen = false)">Cancel</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       Disabled="@(string.IsNullOrWhiteSpace(_formCommand))"
+                       OnClick="ConfirmDialog">
+                @(_editRow is null ? "Add" : "Save")
+            </MudButton>
+        </DialogActions>
+    </MudDialog>
 }
 
 </MudContainer>
@@ -94,6 +157,14 @@ else
 
     private bool _hydrated;
     private SettingsTier _tier = SettingsTier.User; // User shown by default
+
+    private bool _dialogOpen;
+    private InlineRow? _editRow; // null = add mode
+    private string _formName = string.Empty;
+    private string _formCommand = string.Empty;
+    private string _formDescription = string.Empty;
+    private bool _formBackground;
+    private bool _formSuppress;
 
     private sealed class InlineRow
     {
@@ -157,52 +228,56 @@ else
         Session.SetScripts(_tier, new ScriptRegistry(current.Registered, current.Directories, inline));
     }
 
-    private void AddRow() => CurrentInlineRows.Add(new InlineRow());
-
     private void RemoveRow(InlineRow row)
     {
         CurrentInlineRows.Remove(row);
         PersistCommands();
     }
 
-    private void OnCommandChanged(InlineRow row, string value)
+    private void OpenAddDialog()
     {
-        var next = (value ?? string.Empty).Trim();
-        if (row.Command == next) return;
-        row.Command = next;
-        PersistCommands();
+        _editRow = null;
+        _formName = string.Empty;
+        _formCommand = string.Empty;
+        _formDescription = string.Empty;
+        _formBackground = false;
+        _formSuppress = false;
+        _dialogOpen = true;
     }
 
-    private void OnNameChanged(InlineRow row, string value)
+    private void OpenEditDialog(InlineRow row)
     {
-        var trimmed = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-        if (string.Equals(row.Name, trimmed, StringComparison.Ordinal)) return;
-        row.Name = trimmed;
-        PersistCommands();
+        _editRow = row;
+        _formName = row.Name ?? string.Empty;
+        _formCommand = row.Command;
+        _formDescription = row.Description ?? string.Empty;
+        _formBackground = row.Background;
+        _formSuppress = row.SuppressOutputOnSuccess;
+        _dialogOpen = true;
     }
 
-    private void OnBackgroundChanged(InlineRow row, bool value)
+    // "Hide Success" is meaningless for a long-lived process, so clear it when backgrounding.
+    private void OnFormBackgroundChanged(bool value)
     {
-        if (row.Background == value) return;
-        row.Background = value;
-        // "Hide Success" is meaningless for a long-lived process, so clear it when backgrounding.
-        if (value) row.SuppressOutputOnSuccess = false;
-        PersistCommands();
+        _formBackground = value;
+        if (value) _formSuppress = false;
     }
 
-    private void OnSuppressOutputChanged(InlineRow row, bool value)
+    private void ConfirmDialog()
     {
-        if (row.SuppressOutputOnSuccess == value) return;
-        row.SuppressOutputOnSuccess = value;
-        PersistCommands();
-    }
+        if (string.IsNullOrWhiteSpace(_formCommand)) return;
 
-    private void OnDescriptionChanged(InlineRow row, string value)
-    {
-        var trimmed = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-        if (string.Equals(row.Description, trimmed, StringComparison.Ordinal)) return;
-        row.Description = trimmed;
+        var row = _editRow ?? new InlineRow();
+        row.Name = NullIfBlank(_formName);
+        row.Command = _formCommand.Trim();
+        row.Description = NullIfBlank(_formDescription);
+        row.Background = _formBackground;
+        row.SuppressOutputOnSuccess = _formBackground ? false : _formSuppress;
+
+        if (_editRow is null) CurrentInlineRows.Add(row);
+
         PersistCommands();
+        _dialogOpen = false;
     }
 
     private static string? NullIfBlank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
