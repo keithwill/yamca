@@ -13,35 +13,34 @@
 }
 else
 {
-    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-        <MudText Typo="Typo.h6" Class="mb-2">System prompt</MudText>
-        <MudText Typo="Typo.caption" Class="mb-3">
+    <SettingsSection Title="System prompt">
+        <Description>
             The current workspace path is sent automatically as separate context — no need to mention it here.
-        </MudText>
+        </Description>
+        <ChildContent>
         <MudTextField Value="Session.SystemPrompt"
                       ValueChanged="@((string v) => Session.SetSystemPrompt(v))"
                       T="string" Variant="Variant.Outlined" Lines="4" />
-    </MudPaper>
+        </ChildContent>
+    </SettingsSection>
 
-    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-        <div class="d-flex align-center mb-2">
-            <MudText Typo="Typo.h6">Instruction files</MudText>
-            <MudSpacer />
-            <MudTabs @bind-ActivePanelIndex="_instrTierIndex" Rounded="true" Color="Color.Primary">
-                <MudTabPanel Text="Project" />
-                <MudTabPanel Text="User" />
-            </MudTabs>
-        </div>
-        <MudText Typo="Typo.caption" Class="mb-3">
+    <SettingsSection Title="Instruction files" Tier="_tier" TierChanged="OnTierChanged">
+        <Description>
             Files read from the current workspace and added to the chat context as additional system messages at session start. Each entry is a bare filename or a relative path; absolute paths are not allowed. Missing files are silently skipped.
-            @if (_instrTierIndex == 0)
+            @if (_tier == SettingsTier.Project)
             {
                 <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
             }
             else { <text> Stored on disk in <code>@Keys.UserFile</code>.</text> }
-        </MudText>
-
-        @if (_instrTierIndex == 0)
+        </Description>
+        <Actions>
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddInstructionPath">
+                Add file
+            </MudButton>
+        </Actions>
+        <ChildContent>
+        @if (_tier == SettingsTier.Project)
         {
             <MudSwitch T="bool" Value="Session.ProjectInheritsUserInstructions"
                        ValueChanged="@((bool v) => Session.SetProjectInheritsUserInstructions(v))"
@@ -92,12 +91,8 @@ else
                 }
             </div>
         }
-
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
-                   OnClick="AddInstructionPath" Class="mt-2">
-            Add file
-        </MudButton>
-    </MudPaper>
+        </ChildContent>
+    </SettingsSection>
 
     <MudDialog @bind-Visible="_pickerOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
         <TitleContent>
@@ -152,7 +147,7 @@ else
     [Inject] private WorkspaceBrowser Browser { get; set; } = default!;
 
     private bool _hydrated;
-    private int _instrTierIndex = 1; // 0 = Project, 1 = User (User shown by default)
+    private SettingsTier _tier = SettingsTier.User; // User shown by default
 
     private bool _pickerOpen;
     private InstructionRow? _pickerRow;
@@ -167,8 +162,14 @@ else
 
     private readonly List<InstructionRow> _projectRows = new();
     private readonly List<InstructionRow> _userRows = new();
-    private List<InstructionRow> CurrentRows => _instrTierIndex == 0 ? _projectRows : _userRows;
-    private SettingsTier CurrentInstructionTier => _instrTierIndex == 0 ? SettingsTier.Project : SettingsTier.User;
+    private List<InstructionRow> CurrentRows => _tier == SettingsTier.Project ? _projectRows : _userRows;
+    private SettingsTier CurrentInstructionTier => _tier;
+
+    private void OnTierChanged(SettingsTier tier)
+    {
+        _tier = tier;
+        StateHasChanged();
+    }
 
     protected override void OnInitialized()
     {

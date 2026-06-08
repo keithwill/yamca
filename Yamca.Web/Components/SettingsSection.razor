@@ -1,0 +1,70 @@
+@namespace Yamca.Web.Components
+
+@*
+    A standard panel for one section of a settings page: an outlined paper with a
+    title and optional description in the top-left, an optional actions area
+    (buttons) in the top-right, and a body. Keeps headers consistent across the
+    Endpoints, Backup, Preferences, etc. pages instead of each laying out its own
+    flex row.
+*@
+<MudPaper Class="@($"pa-4 mb-4 {Class}")" Elevation="0" Outlined="true">
+    <div class="d-flex align-start mb-2" style="gap: 16px;">
+        <div class="flex-grow-1">
+            <MudText Typo="Typo.h6">@Title</MudText>
+            @if (Description is not null)
+            {
+                <MudText Typo="Typo.caption" Component="@("div")" Class="mt-1"
+                         Style="color:var(--mud-palette-text-secondary)">
+                    @Description
+                </MudText>
+            }
+        </div>
+        @if (Tier is not null || Actions is not null)
+        {
+            <div class="settings-section-actions d-flex flex-none" style="gap: 8px;">
+                @if (Tier is not null)
+                {
+                    @* Scope selector for the whole section; sits left of the action
+                       buttons so "add to the selected tier" reads as adjacent. *@
+                    <MudToggleGroup T="SettingsTier" Value="Tier.Value"
+                                    ValueChanged="OnTierChanged"
+                                    Color="Color.Primary"
+                                    CheckMark="false">
+                        <MudToggleItem Value="SettingsTier.Project" Text="Project" />
+                        <MudToggleItem Value="SettingsTier.User" Text="User" />
+                    </MudToggleGroup>
+                }
+                @Actions
+            </div>
+        }
+    </div>
+    @ChildContent
+</MudPaper>
+
+@code {
+    /// <summary>Heading shown in the top-left of the section.</summary>
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    /// <summary>Optional description/subtitle rendered under the title. Rich content
+    /// (e.g. <c>&lt;code&gt;</c>) is allowed.</summary>
+    [Parameter] public RenderFragment? Description { get; set; }
+
+    /// <summary>Optional buttons/controls rendered in the top-right of the header.</summary>
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    /// <summary>The section body.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Extra CSS classes appended to the outer paper.</summary>
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>When set, renders a Project/User scope toggle in the header (left of
+    /// <see cref="Actions"/>). Leave <c>null</c> for User-only sections to hide it.
+    /// Supports <c>@bind-Tier</c>.</summary>
+    [Parameter] public SettingsTier? Tier { get; set; }
+
+    /// <summary>Raised when the user switches the tier toggle.</summary>
+    [Parameter] public EventCallback<SettingsTier> TierChanged { get; set; }
+
+    private Task OnTierChanged(SettingsTier tier) => TierChanged.InvokeAsync(tier);
+}

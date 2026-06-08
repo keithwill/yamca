@@ -13,38 +13,32 @@
 }
 else
 {
-    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-        <MudText Typo="Typo.h6" Class="mb-2">Backup</MudText>
-        <MudText Typo="Typo.caption" Class="mb-3">
-            Export your User settings to a JSON file, or restore them from one. Project settings (stored per workspace on disk in <code>@Keys.ProjectFile</code>) are not included.
-        </MudText>
-        <div class="d-flex align-center" style="gap: 8px;">
-            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.FileDownload"
-                       OnClick="OpenExportDialog">
-                Export User settings&hellip;
+    <SettingsSection Title="Backup">
+        <Description>
+            Export your User settings to a JSON file, restore them from one, or reset them to their
+            original defaults. Project settings (stored per workspace on disk in <code>@Keys.ProjectFile</code>)
+            are not included, and a reset leaves your configured endpoints (and any API keys) alone.
+        </Description>
+        <Actions>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.RestartAlt"
+                       OnClick="@(() => _resetDialogOpen = true)">
+                Reset Defaults&hellip;
             </MudButton>
             <MudFileUpload T="IBrowserFile" Accept=".json,application/json" FilesChanged="OnImportFileChanged">
                 <CustomContent Context="fileUpload">
                     <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.FileUpload"
                                OnClick="@(() => fileUpload.OpenFilePickerAsync())">
-                        Import User settings&hellip;
+                        Import&hellip;
                     </MudButton>
                 </CustomContent>
                 <SelectedTemplate></SelectedTemplate>
             </MudFileUpload>
-        </div>
-    </MudPaper>
-
-    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-        <MudText Typo="Typo.h6" Class="mb-2">Reset</MudText>
-        <MudText Typo="Typo.caption" Class="mb-3">
-            Restore your User settings to their original defaults. Your configured endpoints (and any API keys) are left alone.
-        </MudText>
-        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.RestartAlt"
-                   OnClick="@(() => _resetDialogOpen = true)">
-            Reset Defaults&hellip;
-        </MudButton>
-    </MudPaper>
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="OpenExportDialog">
+                Export&hellip;
+            </MudButton>
+        </Actions>
+    </SettingsSection>
 
     <MudDialog @bind-Visible="_resetDialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
         <TitleContent>Reset User settings to defaults?</TitleContent>

@@ -1,0 +1,18 @@
+/* Scoped to the section header's action area only, so it never affects button
+   or toggle heights anywhere else on the page. Stretch every control in the
+   cluster to a shared height (driven by the tallest — normally the action
+   button) so the Project/User toggle lines up with the buttons beside it. */
+.settings-section-actions {
+    align-items: stretch;
+}
+
+/* The toggle group renders its own buttons via MudBlazor, so reach into its
+   markup with ::deep and let the group and its items fill the stretched height
+   instead of sitting at their shorter natural size. */
+.settings-section-actions ::deep .mud-toggle-group {
+    height: auto;
+}
+
+.settings-section-actions ::deep .mud-toggle-item {
+    height: 100%;
+}

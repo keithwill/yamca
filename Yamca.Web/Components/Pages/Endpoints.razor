@@ -14,21 +14,17 @@
 }
 else
 {
-    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-        <div class="d-flex align-center mb-2">
-            <MudText Typo="Typo.h6">Endpoints</MudText>
-            <MudSpacer />
+    <SettingsSection Title="Endpoints">
+        <Description>
+            OpenAI-compatible endpoints (llama.cpp, vllm, OpenAI, OpenRouter, etc.)
+        </Description>
+        <Actions>
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
                        OnClick="OpenAddEndpointDialog">
                 Add endpoint
             </MudButton>
-        </div>
-        <MudText Typo="Typo.caption" Class="mb-3">
-            OpenAI-compatible endpoints (llama.cpp, vllm, OpenAI, OpenRouter, etc.). The
-            endpoint marked Default is used for new chats; pick a different one per-chat
-            from the chat composer. Stored on disk in <code>@Keys.UserFile</code>.
-        </MudText>
-
+        </Actions>
+        <ChildContent>
         <MudTable Items="Session.Endpoints.Items" Hover="true" Dense="true" Class="mud-table-bordered">
             <HeaderContent>
                 <MudTh Style="width: 80px;">Default</MudTh>
@@ -91,7 +87,8 @@ else
                 </MudTd>
             </RowTemplate>
         </MudTable>
-    </MudPaper>
+        </ChildContent>
+    </SettingsSection>
 
     <MudDialog @bind-Visible="_endpointDialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
         <TitleContent>@(_endpointEditId is null ? "Add endpoint" : "Edit endpoint")</TitleContent>

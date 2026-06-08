@@ -15,27 +15,24 @@
 }
 else
 {
-    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-        <div class="d-flex align-center mb-2">
-            <MudText Typo="Typo.h6">Subagents</MudText>
-            <MudSpacer />
-            <MudTabs @bind-ActivePanelIndex="_tierIndex" Rounded="true" Color="Color.Primary">
-                <MudTabPanel Text="Project" />
-                <MudTabPanel Text="User" />
-            </MudTabs>
-        </div>
-        <MudText Typo="Typo.caption" Class="mb-3">
+    <SettingsSection Title="Subagents" Tier="_tier" TierChanged="OnTierChanged">
+        <Description>
             Named, headless agents the LLM can delegate to through the <code>subagent_run</code> tool.
             Each subagent runs in its own session with the tools you select (all auto-allowed) plus its
             own instructions, and reports back through <code>subagent_result</code>. Project subagents
             override user ones of the same name.
-            @if (_tierIndex == 0)
+            @if (_tier == SettingsTier.Project)
             {
                 <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
             }
             else { <text> Stored on disk in <code>@Keys.UserFile</code>.</text> }
-        </MudText>
-
+        </Description>
+        <Actions>
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" OnClick="AddRow">
+                Add subagent
+            </MudButton>
+        </Actions>
+        <ChildContent>
         @{ var rows = CurrentRows; }
         @if (rows.Count == 0)
         {
@@ -127,11 +124,8 @@ else
                 }
             </MudExpansionPanels>
         }
-
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" OnClick="AddRow">
-            Add subagent
-        </MudButton>
-    </MudPaper>
+        </ChildContent>
+    </SettingsSection>
 }
 
 </MudContainer>
@@ -149,7 +143,7 @@ else
         new(StringComparer.Ordinal) { SubagentRunTool.ToolName, "lookup_tool", "call_tool" };
 
     private bool _hydrated;
-    private int _tierIndex = 1; // 0 = Project, 1 = User (User shown by default)
+    private SettingsTier _tier = SettingsTier.User; // User shown by default
     private IReadOnlyList<string> _toolNames = Array.Empty<string>();
 
     private sealed class SubagentRow
@@ -168,8 +162,14 @@ else
     private readonly List<SubagentRow> _projectRows = new();
     private readonly List<SubagentRow> _userRows = new();
 
-    private List<SubagentRow> CurrentRows => _tierIndex == 0 ? _projectRows : _userRows;
-    private SettingsTier CurrentTier => _tierIndex == 0 ? SettingsTier.Project : SettingsTier.User;
+    private List<SubagentRow> CurrentRows => _tier == SettingsTier.Project ? _projectRows : _userRows;
+    private SettingsTier CurrentTier => _tier;
+
+    private void OnTierChanged(SettingsTier tier)
+    {
+        _tier = tier;
+        StateHasChanged();
+    }
 
     protected override void OnInitialized()
     {

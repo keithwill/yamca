@@ -15,28 +15,20 @@
 }
 else
 {
-    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-        <div class="d-flex align-center mb-2">
-            <MudText Typo="Typo.h6">Tools</MudText>
-            <MudSpacer />
-            <MudTabs @bind-ActivePanelIndex="_tierIndex" Rounded="true" Color="Color.Primary">
-                <MudTabPanel Text="Project" />
-                <MudTabPanel Text="User" />
-            </MudTabs>
-        </div>
-        <MudText Typo="Typo.caption" Class="mb-3">
+    <SettingsSection Title="Tools" Tier="_tier" TierChanged="OnTierChanged">
+        <Description>
             Project overrides User. A Project value left as <em>inherit</em> falls through to the User tier, which
             always carries an explicit value (seeded from each tool's default) — so the effective setting is simply
             Project-over-User.
             <strong>Availability</strong> controls what the LLM sees: <em>Eager</em> = in every tool list,
             <em>Deferred</em> = discovered via <code>lookup_tool</code> and invoked via <code>call_tool</code> (schema stays out of the prompt prefix, preserving cache), <em>Hidden</em> = invisible.
-            @if (_tierIndex == 0)
+            @if (_tier == SettingsTier.Project)
             {
                 <text>Stored on disk in <code>@Keys.ProjectFile</code>.</text>
             }
             else { <text>Stored on disk in <code>@Keys.UserFile</code>.</text> }
-        </MudText>
-
+        </Description>
+        <ChildContent>
         <MudTable Items="ToolRegistry.GetSettingsTools()" Hover="true" Dense="true" Class="mud-table-bordered">
             <HeaderContent>
                 <MudTh>Tool</MudTh>
@@ -128,17 +120,18 @@ else
                 </MudTd>
             </RowTemplate>
         </MudTable>
-    </MudPaper>
+        </ChildContent>
+    </SettingsSection>
 
-    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-        <MudText Typo="Typo.h6" Class="mb-1">Deferred Tools Hint</MudText>
-        <MudText Typo="Typo.caption" Class="mb-3">
+    <SettingsSection Title="Deferred Tools Hint">
+        <Description>
             Controls how much of the deferred-tool catalog is added to the frozen session-start
             message. More detail makes the model likelier to reach for a deferred tool on its own,
             but every token here is paid on every turn of the session. <code>lookup_tool</code>
             always lists the live catalog on demand regardless of this setting. User; stored in
             <code>@Keys.UserFile</code>.
-        </MudText>
+        </Description>
+        <ChildContent>
         <MudSelect T="DeferredToolsHint" Value="Session.DeferredToolsHint"
                    ValueChanged="@((DeferredToolsHint h) => Session.SetDeferredToolsHint(h))"
                    Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense" Style="max-width: 320px;">
@@ -146,7 +139,8 @@ else
             <MudSelectItem T="DeferredToolsHint" Value="DeferredToolsHint.Names">Tool Names</MudSelectItem>
             <MudSelectItem T="DeferredToolsHint" Value="DeferredToolsHint.NamesAndDescriptions">Tool Names and Descriptions</MudSelectItem>
         </MudSelect>
-    </MudPaper>
+        </ChildContent>
+    </SettingsSection>
 }
 
 </MudContainer>
@@ -160,7 +154,7 @@ else
     [Inject] private SettingsLocation Keys { get; set; } = default!;
 
     private bool _hydrated;
-    private int _tierIndex = 1; // 0 = Project, 1 = User (User shown by default)
+    private SettingsTier _tier = SettingsTier.User; // User shown by default
 
     private static string ToolDisplayName(string name) => name switch
     {
@@ -169,8 +163,14 @@ else
         _ => name,
     };
 
-    private SettingsTier CurrentTier => _tierIndex == 0 ? SettingsTier.Project : SettingsTier.User;
+    private SettingsTier CurrentTier => _tier;
     private ToolSettingsMap CurrentMap => CurrentTier == SettingsTier.Project ? Session.Project : Session.User;
+
+    private void OnTierChanged(SettingsTier tier)
+    {
+        _tier = tier;
+        StateHasChanged();
+    }
 
     // "inherit" (an unset override) only makes sense at the Project tier, where it falls through
     // to User. The User tier is materialized to explicit defaults on load, so it normally hides

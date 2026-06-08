@@ -13,24 +13,16 @@
 }
 else
 {
-    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-        <div class="d-flex align-center mb-2">
-            <MudText Typo="Typo.h6">Registered scripts</MudText>
-            <MudSpacer />
-            <MudTabs @bind-ActivePanelIndex="_scriptTierIndex" Rounded="true" Color="Color.Primary">
-                <MudTabPanel Text="Project" />
-                <MudTabPanel Text="User" />
-            </MudTabs>
-        </div>
-        <MudText Typo="Typo.caption" Class="mb-3">
+    <SettingsSection Title="Registered scripts" Tier="_tier" TierChanged="OnTierChanged">
+        <Description>
             Known scripts the LLM may run via <code>execute_script</code> with different tool permissions than scripts that are discovered by the LLM in other ways (such as file operations). Each path is workspace-relative. Files inside a registered directory count as registered. Descriptions are optional but are shown to the LLM at session start so it can pick the right entry.
-            @if (_scriptTierIndex == 0)
+            @if (_tier == SettingsTier.Project)
             {
                 <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
             }
             else { <text> Stored on disk in <code>@Keys.UserFile</code>.</text> }
-        </MudText>
-
+        </Description>
+        <ChildContent>
         <MudText Typo="Typo.subtitle2" Class="mt-2 mb-1">Files</MudText>
         @{ var fileRows = CurrentScriptFileRows; }
         @if (fileRows.Count == 0)
@@ -189,7 +181,8 @@ else
                    OnClick="@(() => AddScriptRow(ScriptKind.Inline))">
             Add command
         </MudButton>
-    </MudPaper>
+        </ChildContent>
+    </SettingsSection>
 }
 
 </MudContainer>
@@ -201,7 +194,7 @@ else
     [Inject] private IWorkspace Workspace { get; set; } = default!;
 
     private bool _hydrated;
-    private int _scriptTierIndex = 1; // 0 = Project, 1 = User (User shown by default)
+    private SettingsTier _tier = SettingsTier.User; // User shown by default
 
     private enum ScriptKind { File, Directory, Inline }
 
@@ -222,10 +215,16 @@ else
     private readonly List<ScriptRow> _userScriptDirs = new();
     private readonly List<ScriptRow> _userScriptInline = new();
 
-    private List<ScriptRow> CurrentScriptFileRows => _scriptTierIndex == 0 ? _projectScriptFiles : _userScriptFiles;
-    private List<ScriptRow> CurrentScriptDirectoryRows => _scriptTierIndex == 0 ? _projectScriptDirs : _userScriptDirs;
-    private List<ScriptRow> CurrentScriptInlineRows => _scriptTierIndex == 0 ? _projectScriptInline : _userScriptInline;
-    private SettingsTier CurrentScriptTier => _scriptTierIndex == 0 ? SettingsTier.Project : SettingsTier.User;
+    private List<ScriptRow> CurrentScriptFileRows => _tier == SettingsTier.Project ? _projectScriptFiles : _userScriptFiles;
+    private List<ScriptRow> CurrentScriptDirectoryRows => _tier == SettingsTier.Project ? _projectScriptDirs : _userScriptDirs;
+    private List<ScriptRow> CurrentScriptInlineRows => _tier == SettingsTier.Project ? _projectScriptInline : _userScriptInline;
+    private SettingsTier CurrentScriptTier => _tier;
+
+    private void OnTierChanged(SettingsTier tier)
+    {
+        _tier = tier;
+        StateHasChanged();
+    }
 
     private List<ScriptRow> RowsFor(ScriptKind kind) => kind switch
     {
