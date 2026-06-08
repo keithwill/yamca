@@ -21,19 +21,51 @@
         @if (ShowHeader)
         {
             <div class="yamca-tile-header">
-                <span class="yamca-tile-title" title="@TileTitle">@TileTitle</span>
-                <MudTooltip Text="Hide (stays active)">
-                    <MudIconButton Icon="@Icons.Material.Filled.Remove"
-                                   Size="Size.Small"
-                                   OnClick="OnCloseClicked"
-                                   aria-label="Hide from view" />
-                </MudTooltip>
-                <MudTooltip Text="Close">
-                    <MudIconButton Icon="@Icons.Material.Filled.Close"
-                                   Size="Size.Small"
-                                   OnClick="OnCloseChatClicked"
-                                   aria-label="Close chat" />
-                </MudTooltip>
+                @if (_editingTitle)
+                {
+                    <input class="yamca-tile-title-input" @ref="_titleInput"
+                           value="@_titleDraft"
+                           @oninput="@(e => _titleDraft = e.Value?.ToString() ?? "")"
+                           @onkeydown="OnTitleEditKeyDown"
+                           @onblur="CommitTitleEdit"
+                           aria-label="Chat name" />
+                    @* Plain buttons (not MudIconButton) so onmousedown:preventDefault can keep the
+                       input focused — that stops the blur-commit from racing the cancel click. *@
+                    <button type="button" class="yamca-tile-edit-btn" title="Save"
+                            @onmousedown:preventDefault="true" @onclick="CommitTitleEdit" aria-label="Save name">
+                        <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" />
+                    </button>
+                    <button type="button" class="yamca-tile-edit-btn" title="Cancel"
+                            @onmousedown:preventDefault="true" @onclick="CancelTitleEdit" aria-label="Cancel rename">
+                        <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
+                    </button>
+                }
+                else
+                {
+                    <span class="yamca-tile-title" title="@TileTitle" @ondblclick="BeginTitleEdit">@TileTitle</span>
+                    @if (!Chat.IsReadOnly)
+                    {
+                        <MudTooltip Text="Rename">
+                            <MudIconButton Class="yamca-tile-rename"
+                                           Icon="@Icons.Material.Filled.Edit"
+                                           Size="Size.Small"
+                                           OnClick="BeginTitleEdit"
+                                           aria-label="Rename chat" />
+                        </MudTooltip>
+                    }
+                    <MudTooltip Text="Hide (stays active)">
+                        <MudIconButton Icon="@Icons.Material.Filled.Remove"
+                                       Size="Size.Small"
+                                       OnClick="OnCloseClicked"
+                                       aria-label="Hide from view" />
+                    </MudTooltip>
+                    <MudTooltip Text="Close">
+                        <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                       Size="Size.Small"
+                                       OnClick="OnCloseChatClicked"
+                                       aria-label="Close chat" />
+                    </MudTooltip>
+                }
             </div>
         }
         <div class="@ComposerClass" @ref="_composer">
@@ -334,6 +366,13 @@
     private bool _ctxDialogOpen;
     private ChatRequestPreview? _ctxPreview;
 
+    // Inline title rename. _editingTitle swaps the title span for an input; _titleDraft holds
+    // the in-progress edit; _focusTitleInput defers the focus+select to the next render.
+    private bool _editingTitle;
+    private string _titleDraft = "";
+    private bool _focusTitleInput;
+    private ElementReference _titleInput;
+
     // Worktree change badge: refreshed on bind and whenever an agent turn finishes (which is when
     // the on-disk worktree may have changed). _wasRunningForDiff tracks the run transition; the
     // _diffStatLoading guard collapses overlapping refreshes.
@@ -371,17 +410,7 @@
         }
     }
 
-    private string TileTitle
-    {
-        get
-        {
-            if (Chat.WorktreeInfo is { } wt)
-                return Chat.Turns.Count > 0 ? $"{Chat.Title} · {wt.Branch}" : wt.Branch;
-            if (Chat.Turns.Count > 0) return Chat.Title;
-            var slot = Manager.Sessions.ToList().FindIndex(s => s.Id == Chat.Id);
-            return slot >= 0 ? $"Chat {slot + 1}" : "Chat";
-        }
-    }
+    private string TileTitle => Manager.DisplayTitle(Chat);
 
     private string BranchTooltip => Chat.IsGitRepository switch
     {
@@ -455,6 +484,14 @@
             _pendingAutoSend = false;
             if (!string.IsNullOrWhiteSpace(_prompt) && !Chat.IsRunning)
                 await OnSend();
+        }
+
+        // Focus + select the rename input the render after it appears, so the user can type over
+        // the existing name immediately.
+        if (_focusTitleInput)
+        {
+            _focusTitleInput = false;
+            await SafeInvokeAsync("yamcaChat.focusSelect", _titleInput);
         }
 
         if (Chat.IsGitRepository is null)
@@ -873,6 +910,34 @@
     // The X fully unloads the chat (vs. the minus, which only hides this pane). Mirrors the
     // direct Manager.Close used by the merge/delete handlers; the grid reflows on its own.
     private void OnCloseChatClicked() => Manager.Close(Chat.Id);
+
+    // Seed the draft with the current custom name only — an empty box for a still-derived title
+    // invites the user to type their own rather than editing a generated summary they didn't write.
+    private void BeginTitleEdit()
+    {
+        if (Chat.IsReadOnly) return;
+        _titleDraft = Chat.CustomTitle ?? "";
+        _editingTitle = true;
+        _focusTitleInput = true;
+    }
+
+    // Commit is idempotent: Enter, the check button, and blur (genuine click-away) all land here,
+    // and the guard makes the redundant calls no-ops. Rename() trims, treats empty as "clear the
+    // override", and skips work when nothing changed.
+    private void CommitTitleEdit()
+    {
+        if (!_editingTitle) return;
+        _editingTitle = false;
+        Chat.Rename(_titleDraft);
+    }
+
+    private void CancelTitleEdit() => _editingTitle = false;
+
+    private void OnTitleEditKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") CommitTitleEdit();
+        else if (e.Key == "Escape") CancelTitleEdit();
+    }
 
     private string ContextBadgeText()
     {

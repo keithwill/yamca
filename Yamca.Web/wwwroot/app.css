@@ -448,6 +448,53 @@ h1:focus {
     white-space: nowrap;
     font-size: 0.85rem;
     opacity: 0.85;
+    cursor: text;
+}
+
+/* The rename pencil stays hidden until the header is hovered, so it doesn't compete with the
+   title at rest. Focus-within keeps it reachable by keyboard. */
+.yamca-tile-rename {
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+.yamca-tile-header:hover .yamca-tile-rename,
+.yamca-tile-header:focus-within .yamca-tile-rename {
+    opacity: 0.7;
+}
+.yamca-tile-rename:hover,
+.yamca-tile-rename:focus-visible {
+    opacity: 1;
+}
+
+/* Inline rename field: sized to match the title text it replaces, with no chrome, so swapping
+   it in doesn't shift the header's height or the joined composer card below. */
+.yamca-tile-title-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.85rem;
+    font-family: inherit;
+    color: inherit;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--mud-palette-primary);
+    outline: none;
+    padding: 0;
+}
+
+.yamca-tile-edit-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.7;
+    padding: 6px;
+}
+.yamca-tile-edit-btn:hover {
+    opacity: 1;
 }
 
 .yamca-context-badge {

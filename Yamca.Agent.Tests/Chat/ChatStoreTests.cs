@@ -93,6 +93,34 @@ public class ChatStoreTests
     }
 
     [Test]
+    public void Save_ThenLoad_RoundTripsCustomTitle()
+    {
+        Enable();
+        var store = NewStore();
+        var doc = SampleChat();
+        doc.CustomTitle = "My renamed chat";
+
+        store.Save(doc);
+        var loaded = store.Load(doc.Id);
+
+        Assert.That(loaded, Is.Not.Null);
+        Assert.That(loaded!.CustomTitle, Is.EqualTo("My renamed chat"));
+    }
+
+    [Test]
+    public void Load_DefaultsCustomTitleToNull_ForFileWithoutIt()
+    {
+        // Older files predate CustomTitle; absence must deserialize to null (use derived title),
+        // not throw. The store writes null-valued fields out, so simulate an old file by stripping it.
+        Enable();
+        var store = NewStore();
+        var doc = SampleChat();
+        store.Save(doc);
+
+        Assert.That(store.Load(doc.Id)!.CustomTitle, Is.Null);
+    }
+
+    [Test]
     public void Save_ThenLoad_RoundTripsAttachedImages()
     {
         Enable();

@@ -28,6 +28,18 @@ itself; a board step or branch chat runs against a git worktree (see
 [worktrees.md](worktrees.md)), but the session is keyed back to its base so it
 reconnects to the right place.
 
+## Naming a chat
+
+Every chat carries a single label, computed by `ChatSessionManager.DisplayTitle`
+so the title strip above the composer and the sidebar always agree. By default
+the label is **derived**: the first user message (truncated), or the worktree
+branch, or a `Chat N` slot number for a brand-new, unused chat.
+
+Hovering the title strip reveals a **pencil** (or double-click the title) to
+rename the chat inline. A manual name is stored as a `CustomTitle` that **wins
+over the derived label everywhere** and persists with the session, so it survives
+reload and shows in History. Clearing the field reverts to the derived label.
+
 ## The system message
 
 All system-role content is concatenated into a **single system message** at

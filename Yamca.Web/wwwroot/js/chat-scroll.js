@@ -244,6 +244,11 @@ window.yamcaChat = (function () {
             s.dropAttached = false;
             s.dropHandlers = null;
         },
+        focusSelect: function (el) {
+            if (!el) return;
+            el.focus();
+            if (typeof el.select === "function") el.select();
+        },
         copyText: function (text) {
             if (text == null) return;
             if (navigator.clipboard && navigator.clipboard.writeText) {

@@ -140,16 +140,33 @@ public sealed class ChatViewModel : IDisposable
 
     internal void BindWorktree(WorktreeInfo info) => WorktreeInfo = info;
 
+    /// <summary>User-supplied name set via <see cref="Rename"/>. When non-null it overrides
+    /// the derived title everywhere the chat is labelled. Null means "use the derived title".</summary>
+    public string? CustomTitle { get; private set; }
+
     public string Title
     {
         get
         {
+            if (!string.IsNullOrWhiteSpace(CustomTitle)) return CustomTitle;
             var first = Turns.FirstOrDefault()?.UserMessage;
             if (string.IsNullOrWhiteSpace(first))
                 return WorktreeInfo?.Branch ?? "New Chat";
             var trimmed = first.Trim().ReplaceLineEndings(" ");
             return trimmed.Length <= 32 ? trimmed : trimmed[..32] + "…";
         }
+    }
+
+    /// <summary>Set or clear the user's name for this chat. A whitespace-only value clears the
+    /// override, reverting to the derived/slot title. Persists immediately (once the chat has
+    /// content to save) so the rename survives reload and shows in History.</summary>
+    public void Rename(string? title)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
+        if (CustomTitle == trimmed) return;
+        CustomTitle = trimmed;
+        Raise();
+        Persist();
     }
 
     public List<ChatTurn> Turns { get; } = new();
@@ -604,6 +621,7 @@ public sealed class ChatViewModel : IDisposable
     {
         Id = PersistentId,
         Title = Title,
+        CustomTitle = CustomTitle,
         CreatedUtc = _createdUtc,
         Endpoint = LockedEndpoint is { } ep
             ? new PersistedEndpoint(ep.Id, ep.Name, ep.BaseUrl, ep.Model)
@@ -654,6 +672,7 @@ public sealed class ChatViewModel : IDisposable
         ArgumentNullException.ThrowIfNull(doc);
 
         PersistentId = doc.Id;
+        CustomTitle = doc.CustomTitle;
         _createdUtc = doc.CreatedUtc;
         // A just-reopened chat is the most-recently-interacted-with — float it to the top
         // of the sidebar's active group.

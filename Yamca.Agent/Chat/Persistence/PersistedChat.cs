@@ -25,8 +25,14 @@ public sealed class PersistedChat
     /// in-memory slot id.</summary>
     public Guid Id { get; set; }
 
-    /// <summary>Denormalized label for cheap listing without parsing the whole file.</summary>
+    /// <summary>Denormalized label for cheap listing without parsing the whole file. Holds the
+    /// effective title — the user's <see cref="CustomTitle"/> if set, otherwise the derived
+    /// first-message summary.</summary>
     public string Title { get; set; } = "";
+
+    /// <summary>User-supplied name that overrides the derived title everywhere it's shown.
+    /// Null/absent (the default, and in older files) means "use the derived title".</summary>
+    public string? CustomTitle { get; set; }
 
     public DateTimeOffset CreatedUtc { get; set; }
     public DateTimeOffset UpdatedUtc { get; set; }

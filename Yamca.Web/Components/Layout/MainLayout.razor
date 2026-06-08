@@ -68,7 +68,7 @@
                 var rowClass = Sessions.IsVisible(sid) ? "yamca-session-row yamca-visible" : "yamca-session-row";
                 <div class="@rowClass" @onmouseup="@(e => OnRowMouseUp(e, sid))" @key="sid">
                     <MudNavLink Icon="@Icons.Material.Filled.Chat" OnClick="@(() => ShowChat(sid))">
-                        @(string.IsNullOrWhiteSpace(s.Title) ? "New Chat" : s.Title)
+                        @Sessions.DisplayTitle(s)
                     </MudNavLink>
                     <MudIconButton Class="yamca-session-close"
                                    Icon="@Icons.Material.Filled.Close"
@@ -221,9 +221,6 @@
         return (null, false);
     }
 
-    private static string SlotLabel(ChatViewModel s, int index) =>
-        s.Turns.Count == 0 && s.WorktreeInfo is null ? $"Chat {index + 1}" : s.Title;
-
     private async Task OpenRecentModal()
     {
         var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
@@ -240,7 +237,7 @@
     /// terminal-launched process exits without the user hunting for the window that started it.</summary>
     private async Task ExitApp()
     {
-        var chatNames = Sessions.Sessions.Select(SlotLabel).ToList();
+        var chatNames = Sessions.Sessions.Select(Sessions.DisplayTitle).ToList();
         var processNames = Processes.Snapshot()
             .Where(p => p.Status == ProcessStatus.Running)
             .Select(p => p.Name)
