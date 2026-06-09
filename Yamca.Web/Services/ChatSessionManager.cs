@@ -78,6 +78,33 @@ public sealed class ChatSessionManager : IDisposable
         return vm;
     }
 
+    /// <summary>Branch from a throwaway chat: create a worktree-bound session that takes the
+    /// pane slot of <paramref name="replaceId"/>, then unload that chat. Used when the chat
+    /// being branched has nothing persisted (<see cref="ChatViewModel.HasPersistedState"/> is
+    /// false) — rather than leaving an empty placeholder pane beside the new branch, the
+    /// placeholder is discarded and the branch takes its place. The replaced chat had no saved
+    /// state, so nothing is lost.</summary>
+    public ChatViewModel ReplaceWithWorktree(int replaceId, IWorkspace workspace, WorktreeInfo info)
+    {
+        var id = _nextId++;
+        var vm = ActivatorUtilities.CreateInstance<ChatViewModel>(_services, id, workspace);
+        vm.BindWorktree(info);
+        vm.IsGitRepository = true;
+        vm.Changed += Raise;
+        _sessions.Add(vm);
+
+        // Slot the new session exactly where the replaced one sat, so the grid keeps its shape.
+        // Fall back to the normal placement if the replaced chat wasn't actually visible.
+        var slot = _visible.IndexOf(replaceId);
+        if (slot >= 0) _visible[slot] = id;
+        else Show(id);
+
+        // replaceId is no longer in _visible, so Close just unloads/disposes the placeholder VM.
+        Close(replaceId);
+        Raise();
+        return vm;
+    }
+
     /// <summary>Reopen a saved chat into a free slot. <paramref name="sessionWorkspace"/>
     /// replaces the DI-resolved root workspace when the chat is bound to a live worktree;
     /// pass <c>null</c> to use the root workspace (for non-worktree chats and read-only

@@ -96,6 +96,13 @@ public sealed class ChatViewModel : IDisposable
     /// re-saved.</summary>
     public bool IsReadOnly { get; private set; }
 
+    /// <summary>True when this chat has state worth keeping on disk. Single source of truth
+    /// for both <see cref="Persist"/> and the "hide vs. discard" decision when branching:
+    /// a chat with nothing persisted can be thrown away, while one with persisted turns is
+    /// kept. Tracks exactly what <see cref="Persist"/> writes — a chat is on disk iff it has
+    /// at least one turn and isn't read-only.</summary>
+    public bool HasPersistedState => !IsReadOnly && Turns.Count > 0;
+
     /// <summary>User's preferred endpoint id for this chat. Settable while the chat
     /// has no turns; ignored once <see cref="LockedEndpoint"/> is set. <c>null</c>
     /// means "use whatever is configured as Default at first-send time".</summary>
@@ -611,8 +618,7 @@ public sealed class ChatViewModel : IDisposable
     /// never break an active chat.</summary>
     private void Persist()
     {
-        if (IsReadOnly) return;
-        if (Turns.Count == 0) return;
+        if (!HasPersistedState) return;
         try { _store.Save(BuildPersistedChat()); }
         catch (Exception ex) { Console.Error.WriteLine($"yamca: failed to persist chat: {ex.Message}"); }
     }

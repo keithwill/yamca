@@ -542,8 +542,13 @@
         try
         {
             var workspace = new WorkspaceImpl(info.WorktreePath);
-            // CreateForWorktree shows the new session in a pane; no navigation needed.
-            Manager.CreateForWorktree(workspace, info);
+            // A persisted chat is kept: the branch opens beside it (and, when the grid is
+            // already full, takes the last pane). A chat with nothing saved is a throwaway
+            // placeholder — discard it and let the branch take its exact slot.
+            if (Chat.HasPersistedState)
+                Manager.CreateForWorktree(workspace, info);
+            else
+                Manager.ReplaceWithWorktree(Chat.Id, workspace, info);
         }
         catch (Exception ex)
         {
