@@ -32,43 +32,24 @@ scripts while leaving discovered-script execution on *Ask*.
 
 ## Registering a script
 
-The `/scripts` page registers three kinds of entry:
+The `/scripts` page registers two kinds of entry:
 
 - **File** — a workspace-relative path that registers that single script.
 - **Directory** — a workspace-relative path that registers everything inside it;
   files within a registered directory count as registered.
-- **Inline command** — a one-line CLI command with no file in the repo (e.g.
-  `npm install`, `dotnet build`). The LLM runs it verbatim by passing the exact
-  command line — or the command's optional **name** (see below) — as the script
-  path; no arguments are appended.
 
-Inline commands also take an optional **name** — a short, stable handle (e.g.
-`dev`) the LLM can use instead of reproducing the exact command line, which avoids
-brittle whitespace/quoting mismatches. The name is also the default process name
-when the command is launched in the background (see
-[tools-and-permissions.md](tools-and-permissions.md#background-process-tools)): a
-registered inline command started that way runs under the registered-script
-permission, so allowing it for one-shot runs also allows backgrounding it.
-
-### Background commands
-
-An inline command can be flagged **Background** for a watcher or dev server. When a
-background-flagged command is run, `execute_script` doesn't run it to completion —
-it hands it to the background-process manager (the same one behind `start_process`)
-and returns immediately. So "run the watch script" launches a managed long-lived
-process without the model needing to know to pick `start_process`, and without the
-awkwardness of running a never-exiting command to a timeout. The resulting process
-is managed on the Processes page and via `get_process_output`, `list_processes`,
-and `stop_process`. (*Hide Success* doesn't apply to a background command and is
-cleared when *Background* is set.)
-
-Each entry also has:
+Each entry also takes:
 
 - An optional **description**, shown to the LLM at session start so it can pick
   the right entry for a task.
 - A **Hide Success** toggle: on a successful (exit 0) run, return only the status
   to the LLM and withhold stdout/stderr to save context. Failures still return
   full output.
+
+One-line CLI commands with no backing file in the repo (e.g. `npm install`,
+`dotnet build`) are a separate kind — **inline commands** — registered on the
+`/commands` page rather than here, including their background and *Hide Success*
+behavior. See [commands.md](commands.md).
 
 ## Project vs. User tiers
 
@@ -85,5 +66,6 @@ than a full interpreter command line.
 
 ## See also
 
+- [commands.md](commands.md) — registering one-line inline commands
 - [tools-and-permissions.md](tools-and-permissions.md) — per-tool permissions for the execute tools
 - [settings-and-backup.md](settings-and-backup.md) — Project vs. User settings tiers

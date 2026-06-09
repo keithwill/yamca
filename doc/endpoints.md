@@ -27,15 +27,16 @@ override it per chat from the chat composer's endpoint dropdown. The board's
 step-run dialog also lets you choose which endpoint a step runs on, defaulting to
 this one.
 
-The play button on board cards (and quick-run) only appears when at least one
-endpoint is configured — without an endpoint there is nothing to run a step
-against.
+The play button on board cards only appears when at least one endpoint is
+configured — without an endpoint there is nothing to run a step against.
 
 ## Health checks
 
-`EndpointHealthService` probes endpoints so the UI can show whether a backend is
-reachable before you commit a chat to it. This catches the common local-LLM case
-of a server that isn't running yet or is listening on a different port.
+`EndpointHealthService` can query an endpoint for the models it serves
+(`ListModelsAsync`). The endpoints page uses this while you edit an endpoint to
+confirm the backend is reachable and that the model name resolves — catching the
+common local-LLM case of a server that isn't running yet or is listening on a
+different port.
 
 ## Storage
 

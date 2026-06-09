@@ -26,6 +26,8 @@ a `# Instructions from <path>` header).
   allowed.
 - **Missing files are silently skipped**, so you can list optional conventions
   files without breaking sessions that don't have them.
+- Files over **256 KB are silently skipped** too, so an oversized file won't
+  bloat the system message.
 
 ### Project vs. User tiers
 
@@ -35,6 +37,10 @@ Instruction files come in two tiers:
   (good for repo-specific files like a contributing guide).
 - **User** — stored in the user settings file, applied across all
   workspaces.
+
+When viewing the **Project** tier you can toggle **Inherit User instruction
+files** (on by default). When on, the session loads your user instruction files
+first and then the project's; turn it off to use only the project's files.
 
 ## See also
 

@@ -10,7 +10,7 @@ Most settings — tool permissions, instruction files, registered scripts — ex
 at two levels:
 
 - **Project** — stored on disk per workspace in the project settings file
-  (`.yamca/...`). Specific to that repository and travels with it.
+  (`.yamca/project.json`). Specific to that repository and travels with it.
 - **User** — stored in the user settings file in your user config directory.
   Applies across every workspace.
 
@@ -35,6 +35,10 @@ are user-only.
   number of recent turns to keep verbatim are configurable.
 - **Max tool call iterations** — caps how many LLM round-trips a single turn may
   make before the agent stops.
+- **Command shell** — which shell the `execute_command` tool and registered
+  inline scripts run through. Only shells detected on this machine are listed;
+  auto-detect picks pwsh → Windows PowerShell → cmd.exe on Windows, and bash → sh
+  elsewhere.
 
 ## Backup (export / import)
 

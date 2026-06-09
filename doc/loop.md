@@ -71,8 +71,9 @@ can watch each item work and inspect any that failed. See
 ## Limits
 
 - **At most 50 items** per call; narrow the list or split it across calls.
-- **No nesting.** `loop` is excluded from every subagent's tool set, so a loop's
-  subagents cannot start loops of their own.
+- **No nesting.** Both `loop` and `subagent_run` are excluded from every
+  subagent's tool set, so a loop's subagents cannot start loops of their own or
+  fan work out further.
 - **Hidden when unconfigured.** With no subagents defined there is nothing to loop
   over, so the tool removes itself from the parent's tool set entirely.
 

@@ -59,8 +59,9 @@ markdown body.
 
 ## Running a step
 
-Opening a card in a work column (or using the per-card play button) starts an
-AI chat session:
+Opening a card in a work column shows its detail dialog with a **Run Step**
+button; clicking that (or the per-card play button, which skips the dialog)
+starts an AI chat session:
 
 1. The card is bound to its branch (`branch:` frontmatter written).
 2. A code worktree is forked off the base branch (or reused/recreated if it was

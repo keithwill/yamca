@@ -77,9 +77,9 @@ expected, nominal outcome as success (a search that finds no match is a
 
 ## Watching a run
 
-When the agent delegates, a **View subagent session** affordance appears on the
-`subagent_run` tool card, and the chat toolbar's **Subagent sessions** button
-opens a live viewer. The viewer lists every run with its status and lets you
+When the agent delegates, its `subagent_run` tool card (marked with a tree icon)
+becomes clickable and opens the session viewer, and the chat toolbar's **Subagent
+sessions** button opens the same live viewer. The viewer lists every run with its status and lets you
 watch the child session's thinking, tool calls, and final result stream in real
 time — the same transcript the parent will never see inlined into its own
 context.
