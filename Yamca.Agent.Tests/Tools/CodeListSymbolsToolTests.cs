@@ -85,64 +85,16 @@ public class CodeListSymbolsToolTests
     }
 
     [Test]
-    public async Task DirectoryMode_GroupsByPath_AndSkipsUnsupported()
+    public async Task DirectoryPath_ReturnsError()
     {
-        _ws.WriteFile("A.cs", "class A { void X() {} }");
-        _ws.WriteFile("nested/B.cs", "class B { void Y() {} }");
-        _ws.WriteFile("readme.md", "# readme");
+        _ws.WriteFile("nested/A.cs", "class A { void X() {} }");
 
         var ctx = new ToolContext(_ws.Workspace, restrictToWorkspace: true);
         var result = await _tool.ExecuteAsync(
             Json.Parse("""{ "path": "." }"""), ctx, CancellationToken.None);
 
-        Assert.That(result.IsError, Is.False, result.Content);
-        Assert.That(result.Content, Does.Contain("A.cs"));
-        Assert.That(result.Content, Does.Contain("nested/B.cs"));
-        Assert.That(result.Content, Does.Not.Contain("readme.md"));
-    }
-
-    [Test]
-    public async Task DirectoryMode_RespectsGitignore()
-    {
-        _ws.WriteFile("Kept.cs", "class Kept { }");
-        _ws.WriteFile("Ignored.cs", "class Ignored { }");
-        _ws.WriteFile(".gitignore", "Ignored.cs\n");
-
-        var ctx = new ToolContext(_ws.Workspace, restrictToWorkspace: true);
-        var result = await _tool.ExecuteAsync(
-            Json.Parse("""{ "path": "." }"""), ctx, CancellationToken.None);
-
-        Assert.That(result.IsError, Is.False, result.Content);
-        Assert.That(result.Content, Does.Contain("Kept.cs"));
-        Assert.That(result.Content, Does.Not.Contain("Ignored.cs"));
-    }
-
-    [Test]
-    public async Task DirectoryMode_NoSupportedFiles_ReportsEmptiness()
-    {
-        _ws.WriteFile("a.md", "hi");
-        _ws.WriteFile("b.txt", "hi");
-
-        var ctx = new ToolContext(_ws.Workspace, restrictToWorkspace: true);
-        var result = await _tool.ExecuteAsync(
-            Json.Parse("""{ "path": "." }"""), ctx, CancellationToken.None);
-
-        Assert.That(result.IsError, Is.False);
-        Assert.That(result.Content, Does.Contain("(no supported source files found)"));
-    }
-
-    [Test]
-    public async Task DirectoryMode_MaxFilesTruncation()
-    {
-        for (var i = 0; i < 5; i++)
-            _ws.WriteFile($"F{i}.cs", $"class F{i} {{ }}");
-
-        var ctx = new ToolContext(_ws.Workspace, restrictToWorkspace: true);
-        var result = await _tool.ExecuteAsync(
-            Json.Parse("""{ "path": ".", "max_files": 2 }"""), ctx, CancellationToken.None);
-
-        Assert.That(result.IsError, Is.False, result.Content);
-        Assert.That(result.Content, Does.Contain("…[truncated at 2 files]"));
+        Assert.That(result.IsError, Is.True);
+        Assert.That(result.Content, Does.Contain("single file"));
     }
 
     [Test]
