@@ -13,10 +13,7 @@
 }
 else
 {
-    <SettingsSection Title="System prompt">
-        <Description>
-            The current workspace path is sent automatically as separate context — no need to mention it here.
-        </Description>
+    <SettingsSection Title="System prompt" HelpDoc="custom-instructions">
         <ChildContent>
         <MudTextField Value="Session.SystemPrompt"
                       ValueChanged="@((string v) => Session.SetSystemPrompt(v))"
@@ -24,15 +21,7 @@ else
         </ChildContent>
     </SettingsSection>
 
-    <SettingsSection Title="Instruction files" Tier="_tier" TierChanged="OnTierChanged">
-        <Description>
-            Files read from the current workspace and added to the chat context as additional system messages at session start. Each entry is a bare filename or a relative path; absolute paths are not allowed. Missing files are silently skipped.
-            @if (_tier == SettingsTier.Project)
-            {
-                <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
-            }
-            else { <text> Stored on disk in <code>@Keys.UserFile</code>.</text> }
-        </Description>
+    <SettingsSection Title="Instruction files" HelpDoc="custom-instructions" Tier="_tier" TierChanged="OnTierChanged">
         <Actions>
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
                        OnClick="AddInstructionPath">

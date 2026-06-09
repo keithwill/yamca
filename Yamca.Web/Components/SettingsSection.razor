@@ -2,26 +2,27 @@
 
 @*
     A standard panel for one section of a settings page: an outlined paper with a
-    title and optional description in the top-left, an optional actions area
-    (buttons) in the top-right, and a body. Keeps headers consistent across the
-    Endpoints, Backup, Preferences, etc. pages instead of each laying out its own
-    flex row.
+    title in the top-left, an optional actions area (buttons) in the top-right,
+    and a body. Keeps headers consistent across the Endpoints, Backup,
+    Preferences, etc. pages instead of each laying out its own flex row. Set
+    HelpDoc to surface a help icon that opens the section's long-form help modal.
 *@
 <MudPaper Class="@($"pa-4 mb-4 {Class}")" Elevation="0" Outlined="true">
     <div class="d-flex align-start mb-2" style="gap: 16px;">
         <div class="flex-grow-1">
             <MudText Typo="Typo.h6">@Title</MudText>
-            @if (Description is not null)
-            {
-                <MudText Typo="Typo.caption" HtmlTag="div" Class="mt-1"
-                         Style="color:var(--mud-palette-text-secondary)">
-                    @Description
-                </MudText>
-            }
         </div>
-        @if (Tier is not null || Actions is not null)
+        @if (HelpDoc is not null || Tier is not null || Actions is not null)
         {
-            <div class="settings-section-actions d-flex flex-none" style="gap: 8px;">
+            <div class="settings-section-actions d-flex align-center flex-none" style="gap: 8px;">
+                @if (HelpDoc is not null)
+                {
+                    @* Sits left of the tier toggle / action buttons so the section's
+                       help is the first thing in the header's action area. *@
+                    <MudIconButton Icon="@Icons.Material.Outlined.HelpOutline"
+                                   Size="Size.Small" aria-label="Help"
+                                   title="Help" OnClick="OpenHelp" />
+                }
                 @if (Tier is not null)
                 {
                     @* Scope selector for the whole section; sits left of the action
@@ -42,12 +43,15 @@
 </MudPaper>
 
 @code {
+    [Inject] private IDialogService Dialogs { get; set; } = default!;
+
     /// <summary>Heading shown in the top-left of the section.</summary>
     [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
 
-    /// <summary>Optional description/subtitle rendered under the title. Rich content
-    /// (e.g. <c>&lt;code&gt;</c>) is allowed.</summary>
-    [Parameter] public RenderFragment? Description { get; set; }
+    /// <summary>Doc key (an embedded <c>doc/&lt;key&gt;.md</c>) for this section's
+    /// long-form help. When set, a help icon in the header opens a modal rendering
+    /// that markdown. Leave <c>null</c> to hide the help icon.</summary>
+    [Parameter] public string? HelpDoc { get; set; }
 
     /// <summary>Optional buttons/controls rendered in the top-right of the header.</summary>
     [Parameter] public RenderFragment? Actions { get; set; }
@@ -67,4 +71,11 @@
     [Parameter] public EventCallback<SettingsTier> TierChanged { get; set; }
 
     private Task OnTierChanged(SettingsTier tier) => TierChanged.InvokeAsync(tier);
+
+    private Task OpenHelp()
+    {
+        var parameters = new DialogParameters { ["DocKey"] = HelpDoc };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+        return Dialogs.ShowAsync<SettingsHelpDialog>(Title, parameters, options);
+    }
 }

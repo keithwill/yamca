@@ -15,19 +15,7 @@
 }
 else
 {
-    <SettingsSection Title="Tools" Tier="_tier" TierChanged="OnTierChanged">
-        <Description>
-            Project overrides User. A Project value left as <em>inherit</em> falls through to the User tier, which
-            always carries an explicit value (seeded from each tool's default) — so the effective setting is simply
-            Project-over-User.
-            <strong>Availability</strong> controls what the LLM sees: <em>Eager</em> = in every tool list,
-            <em>Deferred</em> = discovered via <code>lookup_tool</code> and invoked via <code>call_tool</code> (schema stays out of the prompt prefix, preserving cache), <em>Hidden</em> = invisible.
-            @if (_tier == SettingsTier.Project)
-            {
-                <text>Stored on disk in <code>@Keys.ProjectFile</code>.</text>
-            }
-            else { <text>Stored on disk in <code>@Keys.UserFile</code>.</text> }
-        </Description>
+    <SettingsSection Title="Tools" HelpDoc="tools-and-permissions" Tier="_tier" TierChanged="OnTierChanged">
         <ChildContent>
         <MudTable Items="ToolRegistry.GetSettingsTools()" Hover="true" Dense="true" Class="mud-table-bordered">
             <HeaderContent>
@@ -123,14 +111,7 @@ else
         </ChildContent>
     </SettingsSection>
 
-    <SettingsSection Title="Deferred Tools Hint">
-        <Description>
-            Controls how much of the deferred-tool catalog is added to the frozen session-start
-            message. More detail makes the model likelier to reach for a deferred tool on its own,
-            but every token here is paid on every turn of the session. <code>lookup_tool</code>
-            always lists the live catalog on demand regardless of this setting. User; stored in
-            <code>@Keys.UserFile</code>.
-        </Description>
+    <SettingsSection Title="Deferred Tools Hint" HelpDoc="tools-and-permissions">
         <ChildContent>
         <MudSelect T="DeferredToolsHint" Value="Session.DeferredToolsHint"
                    ValueChanged="@((DeferredToolsHint h) => Session.SetDeferredToolsHint(h))"

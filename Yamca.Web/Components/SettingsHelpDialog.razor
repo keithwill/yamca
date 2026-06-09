@@ -1,0 +1,39 @@
+@namespace Yamca.Web.Components
+
+@*
+    Help modal for a settings section. Renders the long-form markdown help for
+    the given DocKey (an embedded doc/<key>.md, loaded via HelpDocs) so a section
+    header only needs a small help icon instead of an inline description.
+*@
+<MudDialog>
+    <DialogContent>
+        <div class="yamca-markdown" style="max-height: 70vh; overflow-y: auto;">
+            @if (string.IsNullOrEmpty(_html.Value))
+            {
+                <MudText Typo="Typo.body2"
+                         Style="color:var(--mud-palette-text-secondary)">
+                    No help is available for this section yet.
+                </MudText>
+            }
+            else
+            {
+                @_html
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => Dialog.Close())">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    /// <summary>Doc key naming the embedded markdown to show (e.g. "endpoints").</summary>
+    [Parameter] public string DocKey { get; set; } = string.Empty;
+
+    private MarkupString _html;
+
+    protected override void OnInitialized()
+        => _html = (MarkupString)MarkdownRenderer.ToHelpHtml(HelpDocs.Load(DocKey));
+}

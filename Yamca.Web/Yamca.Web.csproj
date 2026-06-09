@@ -43,6 +43,14 @@
     <None Include="..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
+  <!-- Long-form help shown in the settings help modals. The canonical copies live
+       in the repo's doc/ folder; embed them (linked, with deterministic logical
+       names) so HelpDocs can read them from the assembly even when yamca runs as
+       a packed global tool. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\doc\*.md" LogicalName="doc.%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <!-- The Blazor publish output contains a fully-resolved wwwroot (MudBlazor's
        _content, the scoped-CSS bundle, blazor.server.js, gzip/brotli variants,
        etc.) plus the static-web-assets endpoints manifest that MapStaticAssets()

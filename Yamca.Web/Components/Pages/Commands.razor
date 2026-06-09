@@ -13,20 +13,7 @@
 }
 else
 {
-    <SettingsSection Title="Registered Commands" Tier="_tier" TierChanged="OnTierChanged">
-        <Description>
-            One-line CLI commands with no file in the repo (e.g. <code>npm install</code>, <code>dotnet build</code>).
-            The LLM runs them exactly as written via <code>execute_script</code> &mdash; no arguments are appended.
-            Give one an optional <em>name</em> to let the LLM reference it by that handle and to use as the
-            default process name when it is launched in the background.
-            Check <em>Background</em> for a watcher or dev server: running it then launches a long-lived
-            process (managed on the Processes page) instead of running to completion.
-            @if (_tier == SettingsTier.Project)
-            {
-                <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
-            }
-            else { <text> Stored on disk in <code>@Keys.UserFile</code>.</text> }
-        </Description>
+    <SettingsSection Title="Registered Commands" HelpDoc="commands" Tier="_tier" TierChanged="OnTierChanged">
         <Actions>
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Terminal"
                        OnClick="OpenAddDialog">

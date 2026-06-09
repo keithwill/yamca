@@ -13,12 +13,7 @@
 }
 else
 {
-    <SettingsSection Title="Backup">
-        <Description>
-            Export your User settings to a JSON file, restore them from one, or reset them to their
-            original defaults. Project settings (stored per workspace on disk in <code>@Keys.ProjectFile</code>)
-            are not included, and a reset leaves your configured endpoints (and any API keys) alone.
-        </Description>
+    <SettingsSection Title="Backup" HelpDoc="settings-and-backup">
         <Actions>
             <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.RestartAlt"
                        OnClick="@(() => _resetDialogOpen = true)">

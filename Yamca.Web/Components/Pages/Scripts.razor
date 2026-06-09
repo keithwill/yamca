@@ -13,15 +13,7 @@
 }
 else
 {
-    <SettingsSection Title="Registered scripts" Tier="_tier" TierChanged="OnTierChanged">
-        <Description>
-            Known scripts the LLM may run via <code>execute_script</code> with different tool permissions than scripts that are discovered by the LLM in other ways (such as file operations). Each path is workspace-relative. Files inside a registered directory count as registered. Descriptions are optional but are shown to the LLM at session start so it can pick the right entry.
-            @if (_tier == SettingsTier.Project)
-            {
-                <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
-            }
-            else { <text> Stored on disk in <code>@Keys.UserFile</code>.</text> }
-        </Description>
+    <SettingsSection Title="Registered scripts" HelpDoc="scripts" Tier="_tier" TierChanged="OnTierChanged">
         <Actions>
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
                        OnClick="OpenAddDialog">

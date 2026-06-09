@@ -15,18 +15,7 @@
 }
 else
 {
-    <SettingsSection Title="Subagents" Tier="_tier" TierChanged="OnTierChanged">
-        <Description>
-            Named, headless agents the LLM can delegate to through the <code>subagent_run</code> tool.
-            Each subagent runs in its own session with the tools you select (all auto-allowed) plus its
-            own instructions, and reports back through <code>subagent_result</code>. Project subagents
-            override user ones of the same name.
-            @if (_tier == SettingsTier.Project)
-            {
-                <text> Stored on disk in <code>@Keys.ProjectFile</code>.</text>
-            }
-            else { <text> Stored on disk in <code>@Keys.UserFile</code>.</text> }
-        </Description>
+    <SettingsSection Title="Subagents" HelpDoc="subagents" Tier="_tier" TierChanged="OnTierChanged">
         <Actions>
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" OnClick="AddRow">
                 Add subagent
