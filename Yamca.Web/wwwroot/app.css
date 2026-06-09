@@ -752,6 +752,16 @@ h1:focus {
     opacity: 1;
 }
 
+/* Assistant messages render directly on the page rather than inside a MudPaper surface block:
+   the block's edge would otherwise visibly reflow as text streams in and the log scrolls
+   (most noticeable with the prompt docked at the bottom). The user bubble keeps its surface +
+   border (see .yamca-user-message). .mud-paper qualifier outranks MudBlazor's own .mud-paper
+   background rule regardless of stylesheet load order. */
+.yamca-markdown.mud-paper {
+    background-color: transparent;
+    box-shadow: none;
+}
+
 .yamca-markdown > :first-child { margin-top: 0; }
 .yamca-markdown > :last-child { margin-bottom: 0; }
 .yamca-markdown p { margin: 0 0 0.6em 0; }
