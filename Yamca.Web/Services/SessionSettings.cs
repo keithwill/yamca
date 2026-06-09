@@ -23,6 +23,7 @@ public sealed class SessionSettings : ISessionSettings
     // ResetUserToDefaults all agree on one source of truth.
     private const bool DefaultMarkdownEnabled = true;
     private const ReasoningDisplay DefaultReasoningDisplay = ReasoningDisplay.Collapsed;
+    private const PromptDockPosition DefaultPromptDockPosition = PromptDockPosition.Top;
     private const bool DefaultAutoCompactionEnabled = false;
     private const int DefaultAutoCompactionThresholdPercent = 75;
     private const int MinAutoCompactionThresholdPercent = 1;
@@ -44,6 +45,7 @@ public sealed class SessionSettings : ISessionSettings
     public string SystemPrompt { get; private set; } = DefaultSystemPrompt;
     public bool MarkdownEnabled { get; private set; } = DefaultMarkdownEnabled;
     public ReasoningDisplay ReasoningDisplay { get; private set; } = DefaultReasoningDisplay;
+    public PromptDockPosition PromptDockPosition { get; private set; } = DefaultPromptDockPosition;
 
     public bool AutoCompactionEnabled { get; private set; } = DefaultAutoCompactionEnabled;
     public int AutoCompactionThresholdPercent { get; private set; } = DefaultAutoCompactionThresholdPercent;
@@ -137,6 +139,13 @@ public sealed class SessionSettings : ISessionSettings
     {
         if (ReasoningDisplay == display) return;
         ReasoningDisplay = display;
+        Changed?.Invoke(SettingsTier.User);
+    }
+
+    public void SetPromptDockPosition(PromptDockPosition position)
+    {
+        if (PromptDockPosition == position) return;
+        PromptDockPosition = position;
         Changed?.Invoke(SettingsTier.User);
     }
 
@@ -245,6 +254,7 @@ public sealed class SessionSettings : ISessionSettings
         SystemPrompt = DefaultSystemPrompt;
         MarkdownEnabled = DefaultMarkdownEnabled;
         ReasoningDisplay = DefaultReasoningDisplay;
+        PromptDockPosition = DefaultPromptDockPosition;
         AutoCompactionEnabled = DefaultAutoCompactionEnabled;
         AutoCompactionThresholdPercent = DefaultAutoCompactionThresholdPercent;
         AutoCompactionKeepRecentTurns = DefaultAutoCompactionKeepRecentTurns;
@@ -352,6 +362,7 @@ public sealed class SessionSettings : ISessionSettings
         SystemPrompt = blob.SystemPrompt ?? DefaultSystemPrompt;
         MarkdownEnabled = blob.MarkdownEnabled ?? DefaultMarkdownEnabled;
         ReasoningDisplay = blob.ReasoningDisplay ?? DefaultReasoningDisplay;
+        PromptDockPosition = blob.PromptDockPosition ?? DefaultPromptDockPosition;
         AutoCompactionEnabled = blob.AutoCompactionEnabled ?? DefaultAutoCompactionEnabled;
         AutoCompactionThresholdPercent = blob.AutoCompactionThresholdPercent is int p
             ? Math.Clamp(p, MinAutoCompactionThresholdPercent, MaxAutoCompactionThresholdPercent)
@@ -479,6 +490,7 @@ public sealed class SessionSettings : ISessionSettings
             SystemPrompt = SystemPrompt,
             MarkdownEnabled = MarkdownEnabled,
             ReasoningDisplay = ReasoningDisplay,
+            PromptDockPosition = PromptDockPosition,
             AutoCompactionEnabled = AutoCompactionEnabled,
             AutoCompactionThresholdPercent = AutoCompactionThresholdPercent,
             AutoCompactionKeepRecentTurns = AutoCompactionKeepRecentTurns,
@@ -616,6 +628,7 @@ public sealed class SessionSettings : ISessionSettings
         public string? SystemPrompt { get; set; }
         public bool? MarkdownEnabled { get; set; }
         public ReasoningDisplay? ReasoningDisplay { get; set; }
+        public PromptDockPosition? PromptDockPosition { get; set; }
         public bool? AutoCompactionEnabled { get; set; }
         public int? AutoCompactionThresholdPercent { get; set; }
         public int? AutoCompactionKeepRecentTurns { get; set; }

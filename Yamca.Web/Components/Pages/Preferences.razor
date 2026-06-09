@@ -38,6 +38,18 @@ else
             How to display chain-of-thought emitted by reasoning models inside <code>&lt;think&gt;</code>, <code>&lt;thinking&gt;</code>, or <code>&lt;reasoning&gt;</code> tags (Qwen3, QwQ, DeepSeek-R1, etc.). Collapsed mode shows it live while streaming and auto-closes when the answer begins.
         </MudText>
 
+        <MudSelect T="PromptDockPosition" Value="Session.PromptDockPosition"
+                   ValueChanged="@((PromptDockPosition v) => Session.SetPromptDockPosition(v))"
+                   Label="Prompt position"
+                   Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense"
+                   Class="mt-3">
+            <MudSelectItem T="PromptDockPosition" Value="PromptDockPosition.Top">Top (default)</MudSelectItem>
+            <MudSelectItem T="PromptDockPosition" Value="PromptDockPosition.Bottom">Bottom</MudSelectItem>
+        </MudSelect>
+        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+            Whether the prompt composer sits above or below the message log in each chat pane. Also toggleable from the button in the composer toolbar.
+        </MudText>
+
         <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Context</MudText>
         <MudSwitch T="bool" Value="Session.AutoCompactionEnabled"
                    ValueChanged="@((bool v) => Session.SetAutoCompactionEnabled(v))"

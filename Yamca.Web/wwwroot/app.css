@@ -83,6 +83,16 @@ h1:focus {
     align-items: center;
 }
 
+/* Bottom-docked prompt: flip the composer below the scrolling message log via flex order
+   (not column-reverse) so the conditional read-only banner keeps its default order (0) and
+   stays pinned at the top. Portaled MudDialogs are unaffected by order. The dock's asymmetric
+   padding is mirrored so the larger gap still faces the message log. */
+.yamca-page.yamca-dock-bottom .yamca-scroll     { order: 1; }
+.yamca-page.yamca-dock-bottom .yamca-input-dock {
+    order: 2;
+    padding: 0.5rem 1rem 0.375rem;
+}
+
 .yamca-composer {
     width: 100%;
     max-width: 768px;

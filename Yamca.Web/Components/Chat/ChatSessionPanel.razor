@@ -9,7 +9,7 @@
 @using Yamca.Web.Components.Subagents
 @using WorkspaceImpl = Yamca.Agent.Workspace.Workspace
 
-<div class="yamca-page">
+<div class="@PageClass">
     @if (Chat.IsReadOnly)
     {
         <MudAlert Severity="Severity.Info" Dense="true" Class="ma-2">
@@ -127,6 +127,17 @@
                                            OnClick="OpenCompactDialog"
                                            aria-label="Compact context" />
                         </span>
+                    </MudTooltip>
+                    <MudTooltip Text="@(IsDockBottom ? "Dock prompt to top" : "Dock prompt to bottom")">
+                        <MudToggleIconButton Toggled="IsDockBottom"
+                                             ToggledChanged="@((bool _) => ToggleDockPosition())"
+                                             Icon="@Icons.Material.Filled.VerticalAlignBottom"
+                                             ToggledIcon="@Icons.Material.Filled.VerticalAlignTop"
+                                             Color="Color.Default"
+                                             ToggledColor="Color.Default"
+                                             Variant="Variant.Text"
+                                             Size="Size.Small"
+                                             aria-label="Toggle prompt dock position" />
                     </MudTooltip>
                     <MudTooltip Text="Diagnostic log — endpoint &amp; session events">
                         <span>
@@ -398,6 +409,15 @@
         public string DataUrl => Image is null ? "" : $"data:{Image.MimeType};base64,{Image.Base64Data}";
     }
 
+    // The prompt dock position is a global user-tier preference; the bottom variant flips the
+    // composer below the message log via a CSS order modifier on the page root (see app.css).
+    private bool IsDockBottom => SessionConcrete.PromptDockPosition == PromptDockPosition.Bottom;
+
+    private string PageClass => IsDockBottom ? "yamca-page yamca-dock-bottom" : "yamca-page";
+
+    private void ToggleDockPosition() =>
+        SessionConcrete.SetPromptDockPosition(IsDockBottom ? PromptDockPosition.Top : PromptDockPosition.Bottom);
+
     private string ComposerClass
     {
         get
@@ -437,9 +457,16 @@
         // The subagent registry is per-circuit (shared across chat tiles); refresh the toolbar
         // badge whenever a run starts, streams, or finishes.
         Subagents.Changed += OnSubagentsChanged;
+
+        // Settings are shared across all panes. OnChanged (the per-chat handler) gates re-renders
+        // on ToolbarSignature() and so won't react to a settings flip, so subscribe directly: this
+        // is how a pane other than the one that toggled the dock position learns to repaint.
+        SessionConcrete.Changed += OnSettingsChanged;
     }
 
     private void OnSubagentsChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnSettingsChanged(SettingsTier _) => InvokeAsync(StateHasChanged);
 
     protected override void OnParametersSet()
     {
@@ -977,6 +1004,7 @@
     {
         if (_subscribed is not null) _subscribed.Changed -= OnChanged;
         Subagents.Changed -= OnSubagentsChanged;
+        SessionConcrete.Changed -= OnSettingsChanged;
         _selfRef?.Dispose();
     }
 }
