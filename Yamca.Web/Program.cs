@@ -22,6 +22,7 @@ using Yamca.Agent.Tools.ShellExecution;
 using Yamca.Agent.Workspace;
 using Yamca.Web.Components;
 using Yamca.Web.Services;
+using Yamca.Web.Services.Orchestration;
 
 var cli = CliOptions.Parse(args);
 if (cli.ShowHelp)
@@ -161,6 +162,9 @@ builder.Services.AddSingleton<BoardService>();
 // the board UI share one canonical board. Created lazily on first board access (EnsureAsync), so an
 // unused board costs nothing at startup.
 builder.Services.AddSingleton<BoardStore>();
+// Shared branch-worktree provisioning for board step runs — used by both the interactive
+// Run Step flow (Board.razor) and the orchestrator's headless dispatch.
+builder.Services.AddSingleton<CardWorktreeProvisioner>();
 
 builder.Services.AddSingleton<ITool, ReadFileTool>();
 builder.Services.AddSingleton<ITool, WriteFileTool>();
@@ -279,6 +283,17 @@ builder.Services.AddScoped<ITool, ListProcessesTool>();
 // registry via ISubagentObserver; the UI reads the same instance to render a read-only view.
 builder.Services.AddScoped<SubagentSessionRegistry>();
 builder.Services.AddScoped<ISubagentObserver>(sp => sp.GetRequiredService<SubagentSessionRegistry>());
+
+// Board orchestrator: a server-side engine that autonomously dispatches cards in enabled work
+// columns to headless agent runs. All three are singletons — the orchestrator belongs to the
+// process, not a circuit: its run registry is readable from every browser tab, and its enabled
+// state is runtime-only (yamca always starts with orchestration off; StartEnabled is the seam
+// for a future --orchestrate flag). OrchestratorHost runs the poll loop for the process
+// lifetime and stops in-flight runs on shutdown.
+builder.Services.AddSingleton(new OrchestratorStartupOptions(StartEnabled: false));
+builder.Services.AddSingleton<OrchestratorRunRegistry>();
+builder.Services.AddSingleton<OrchestratorService>();
+builder.Services.AddHostedService<OrchestratorHost>();
 
 // MCP host: one registry per process, shared across all chat sessions. The web
 // layer hydrates it from mcp.json on first circuit and again whenever the

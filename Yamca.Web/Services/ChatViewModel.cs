@@ -638,37 +638,8 @@ public sealed class ChatViewModel : IDisposable
             ? new PersistedCompaction(s, b)
             : null,
         Messages = _loop?.Session.Messages.ToList() ?? new List<ChatMessage>(),
-        Turns = Turns.Select(MapTurn).ToList(),
+        Turns = Turns.Select(ChatTurnPersistence.ToPersistedTurn).ToList(),
     };
-
-    private static PersistedTurn MapTurn(ChatTurn turn)
-    {
-        var pt = new PersistedTurn
-        {
-            UserMessage = turn.UserMessage,
-            Error = turn.Error,
-            Images = turn.Images.Count > 0 ? turn.Images.ToList() : null,
-        };
-        foreach (var item in turn.Items)
-        {
-            pt.Items.Add(item switch
-            {
-                AssistantTextItem a => new PersistedTurnItem { Kind = "text", Text = a.Text, IsComplete = a.IsComplete },
-                ReasoningItem r => new PersistedTurnItem { Kind = "reasoning", Text = r.Text, IsComplete = r.IsComplete },
-                ToolCallItem c => new PersistedTurnItem
-                {
-                    Kind = "tool",
-                    CallId = c.CallId,
-                    ToolName = c.ToolName,
-                    ArgumentsJson = c.ArgumentsJson,
-                    State = c.State.ToString(),
-                    Result = c.Result,
-                },
-                _ => new PersistedTurnItem { Kind = "text", Text = "" },
-            });
-        }
-        return pt;
-    }
 
     /// <summary>Populate this VM from a saved session for display. When
     /// <paramref name="readOnly"/> is false, the message log and endpoint snapshot are

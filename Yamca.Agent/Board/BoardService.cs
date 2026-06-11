@@ -77,8 +77,10 @@ public sealed partial class BoardService
         return new BoardSnapshot(columns);
     }
 
-    // Card order within a column: high → normal → low priority, then by leading numeric id, then file name.
-    private static int CompareCards(BoardCard a, BoardCard b)
+    /// <summary>Card order within a column: high → normal → low priority, then by leading numeric
+    /// id (oldest first), then file name. Public so the orchestrator's dispatch sort matches the
+    /// board's display order exactly.</summary>
+    public static int CompareCards(BoardCard a, BoardCard b)
     {
         var pc = b.Priority.CompareTo(a.Priority); // descending: high first
         if (pc != 0) return pc;

@@ -1,0 +1,293 @@
+@page "/orchestrator"
+@rendermode InteractiveServer
+@implements IDisposable
+@using Yamca.Agent.Board
+@using Yamca.Agent.Orchestration
+@using Yamca.Agent.Settings
+@using Yamca.Agent.Tools
+@using Yamca.Web.Components.Orchestration
+@using Yamca.Web.Services.Orchestration
+
+<PageTitle>Orchestrator — yamca</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+
+@if (!_hydrated)
+{
+    <MudProgressCircular Indeterminate="true" />
+    <MudText Typo="Typo.body2" Class="ml-2 d-inline">Loading settings&hellip;</MudText>
+}
+else
+{
+    <SettingsSection Title="Orchestrator" HelpDoc="orchestrator">
+        <Actions>
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PlaylistPlay"
+                       OnClick="OpenRunsAsync">
+                View runs
+            </MudButton>
+        </Actions>
+        <ChildContent>
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)" Class="d-block mb-3">
+                Stored in this repository's project settings (.yamca/project.json). The orchestrator
+                re-reads settings every poll, so changes apply to future runs without a restart.
+            </MudText>
+
+            <div class="d-flex align-center flex-wrap mb-2" style="gap: 16px;">
+                <MudSwitch T="bool" Value="@Service.IsEnabled" ValueChanged="OnEnabledChanged"
+                           Color="Color.Success" Label="@(Service.IsEnabled ? "Orchestration on" : "Orchestration off")" />
+                <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary)">
+                    @Service.RunningCount running
+                    @if (TotalTokens > 0)
+                    {
+                        <text> · @TotalTokens.ToString("n0") tokens this session</text>
+                    }
+                </MudText>
+            </div>
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)" Class="d-block mb-3">
+                The on/off state is never saved — yamca always starts with orchestration off.
+            </MudText>
+
+            @if (Service.LastValidationError is { } error)
+            {
+                <MudAlert Severity="@(Service.IsEnabled ? Severity.Error : Severity.Warning)" Dense="true" Class="mb-3">
+                    @error
+                </MudAlert>
+            }
+        </ChildContent>
+    </SettingsSection>
+
+    <SettingsSection Title="Dispatch">
+        <ChildContent>
+            <MudSelect T="string" Label="Enabled columns (cards here are worked autonomously)"
+                       MultiSelection="true"
+                       SelectedValues="@_enabledColumns"
+                       SelectedValuesChanged="@((IReadOnlyCollection<string> v) => OnEnabledColumnsChanged(v))"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
+                       MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(DescribeColumns))">
+                @foreach (var col in _workColumns)
+                {
+                    <MudSelectItem T="string" Value="@col.DirectoryName">@col.DisplayName</MudSelectItem>
+                }
+            </MudSelect>
+            @if (MissingColumns.Count > 0)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Warning" Class="d-block mb-2">
+                    Configured but missing from the board (or not a work column): @string.Join(", ", MissingColumns)
+                </MudText>
+            }
+
+            <div class="d-flex align-center flex-wrap" style="gap: 16px;">
+                <MudSelect T="Guid?" Label="Endpoint" Value="@Settings.EndpointId"
+                           ValueChanged="@((Guid? v) => Update(s => s with { EndpointId = v }))"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 240px;">
+                    <MudSelectItem T="Guid?" Value="@((Guid?)null)">Default endpoint</MudSelectItem>
+                    @foreach (var ep in Session.Endpoints.Items)
+                    {
+                        <MudSelectItem T="Guid?" Value="@((Guid?)ep.Id)">@ep.DisplayLabel</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudNumericField T="int" Label="Max concurrent runs" Value="@Settings.MaxConcurrentRuns"
+                                 ValueChanged="@((int v) => Update(s => s with { MaxConcurrentRuns = v }))"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="16"
+                                 Style="max-width: 180px;" />
+                <MudNumericField T="int?" Label="Per-column cap" Value="@Settings.MaxConcurrentRunsPerColumn"
+                                 ValueChanged="@((int? v) => Update(s => s with { MaxConcurrentRunsPerColumn = v }))"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="16"
+                                 Style="max-width: 160px;" Placeholder="none" Clearable="true" />
+                <MudNumericField T="int" Label="Poll interval (s)" Value="@Settings.PollIntervalSeconds"
+                                 ValueChanged="@((int v) => Update(s => s with { PollIntervalSeconds = v }))"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="2" Max="300"
+                                 Style="max-width: 160px;" />
+            </div>
+        </ChildContent>
+    </SettingsSection>
+
+    <SettingsSection Title="Run limits">
+        <ChildContent>
+            <div class="d-flex align-center flex-wrap" style="gap: 16px;">
+                <MudNumericField T="int" Label="Max turns per run" Value="@Settings.MaxTurnsPerRun"
+                                 ValueChanged="@((int v) => Update(s => s with { MaxTurnsPerRun = v }))"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="20"
+                                 Style="max-width: 180px;" />
+                <MudNumericField T="int?" Label="Tool iterations per turn" Value="@Settings.MaxToolIterationsPerTurn"
+                                 ValueChanged="@((int? v) => Update(s => s with { MaxToolIterationsPerTurn = v }))"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="100"
+                                 Style="max-width: 200px;" Placeholder="session default" Clearable="true" />
+                <MudNumericField T="int" Label="Stall timeout (s)" Value="@Settings.StallTimeoutSeconds"
+                                 ValueChanged="@((int v) => Update(s => s with { StallTimeoutSeconds = v }))"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="10" Max="7200"
+                                 Style="max-width: 160px;" />
+                <MudNumericField T="int" Label="Turn timeout (s)" Value="@Settings.TurnTimeoutSeconds"
+                                 ValueChanged="@((int v) => Update(s => s with { TurnTimeoutSeconds = v }))"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="10" Max="7200"
+                                 Style="max-width: 160px;" />
+            </div>
+        </ChildContent>
+    </SettingsSection>
+
+    <SettingsSection Title="Failure policy">
+        <ChildContent>
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)" Class="d-block mb-2">
+                Failed runs retry with exponential backoff; after the attempt cap the card is parked
+                until you move or edit it, retry it from its board badge, or re-enable the orchestrator.
+            </MudText>
+            <div class="d-flex align-center flex-wrap" style="gap: 16px;">
+                <MudNumericField T="int" Label="Max attempts" Value="@Settings.RetryMaxAttempts"
+                                 ValueChanged="@((int v) => Update(s => s with { RetryMaxAttempts = v }))"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="10"
+                                 Style="max-width: 160px;" />
+                <MudNumericField T="int" Label="First retry delay (s)" Value="@Settings.RetryBaseDelaySeconds"
+                                 ValueChanged="@((int v) => Update(s => s with { RetryBaseDelaySeconds = v }))"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="7200"
+                                 Style="max-width: 180px;" />
+                <MudNumericField T="int" Label="Max retry delay (s)" Value="@Settings.RetryMaxDelaySeconds"
+                                 ValueChanged="@((int v) => Update(s => s with { RetryMaxDelaySeconds = v }))"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="7200"
+                                 Style="max-width: 180px;" />
+            </div>
+        </ChildContent>
+    </SettingsSection>
+
+    <SettingsSection Title="Tools &amp; safety">
+        <ChildContent>
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                Orchestrated runs auto-approve every tool in this list — including git commits and
+                any execute tools you add — without asking. The limits that still apply: this tool
+                list, workspace restriction, the iteration/turn caps, the timeouts, and concurrency.
+            </MudAlert>
+            <MudSelect T="string" Label="Allowed tools" MultiSelection="true"
+                       SelectedValues="@_allowedTools"
+                       SelectedValuesChanged="@((IReadOnlyCollection<string> v) => OnAllowedToolsChanged(v))"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
+                       MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(s => string.Join(", ", s)))">
+                @foreach (var tool in _toolNames)
+                {
+                    <MudSelectItem T="string" Value="@tool">@tool</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSwitch T="bool" Value="@Settings.RestrictToWorkspace"
+                       ValueChanged="@((bool v) => Update(s => s with { RestrictToWorkspace = v }))"
+                       Color="Color.Primary" Label="Restrict tools to the run's worktree" />
+        </ChildContent>
+    </SettingsSection>
+}
+
+</MudContainer>
+
+@code {
+    [Inject] private SessionSettings Session { get; set; } = default!;
+    [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
+    [Inject] private IToolRegistry Tools { get; set; } = default!;
+    [Inject] private BoardService BoardSvc { get; set; } = default!;
+    [Inject] private BoardStore BoardStore { get; set; } = default!;
+    [Inject] private OrchestratorService Service { get; set; } = default!;
+    [Inject] private OrchestratorRunRegistry Registry { get; set; } = default!;
+    [Inject] private IDialogService Dialogs { get; set; } = default!;
+
+    // Tools that never make sense for an orchestrated run: fan-out tools (also stripped at the
+    // runner) and the deferred-tool meta-tools (the orchestrator's set is curated and eager).
+    private static readonly HashSet<string> ExcludedTools =
+        new(StringComparer.Ordinal) { SubagentRunTool.ToolName, LoopTool.ToolName, "lookup_tool", "call_tool" };
+
+    private bool _hydrated;
+    private IReadOnlyList<string> _toolNames = Array.Empty<string>();
+    private IReadOnlyList<BoardColumn> _workColumns = Array.Empty<BoardColumn>();
+    private HashSet<string> _enabledColumns = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _allowedTools = new(StringComparer.Ordinal);
+
+    private OrchestratorSettings Settings => Session.Orchestrator;
+
+    private long TotalTokens
+    {
+        get
+        {
+            var (p, c) = Registry.AggregateTokens;
+            return p + c;
+        }
+    }
+
+    private IReadOnlyList<string> MissingColumns =>
+        Settings.EnabledColumns
+            .Where(dir => !_workColumns.Any(c => string.Equals(c.DirectoryName, dir, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+    protected override void OnInitialized()
+    {
+        Session.Changed += OnSettingsChanged;
+        Service.StateChanged += OnOrchestratorChanged;
+        Registry.Changed += OnOrchestratorChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Hydrator.HydrateAsync();
+        _toolNames = Tools.GetSettingsTools()
+            .Select(t => t.Name)
+            .Where(n => !ExcludedTools.Contains(n))
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        var boardRoot = await BoardStore.EnsureAsync(CancellationToken.None);
+        _workColumns = BoardSvc.Read(boardRoot).Columns
+            .Where(c => BoardSvc.HasInstructions(boardRoot, c.DirectoryName))
+            .ToList();
+
+        SyncFromSession();
+        _hydrated = true;
+        StateHasChanged();
+    }
+
+    private void SyncFromSession()
+    {
+        _enabledColumns = new HashSet<string>(Settings.EnabledColumns, StringComparer.OrdinalIgnoreCase);
+        _allowedTools = new HashSet<string>(Settings.AllowedTools, StringComparer.Ordinal);
+    }
+
+    private void OnSettingsChanged(SettingsTier _) => InvokeAsync(() =>
+    {
+        SyncFromSession();
+        StateHasChanged();
+    });
+
+    private void OnOrchestratorChanged() => InvokeAsync(StateHasChanged);
+
+    private void Update(Func<OrchestratorSettings, OrchestratorSettings> mutate) =>
+        Session.SetOrchestrator(mutate(Settings));
+
+    private void OnEnabledChanged(bool enabled)
+    {
+        if (enabled) Service.Enable();
+        else Service.Disable();
+    }
+
+    private void OnEnabledColumnsChanged(IReadOnlyCollection<string> selected)
+    {
+        _enabledColumns = new HashSet<string>(selected ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        Update(s => s with { EnabledColumns = _enabledColumns.OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList() });
+    }
+
+    private void OnAllowedToolsChanged(IReadOnlyCollection<string> selected)
+    {
+        _allowedTools = new HashSet<string>(selected ?? Enumerable.Empty<string>(), StringComparer.Ordinal);
+        Update(s => s with { AllowedTools = _allowedTools.OrderBy(t => t, StringComparer.Ordinal).ToList() });
+    }
+
+    private string DescribeColumns(IReadOnlyList<string> dirs) =>
+        string.Join(", ", dirs.Select(d =>
+            _workColumns.FirstOrDefault(c => string.Equals(c.DirectoryName, d, StringComparison.OrdinalIgnoreCase))
+                ?.DisplayName ?? d));
+
+    private async Task OpenRunsAsync()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true };
+        await Dialogs.ShowAsync<OrchestratorRunsDialog>("Orchestrator runs", options);
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSettingsChanged;
+        Service.StateChanged -= OnOrchestratorChanged;
+        Registry.Changed -= OnOrchestratorChanged;
+    }
+}

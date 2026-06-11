@@ -3,16 +3,22 @@
 @implements IDisposable
 @using Yamca.Agent.Board
 @using Yamca.Agent.Git
+@using Yamca.Agent.Orchestration
 @using Yamca.Agent.Workspace
 @using Yamca.Web.Components.Board
 @using Yamca.Web.Components.Branching
 @using Yamca.Web.Components.Chat
+@using Yamca.Web.Components.Orchestration
 @using Yamca.Web.Services
+@using Yamca.Web.Services.Orchestration
 @using WorkspaceImpl = Yamca.Agent.Workspace.Workspace
 @inject IWorkspace Workspace
 @inject BoardService BoardSvc
 @inject BoardStore BoardStore
 @inject GitService Git
+@inject CardWorktreeProvisioner Provisioner
+@inject OrchestratorService Orchestrator
+@inject OrchestratorRunRegistry OrchRegistry
 @inject IDialogService Dialogs
 @inject ChatSessionManager Manager
 @inject BoardStepLauncher Launcher
@@ -73,6 +79,30 @@ else
                                    aria-label="Clear filter" />
                 </div>
             }
+            <div class="d-flex align-center" style="margin-left:auto; gap: 4px;">
+                @if (Orchestrator.LastValidationError is { } orchError)
+                {
+                    <MudTooltip Text="@orchError">
+                        <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small"
+                                 Color="@(Orchestrator.IsEnabled ? Color.Error : Color.Warning)" />
+                    </MudTooltip>
+                }
+                @if (Orchestrator.IsEnabled)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text"
+                             OnClick="@(() => OpenOrchestratorRunsAsync(null))">
+                        orchestrating · @Orchestrator.RunningCount running
+                    </MudChip>
+                }
+                <MudTooltip Text="@(Orchestrator.IsEnabled ? "Stop autonomous card runs" : "Start working enabled columns autonomously")">
+                    <MudSwitch T="bool" Value="@Orchestrator.IsEnabled" ValueChanged="OnOrchestrationToggled"
+                               Color="Color.Success" Size="Size.Small" Class="ma-0" />
+                </MudTooltip>
+                <MudTooltip Text="Orchestrator settings">
+                    <MudIconButton Icon="@Icons.Material.Filled.PrecisionManufacturing" Size="Size.Small"
+                                   Href="orchestrator" aria-label="Orchestrator settings" />
+                </MudTooltip>
+            </div>
         </div>
         <div class="yamca-board">
             @foreach (var column in _snapshot.Columns)
@@ -137,6 +167,40 @@ else
                                         {
                                             <span>⎇ @c.Branch</span>
                                         }
+                                        @if (Orchestrator.CardStates.TryGetValue(c.Id, out var orch))
+                                        {
+                                            <span class="yamca-board-card-orch" title="@OrchTooltip(orch)"
+                                                  @onclick:stopPropagation="true"
+                                                  @onclick="@(() => OpenOrchestratorRunsAsync(c.Id))">
+                                                @switch (orch.Status)
+                                                {
+                                                    case CardRunStatus.Queued:
+                                                        <MudIcon Icon="@Icons.Material.Filled.HourglassEmpty" Style="font-size:0.9rem;" Color="Color.Info" />
+                                                        <text>queued</text>
+                                                        break;
+                                                    case CardRunStatus.Running:
+                                                        <MudProgressCircular Indeterminate="true" Color="Color.Info" Style="width:12px;height:12px;" />
+                                                        <text>running</text>
+                                                        break;
+                                                    case CardRunStatus.Retrying:
+                                                        <MudIcon Icon="@Icons.Material.Filled.Refresh" Style="font-size:0.9rem;" Color="Color.Warning" />
+                                                        <text>retrying</text>
+                                                        break;
+                                                    case CardRunStatus.Parked:
+                                                        <MudIcon Icon="@Icons.Material.Filled.PauseCircle" Style="font-size:0.9rem;" Color="Color.Error" />
+                                                        <text>parked</text>
+                                                        break;
+                                                }
+                                            </span>
+                                            @if (orch.Status is CardRunStatus.Parked or CardRunStatus.Retrying)
+                                            {
+                                                <span class="yamca-board-card-orch" title="Retry this card now"
+                                                      @onclick:stopPropagation="true"
+                                                      @onclick="@(() => Orchestrator.RetryNow(c.Id))">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Replay" Style="font-size:0.9rem;" />
+                                                </span>
+                                            }
+                                        }
                                     </div>
                                     @if (_busyCards.Contains(c.Id))
                                     {
@@ -191,7 +255,38 @@ else
     private BoardColumn? _draggedFromColumn;
     private string? _dragOverColumn;
 
-    protected override void OnInitialized() => Manager.Changed += OnSessionsChanged;
+    protected override void OnInitialized()
+    {
+        Manager.Changed += OnSessionsChanged;
+        Orchestrator.StateChanged += OnOrchestratorChanged;
+        OrchRegistry.Changed += OnOrchestratorChanged;
+    }
+
+    private void OnOrchestratorChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnOrchestrationToggled(bool enabled)
+    {
+        if (enabled) Orchestrator.Enable();
+        else Orchestrator.Disable();
+    }
+
+    private static string OrchTooltip(CardOrchestrationState orch) => orch.Status switch
+    {
+        CardRunStatus.Queued => "Claimed by the orchestrator — starting shortly.",
+        CardRunStatus.Running => "The orchestrator is working this card. Click to watch the run.",
+        CardRunStatus.Retrying =>
+            $"Attempt {orch.Attempts} failed: {orch.FailureReason} — retrying at {orch.NextAttemptUtc?.ToLocalTime():HH:mm:ss}.",
+        CardRunStatus.Parked =>
+            $"Parked after {orch.Attempts} attempts: {orch.FailureReason}. Move or edit the card, use retry, or re-enable the orchestrator.",
+        _ => orch.FailureReason ?? orch.Status.ToString(),
+    };
+
+    private async Task OpenOrchestratorRunsAsync(string? cardId)
+    {
+        var parameters = new DialogParameters { ["CardId"] = cardId };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true };
+        await Dialogs.ShowAsync<OrchestratorRunsDialog>("Orchestrator runs", parameters, options);
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -447,7 +542,7 @@ else
 
         var worktrees = await Git.ListWorktreesAsync(repoRoot, ct);
         var match = worktrees.FirstOrDefault(w => string.Equals(w.Branch, branch, StringComparison.Ordinal));
-        var worktreePath = match.Path ?? Path.Combine(repoRoot, ".yamca", "worktrees", Sanitize(branch));
+        var worktreePath = match.Path ?? CardWorktreeProvisioner.WorktreePathForBranch(repoRoot, branch);
 
         var info = new WorktreeInfo(branch, baseBranch, worktreePath, repoRoot);
         var dialog = await Dialogs.ShowAsync<BranchMergeDialog>("Merge branch",
@@ -676,62 +771,28 @@ else
         await RunStepAsync(card, column, new CardDetailDialog.Result(Session.Endpoints.DefaultId, branch));
     }
 
-    // Resolve a usable worktree for a branch, creating whatever is missing:
-    //   • a live worktree already checked out on the branch → reuse it;
-    //   • the branch exists but has no worktree → add one;
-    //   • neither exists (deleted/merged, or a brand-new card branch) → create the branch + worktree.
+    // Resolve a usable worktree for a branch via the shared provisioner (also used by the
+    // orchestrator's headless dispatch), surfacing any error as a snackbar.
     private async Task<WorktreeInfo?> ResolveWorktreeForBranchAsync(string branch)
     {
-        var ct = CancellationToken.None;
-        // Worktrees and git operations are repo-scoped, so they anchor at the repository root.
-        // BasePath, however, stays the session's sandbox root: it doubles as the key that ties a
-        // worktree back to the base chat session (see ChatSessionPanel.IsBranchOpBusy).
-        var repoRoot = Workspace.RepositoryRoot;
-        var baseBranch = await Git.GetCurrentBranchAsync(repoRoot, ct) ?? "";
-
-        var worktrees = await Git.ListWorktreesAsync(repoRoot, ct);
-        var match = worktrees.FirstOrDefault(w => string.Equals(w.Branch, branch, StringComparison.Ordinal));
-        if (match.Path is not null)
-            return new WorktreeInfo(branch, baseBranch, match.Path, Workspace.RootPath);
-
-        var path = Path.Combine(repoRoot, ".yamca", "worktrees", Sanitize(branch));
-        if (!Directory.Exists(path))
-        {
-            var branches = await Git.ListBranchesAsync(repoRoot, ct);
-            var branchExists = branches.Any(b => string.Equals(b, branch, StringComparison.Ordinal));
-            var r = await Git.CreateWorktreeAsync(repoRoot, path, branch, isNewBranch: !branchExists, ct);
-            if (!r.Ok)
-            {
-                Snackbar.Add($"Could not open worktree for '{branch}': {r.Stderr.Trim()}", Severity.Error);
-                return null;
-            }
-        }
-        return new WorktreeInfo(branch, baseBranch, path, Workspace.RootPath);
+        var result = await Provisioner.ResolveWorktreeForBranchAsync(branch, CancellationToken.None);
+        if (result.Error is not null)
+            Snackbar.Add(result.Error, Severity.Error);
+        return result.Worktree;
     }
 
-    // Bind a card to its branch by writing the `branch:` frontmatter. The board is plain on-disk
-    // state, so this is just a card-file write. Returns false (after surfacing an error) when the
-    // write fails.
+    // Bind a card to its branch by writing the `branch:` frontmatter. Returns false (after
+    // surfacing an error) when the write fails.
     private async Task<bool> LockCardToBranchAsync(BoardCard card, string branch)
     {
-        var ct = CancellationToken.None;
-        var ok = await BoardStore.MutateAsync(async _ =>
+        var error = await Provisioner.LockCardToBranchAsync(card, branch, CancellationToken.None);
+        if (error is not null)
         {
-            try
-            {
-                var raw = await File.ReadAllTextAsync(card.AbsolutePath);
-                await File.WriteAllTextAsync(card.AbsolutePath, BoardService.WithBranch(raw, branch));
-            }
-            catch (Exception ex)
-            {
-                Snackbar.Add($"Could not bind card to '{branch}': {ex.Message}", Severity.Error);
-                return false;
-            }
-            return true;
-        }, ct);
-
-        if (ok) await RefreshAsync();
-        return ok;
+            Snackbar.Add(error, Severity.Error);
+            return false;
+        }
+        await RefreshAsync();
+        return true;
     }
 
     private async Task UpdateCardPriorityAsync(BoardCard card, CardPriority priority)
@@ -821,7 +882,10 @@ else
         });
     }
 
-    private static string Sanitize(string branch) => branch.Replace('/', '-').Replace('\\', '-');
-
-    public void Dispose() => Manager.Changed -= OnSessionsChanged;
+    public void Dispose()
+    {
+        Manager.Changed -= OnSessionsChanged;
+        Orchestrator.StateChanged -= OnOrchestratorChanged;
+        OrchRegistry.Changed -= OnOrchestratorChanged;
+    }
 }

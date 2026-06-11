@@ -1,0 +1,145 @@
+@using Yamca.Agent.Orchestration
+@using Yamca.Web.Services.Orchestration
+@implements IDisposable
+@inject OrchestratorRunRegistry Registry
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center" style="gap: 6px; width: 100%;">
+            <MudIcon Icon="@Icons.Material.Filled.PrecisionManufacturing" Size="Size.Small" />
+            <MudText Typo="Typo.h6">Orchestrator runs</MudText>
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+                @_runs.Count @(_runs.Count == 1 ? "run" : "runs")
+            </MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Small"
+                           Class="ml-auto" OnClick="ClearCompleted"
+                           Disabled="@(_runs.Count == 0)" aria-label="Clear completed runs" />
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                           OnClick="Close" aria-label="Close" />
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_runs.Count == 0)
+        {
+            <MudText Typo="Typo.body2">
+                No orchestrated runs yet — enable the orchestrator and cards in its enabled
+                columns will be worked here autonomously.
+            </MudText>
+        }
+        else
+        {
+            <div class="yamca-orch-dialog">
+                <div class="yamca-orch-list">
+                    @foreach (var r in _runs)
+                    {
+                        <div class="yamca-orch-list-item @(ReferenceEquals(r, _selected) ? "selected" : "")"
+                             @onclick="@(() => Select(r))">
+                            <MudIcon Icon="@StatusIcon(r)" Color="@StatusColor(r)" Size="Size.Small" />
+                            <div class="yamca-orch-list-text">
+                                <span class="yamca-orch-list-name">#@r.CardId @r.CardTitle</span>
+                                <span class="yamca-orch-list-sub">@r.ColumnDisplayName · @r.StartedAt.LocalDateTime.ToString("HH:mm:ss")</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="yamca-orch-detail yamca-scroll">
+                    @if (_selected is not null)
+                    {
+                        <OrchestratorRunView Run="_selected" @key="_selected.RunId" />
+                    }
+                </div>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .yamca-orch-dialog { display: flex; gap: 12px; min-height: 50vh; }
+    .yamca-orch-list {
+        flex: 0 0 220px;
+        border-right: 1px solid var(--mud-palette-lines-default);
+        overflow: auto;
+        max-height: 70vh;
+    }
+    .yamca-orch-list-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        cursor: pointer;
+        border-radius: 4px;
+    }
+    .yamca-orch-list-item:hover { background: var(--mud-palette-action-default-hover); }
+    .yamca-orch-list-item.selected { background: var(--mud-palette-action-default-selected); }
+    .yamca-orch-list-text { display: flex; flex-direction: column; min-width: 0; }
+    .yamca-orch-list-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .yamca-orch-list-sub { font-size: 0.72rem; color: var(--mud-palette-text-secondary); }
+    .yamca-orch-detail { flex: 1 1 auto; overflow: auto; max-height: 70vh; min-width: 0; }
+</style>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>When set, list only this card's runs (the badge entry point); otherwise
+    /// show everything (the toolbar entry point).</summary>
+    [Parameter] public string? CardId { get; set; }
+
+    private IReadOnlyList<OrchestratorLiveRun> _runs = Array.Empty<OrchestratorLiveRun>();
+    private OrchestratorLiveRun? _selected;
+
+    protected override void OnInitialized()
+    {
+        Registry.Changed += OnRegistryChanged;
+        Refresh();
+        _selected = _runs.FirstOrDefault(r => r.Status == CardRunStatus.Running)
+            ?? _runs.FirstOrDefault();
+    }
+
+    private void OnRegistryChanged() => InvokeAsync(() =>
+    {
+        Refresh();
+        StateHasChanged();
+    });
+
+    private void Refresh()
+    {
+        var all = Registry.Runs;
+        if (CardId is not null)
+            all = all.Where(r => r.CardId == CardId).ToArray();
+        // Newest first so an in-flight run sits at the top of the list.
+        _runs = all.Reverse().ToArray();
+        if (_selected is not null && !_runs.Contains(_selected))
+            _selected = _runs.FirstOrDefault();
+    }
+
+    private void Select(OrchestratorLiveRun r) => _selected = r;
+
+    private void ClearCompleted()
+    {
+        Registry.Clear();
+        _selected = null;
+    }
+
+    private static string StatusIcon(OrchestratorLiveRun r) => r.Status switch
+    {
+        CardRunStatus.Succeeded => Icons.Material.Filled.CheckCircle,
+        CardRunStatus.Failed => Icons.Material.Filled.Error,
+        CardRunStatus.Cancelled => Icons.Material.Filled.Cancel,
+        _ => Icons.Material.Filled.HourglassEmpty,
+    };
+
+    private static Color StatusColor(OrchestratorLiveRun r) => r.Status switch
+    {
+        CardRunStatus.Succeeded => Color.Success,
+        CardRunStatus.Failed => Color.Error,
+        CardRunStatus.Cancelled => Color.Default,
+        _ => Color.Info,
+    };
+
+    private void Close() => MudDialog.Close();
+
+    public void Dispose() => Registry.Changed -= OnRegistryChanged;
+}

@@ -1,0 +1,128 @@
+@using Microsoft.JSInterop
+@using Yamca.Agent.Orchestration
+@using Yamca.Web.Services
+@using Yamca.Web.Services.Orchestration
+
+<div class="yamca-orch-run">
+    <div class="yamca-orch-run-head">
+        <MudIcon Icon="@Icons.Material.Filled.PrecisionManufacturing" Size="Size.Small" />
+        <span class="yamca-orch-run-name">#@Run.CardId @Run.CardTitle</span>
+        <span class="yamca-orch-run-sub">@Run.ColumnDisplayName · ⎇ @Run.Branch · attempt @Run.Attempt</span>
+        @switch (Run.Status)
+        {
+            case CardRunStatus.Running:
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Info"
+                                     Style="width:14px;height:14px;" />
+                <span class="yamca-orch-run-status">running</span>
+                break;
+            case CardRunStatus.Succeeded:
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                <span class="yamca-orch-run-status">done</span>
+                break;
+            case CardRunStatus.Cancelled:
+                <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Default" Size="Size.Small" />
+                <span class="yamca-orch-run-status">cancelled</span>
+                break;
+            default:
+                <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Small" />
+                <span class="yamca-orch-run-status">failed</span>
+                break;
+        }
+        <span class="yamca-orch-run-spacer"></span>
+        <span class="yamca-orch-run-time" title="@Run.StartedAt.LocalDateTime.ToString("F")">
+            @Run.StartedAt.LocalDateTime.ToString("HH:mm:ss")@(Run.Duration is { } d ? $" · {Format(d)}" : "")@TokenSuffix
+        </span>
+    </div>
+
+    <div class="yamca-orch-run-body">
+        @foreach (var turn in Registry.TurnsSnapshot(Run))
+        {
+            <div class="yamca-orch-run-user">@turn.UserMessage</div>
+            <ChatTurnView Turn="turn" OnContinue="NoOp" />
+        }
+
+        @if (Run.Status is not CardRunStatus.Running && !string.IsNullOrEmpty(Run.FailureReason))
+        {
+            <MudText Typo="Typo.caption" Class="mt-2" Style="color:var(--mud-palette-text-secondary)">
+                @(Run.Status == CardRunStatus.Cancelled ? "Cancelled" : "Failure")
+            </MudText>
+            <pre class="yamca-orch-run-result is-error">@Run.FailureReason</pre>
+        }
+
+        <div @ref="_scrollAnchor"></div>
+    </div>
+</div>
+
+<style>
+    .yamca-orch-run-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 2px 8px 2px;
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+        margin-bottom: 8px;
+    }
+    .yamca-orch-run-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .yamca-orch-run-sub { font-size: 0.75rem; color: var(--mud-palette-text-secondary); white-space: nowrap; }
+    .yamca-orch-run-status { font-size: 0.75rem; text-transform: uppercase; color: var(--mud-palette-text-secondary); }
+    .yamca-orch-run-spacer { flex: 1; }
+    .yamca-orch-run-time { font-size: 0.75rem; color: var(--mud-palette-text-secondary); white-space: nowrap; }
+    .yamca-orch-run-user {
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 0.8rem;
+        color: var(--mud-palette-text-secondary);
+        border-left: 3px solid var(--mud-palette-lines-default);
+        padding: 4px 8px;
+        margin: 10px 0 6px 0;
+        max-height: 20vh;
+        overflow: auto;
+    }
+    .yamca-orch-run-result {
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: var(--mud-typography-body2-family);
+        font-size: 0.8rem;
+        margin: 2px 0 0 0;
+        max-height: 40vh;
+        overflow: auto;
+        padding: 8px;
+        border-radius: 4px;
+        background: var(--mud-palette-background-grey);
+    }
+    .yamca-orch-run-result.is-error { color: var(--mud-palette-error); }
+</style>
+
+@code {
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private OrchestratorRunRegistry Registry { get; set; } = default!;
+
+    [Parameter, EditorRequired] public OrchestratorLiveRun Run { get; set; } = default!;
+
+    private ElementReference _scrollAnchor;
+
+    private string TokenSuffix =>
+        Run.PromptTokens + Run.CompletionTokens > 0
+            ? $" · {Run.PromptTokens + Run.CompletionTokens:n0} tok"
+            : "";
+
+    // Same stick-to-bottom behaviour as the subagent transcript: the dialog re-renders on
+    // every streamed event, and the anchor keeps a running transcript pinned to the bottom
+    // unless the viewer scrolls up.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("yamcaChat.scrollIfSticky", _scrollAnchor);
+        }
+        catch (JSDisconnectedException) { /* circuit gone */ }
+        catch (TaskCanceledException)   { /* tab closing */ }
+    }
+
+    private static readonly EventCallback NoOp = EventCallback.Empty;
+
+    private static string Format(TimeSpan d) =>
+        d.TotalSeconds < 1 ? $"{d.TotalMilliseconds:0} ms"
+        : d.TotalMinutes < 1 ? $"{d.TotalSeconds:0.0} s"
+        : $"{(int)d.TotalMinutes}m {d.Seconds}s";
+}

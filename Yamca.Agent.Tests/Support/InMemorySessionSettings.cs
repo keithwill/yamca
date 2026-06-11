@@ -16,4 +16,5 @@ internal sealed class InMemorySessionSettings : ISessionSettings
     public DeferredToolsHint DeferredToolsHint { get; set; } = DeferredToolsHint.Names;
     public int MaxToolIterations { get; set; } = 10;
     public ShellPreference ShellPreference { get; set; } = ShellPreference.Auto;
+    public OrchestratorSettings Orchestrator { get; set; } = OrchestratorSettings.Default;
 }

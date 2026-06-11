@@ -406,6 +406,17 @@ h1:focus {
     flex-wrap: wrap;
     margin-top: 0.25rem;
 }
+/* Orchestrator status badge on a card: icon + word, clickable to open the run viewer. */
+.yamca-board-card-orch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    cursor: pointer;
+}
+.yamca-board-card-orch:hover {
+    opacity: 1;
+    text-decoration: underline;
+}
 .yamca-board-empty {
     font-size: 0.8rem;
     opacity: 0.5;

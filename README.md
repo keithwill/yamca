@@ -49,6 +49,7 @@ Yamca listening on http://127.0.0.1:51234  (workspace: C:\Repos\yamca)
 ## Features
 
 - **[Dev Board](https://github.com/keithwill/yamca/blob/main/doc/dev-board.md)** — a local, uncommitted Kanban scratchpad that drives your immediate work through AI-assisted steps.
+- **[Orchestrator](https://github.com/keithwill/yamca/blob/main/doc/orchestrator.md)** — Symphony-inspired autonomous mode for the board: enabled columns are worked headlessly, card by card, with retries, live transcripts, and a hard off switch.
 - **[Chat Sessions](https://github.com/keithwill/yamca/blob/main/doc/chat-sessions.md)** — streaming, tool-using conversations (up to 4 at once), with persistence, compaction, and a split view.
 - **[Endpoints](https://github.com/keithwill/yamca/blob/main/doc/endpoints.md)** — OpenAI-compatible LLM backends (llama.cpp, vllm, OpenAI).
 - **[Tools & Permissions](https://github.com/keithwill/yamca/blob/main/doc/tools-and-permissions.md)** — the agent's file, search, execution, and code-intelligence tools, gated by an Allow/Ask/Deny permission model with the option for deferred loading.

@@ -44,4 +44,8 @@ public interface ISessionSettings
     /// <see cref="Tools.ShellExecution.ShellPreference.Auto"/> keeps per-OS auto-detection; any
     /// other value forces a specific shell, falling back to Auto when it is not installed.</summary>
     Tools.ShellExecution.ShellPreference ShellPreference { get; }
+
+    /// <summary>Project-tier board-orchestrator configuration. The orchestrator re-reads this
+    /// every poll tick, so edits apply to future dispatch without a restart.</summary>
+    OrchestratorSettings Orchestrator { get; }
 }

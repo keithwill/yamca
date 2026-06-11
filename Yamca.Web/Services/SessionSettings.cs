@@ -36,6 +36,21 @@ public sealed class SessionSettings : ISessionSettings
     private const DeferredToolsHint DefaultDeferredToolsHint = DeferredToolsHint.Names;
     private const ShellPreference DefaultShellPreference = ShellPreference.Auto;
 
+    // Clamp ranges for the orchestrator's numeric settings, applied both when the UI
+    // mutates them (SetOrchestrator) and when a blob is hydrated off disk.
+    private const int MinOrchestratorConcurrency = 1;
+    private const int MaxOrchestratorConcurrency = 16;
+    private const int MinOrchestratorTurns = 1;
+    private const int MaxOrchestratorTurns = 20;
+    private const int MinOrchestratorTimeoutSeconds = 10;
+    private const int MaxOrchestratorTimeoutSeconds = 7200;
+    private const int MinOrchestratorRetryAttempts = 0;
+    private const int MaxOrchestratorRetryAttempts = 10;
+    private const int MinOrchestratorRetryDelaySeconds = 1;
+    private const int MaxOrchestratorRetryDelaySeconds = 7200;
+    private const int MinOrchestratorPollSeconds = 2;
+    private const int MaxOrchestratorPollSeconds = 300;
+
     public static readonly IReadOnlyList<string> DefaultUserInstructionFiles =
         new[] { "AGENTS.md", "CLAUDE.md", "GEMINI.md" };
 
@@ -66,6 +81,8 @@ public sealed class SessionSettings : ISessionSettings
 
     public SubagentRegistry UserSubagents { get; private set; } = SubagentRegistry.Empty;
     public SubagentRegistry ProjectSubagents { get; private set; } = SubagentRegistry.Empty;
+
+    public OrchestratorSettings Orchestrator { get; private set; } = OrchestratorSettings.Default;
 
     /// <summary>Fired when the named tier has been mutated. The handler is expected
     /// to serialize that tier and write it to disk.</summary>
@@ -241,6 +258,44 @@ public sealed class SessionSettings : ISessionSettings
         else UserSubagents = registry;
         Changed?.Invoke(tier);
     }
+
+    /// <summary>Replace the orchestrator configuration (project tier). Numeric fields are
+    /// clamped to the same ranges hydration applies, so the live value never depends on
+    /// whether it arrived from the UI or from disk.</summary>
+    public void SetOrchestrator(OrchestratorSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        Orchestrator = ClampOrchestrator(settings);
+        Changed?.Invoke(SettingsTier.Project);
+    }
+
+    private static OrchestratorSettings ClampOrchestrator(OrchestratorSettings s) => s with
+    {
+        EnabledColumns = s.EnabledColumns
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList(),
+        MaxConcurrentRuns = Math.Clamp(s.MaxConcurrentRuns, MinOrchestratorConcurrency, MaxOrchestratorConcurrency),
+        MaxConcurrentRunsPerColumn = s.MaxConcurrentRunsPerColumn is int pc
+            ? Math.Clamp(pc, MinOrchestratorConcurrency, MaxOrchestratorConcurrency)
+            : null,
+        MaxTurnsPerRun = Math.Clamp(s.MaxTurnsPerRun, MinOrchestratorTurns, MaxOrchestratorTurns),
+        MaxToolIterationsPerTurn = s.MaxToolIterationsPerTurn is int ti
+            ? Math.Clamp(ti, MinMaxToolIterations, MaxMaxToolIterations)
+            : null,
+        StallTimeoutSeconds = Math.Clamp(s.StallTimeoutSeconds, MinOrchestratorTimeoutSeconds, MaxOrchestratorTimeoutSeconds),
+        TurnTimeoutSeconds = Math.Clamp(s.TurnTimeoutSeconds, MinOrchestratorTimeoutSeconds, MaxOrchestratorTimeoutSeconds),
+        RetryMaxAttempts = Math.Clamp(s.RetryMaxAttempts, MinOrchestratorRetryAttempts, MaxOrchestratorRetryAttempts),
+        RetryBaseDelaySeconds = Math.Clamp(s.RetryBaseDelaySeconds, MinOrchestratorRetryDelaySeconds, MaxOrchestratorRetryDelaySeconds),
+        RetryMaxDelaySeconds = Math.Clamp(s.RetryMaxDelaySeconds, MinOrchestratorRetryDelaySeconds, MaxOrchestratorRetryDelaySeconds),
+        PollIntervalSeconds = Math.Clamp(s.PollIntervalSeconds, MinOrchestratorPollSeconds, MaxOrchestratorPollSeconds),
+        AllowedTools = s.AllowedTools
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList(),
+    };
 
     /// <summary>Reset every user-tier setting to the values it would be seeded with on
     /// first run, while leaving the configured endpoints untouched. Mirrors the
@@ -474,6 +529,7 @@ public sealed class SessionSettings : ISessionSettings
         ProjectInheritsUserInstructions = blob.InheritsUserInstructions ?? true;
         ProjectScripts = ScriptsFromDto(blob.Scripts);
         ProjectSubagents = SubagentsFromDto(blob.Subagents);
+        Orchestrator = OrchestratorFromDto(blob.Orchestrator);
     }
 
     public string SerializeUser() =>
@@ -571,6 +627,7 @@ public sealed class SessionSettings : ISessionSettings
             InheritsUserInstructions = ProjectInheritsUserInstructions ? null : false,
             Scripts = ScriptsToDto(ProjectScripts),
             Subagents = SubagentsToDto(ProjectSubagents),
+            Orchestrator = OrchestratorToDto(Orchestrator),
         };
         return JsonSerializer.Serialize(blob, JsonOptions);
     }
@@ -648,6 +705,7 @@ public sealed class SessionSettings : ISessionSettings
         public bool? InheritsUserInstructions { get; set; }
         public ScriptsDto? Scripts { get; set; }
         public List<SubagentDto>? Subagents { get; set; }
+        public OrchestratorDto? Orchestrator { get; set; }
     }
 
     private sealed class EndpointDto
@@ -826,5 +884,86 @@ public sealed class SessionSettings : ISessionSettings
             EndpointId = a.EndpointId,
             MaxIterations = a.MaxIterations,
         }).ToList();
+    }
+
+    private sealed class OrchestratorDto
+    {
+        public List<string>? EnabledColumns { get; set; }
+        public Guid? EndpointId { get; set; }
+        public int? MaxConcurrentRuns { get; set; }
+        public int? MaxConcurrentRunsPerColumn { get; set; }
+        public int? MaxTurnsPerRun { get; set; }
+        public int? MaxToolIterationsPerTurn { get; set; }
+        public int? StallTimeoutSeconds { get; set; }
+        public int? TurnTimeoutSeconds { get; set; }
+        public int? RetryMaxAttempts { get; set; }
+        public int? RetryBaseDelaySeconds { get; set; }
+        public int? RetryMaxDelaySeconds { get; set; }
+        public int? PollIntervalSeconds { get; set; }
+        public List<string>? AllowedTools { get; set; }
+        public bool? RestrictToWorkspace { get; set; }
+    }
+
+    // Missing fields fall back to OrchestratorSettings.Default per field, then everything is
+    // clamped — so a hand-edited project.json can never hydrate out-of-range live values.
+    private static OrchestratorSettings OrchestratorFromDto(OrchestratorDto? dto)
+    {
+        if (dto is null) return OrchestratorSettings.Default;
+        var d = OrchestratorSettings.Default;
+        return ClampOrchestrator(new OrchestratorSettings(
+            EnabledColumns: dto.EnabledColumns ?? d.EnabledColumns,
+            EndpointId: dto.EndpointId,
+            MaxConcurrentRuns: dto.MaxConcurrentRuns ?? d.MaxConcurrentRuns,
+            MaxConcurrentRunsPerColumn: dto.MaxConcurrentRunsPerColumn,
+            MaxTurnsPerRun: dto.MaxTurnsPerRun ?? d.MaxTurnsPerRun,
+            MaxToolIterationsPerTurn: dto.MaxToolIterationsPerTurn,
+            StallTimeoutSeconds: dto.StallTimeoutSeconds ?? d.StallTimeoutSeconds,
+            TurnTimeoutSeconds: dto.TurnTimeoutSeconds ?? d.TurnTimeoutSeconds,
+            RetryMaxAttempts: dto.RetryMaxAttempts ?? d.RetryMaxAttempts,
+            RetryBaseDelaySeconds: dto.RetryBaseDelaySeconds ?? d.RetryBaseDelaySeconds,
+            RetryMaxDelaySeconds: dto.RetryMaxDelaySeconds ?? d.RetryMaxDelaySeconds,
+            PollIntervalSeconds: dto.PollIntervalSeconds ?? d.PollIntervalSeconds,
+            AllowedTools: dto.AllowedTools ?? d.AllowedTools,
+            RestrictToWorkspace: dto.RestrictToWorkspace ?? d.RestrictToWorkspace));
+    }
+
+    // Emit null when the whole record still matches the defaults so a project that never
+    // touched the orchestrator keeps a clean project.json (same idea as ScriptsToDto).
+    private static OrchestratorDto? OrchestratorToDto(OrchestratorSettings s)
+    {
+        var d = OrchestratorSettings.Default;
+        var isDefault = s.EnabledColumns.Count == 0
+            && s.EndpointId is null
+            && s.MaxConcurrentRuns == d.MaxConcurrentRuns
+            && s.MaxConcurrentRunsPerColumn is null
+            && s.MaxTurnsPerRun == d.MaxTurnsPerRun
+            && s.MaxToolIterationsPerTurn is null
+            && s.StallTimeoutSeconds == d.StallTimeoutSeconds
+            && s.TurnTimeoutSeconds == d.TurnTimeoutSeconds
+            && s.RetryMaxAttempts == d.RetryMaxAttempts
+            && s.RetryBaseDelaySeconds == d.RetryBaseDelaySeconds
+            && s.RetryMaxDelaySeconds == d.RetryMaxDelaySeconds
+            && s.PollIntervalSeconds == d.PollIntervalSeconds
+            && s.AllowedTools.SequenceEqual(d.AllowedTools, StringComparer.Ordinal)
+            && s.RestrictToWorkspace == d.RestrictToWorkspace;
+        if (isDefault) return null;
+
+        return new OrchestratorDto
+        {
+            EnabledColumns = s.EnabledColumns.Count == 0 ? null : s.EnabledColumns.ToList(),
+            EndpointId = s.EndpointId,
+            MaxConcurrentRuns = s.MaxConcurrentRuns,
+            MaxConcurrentRunsPerColumn = s.MaxConcurrentRunsPerColumn,
+            MaxTurnsPerRun = s.MaxTurnsPerRun,
+            MaxToolIterationsPerTurn = s.MaxToolIterationsPerTurn,
+            StallTimeoutSeconds = s.StallTimeoutSeconds,
+            TurnTimeoutSeconds = s.TurnTimeoutSeconds,
+            RetryMaxAttempts = s.RetryMaxAttempts,
+            RetryBaseDelaySeconds = s.RetryBaseDelaySeconds,
+            RetryMaxDelaySeconds = s.RetryMaxDelaySeconds,
+            PollIntervalSeconds = s.PollIntervalSeconds,
+            AllowedTools = s.AllowedTools.ToList(),
+            RestrictToWorkspace = s.RestrictToWorkspace,
+        };
     }
 }
