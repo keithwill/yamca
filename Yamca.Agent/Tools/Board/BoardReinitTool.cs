@@ -21,7 +21,7 @@ public sealed class BoardReinitTool : ITool
 
     public string Description =>
         "Restore the dev board to the default column layout (idea, analyze, implement, verify, done) " +
-        "and reset all instructions.md files to their defaults. Cards already in a default column stay " +
+        "and reset all step instructions to their defaults. Cards already in a default column stay " +
         "in place; cards in unknown columns are moved to the idea column. Pass wipe:true to delete all " +
         "cards instead. Use this when the board structure has been accidentally corrupted or removed.";
 

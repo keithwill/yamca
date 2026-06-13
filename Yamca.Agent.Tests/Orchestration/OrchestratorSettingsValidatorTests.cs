@@ -8,29 +8,26 @@ namespace Yamca.Agent.Tests.Orchestration;
 [TestFixture]
 public class OrchestratorSettingsValidatorTests
 {
+    // analyze is a work column (has instructions); done is resting (none).
     private static readonly BoardSnapshot Board = new(new[]
     {
-        new BoardColumn("20-analyze", 20, "analyze", @"C:\board\20-analyze", Array.Empty<BoardCard>()),
-        new BoardColumn("50-done", 50, "done", @"C:\board\50-done", Array.Empty<BoardCard>()),
+        new BoardColumn("analyze-id", 20, "analyze", "Analyze the card.", Array.Empty<BoardCard>()),
+        new BoardColumn("done-id", 50, "done", null, Array.Empty<BoardCard>()),
     });
 
     private static readonly EndpointsSettings Endpoints = new(
         new[] { new EndpointSettings(Guid.NewGuid(), "local", "http://localhost:8080/v1", "", "model") },
         DefaultId: Guid.Empty);
 
-    // 20-analyze is a work column; 50-done is resting.
-    private static bool HasInstructions(string dir) =>
-        string.Equals(dir, "20-analyze", StringComparison.OrdinalIgnoreCase);
-
     private static OrchestratorSettings Valid => OrchestratorSettings.Default with
     {
-        EnabledColumns = new[] { "20-analyze" },
+        EnabledColumns = new[] { "analyze-id" },
     };
 
     [Test]
     public void ValidConfig_NoErrors()
     {
-        var result = OrchestratorSettingsValidator.Validate(Valid, Endpoints, Board, HasInstructions);
+        var result = OrchestratorSettingsValidator.Validate(Valid, Endpoints, Board);
 
         Assert.That(result.IsValid, Is.True);
         Assert.That(result.Warnings, Is.Empty);
@@ -40,7 +37,7 @@ public class OrchestratorSettingsValidatorTests
     public void NoEnabledColumns_Error()
     {
         var result = OrchestratorSettingsValidator.Validate(
-            Valid with { EnabledColumns = Array.Empty<string>() }, Endpoints, Board, HasInstructions);
+            Valid with { EnabledColumns = Array.Empty<string>() }, Endpoints, Board);
 
         Assert.That(result.IsValid, Is.False);
         Assert.That(result.Errors, Has.Some.Contains("No board columns"));
@@ -50,16 +47,16 @@ public class OrchestratorSettingsValidatorTests
     public void UnknownColumn_Error()
     {
         var result = OrchestratorSettingsValidator.Validate(
-            Valid with { EnabledColumns = new[] { "99-ghost" } }, Endpoints, Board, HasInstructions);
+            Valid with { EnabledColumns = new[] { "ghost-id" } }, Endpoints, Board);
 
-        Assert.That(result.Errors, Has.Some.Contains("99-ghost"));
+        Assert.That(result.Errors, Has.Some.Contains("no longer exists"));
     }
 
     [Test]
     public void RestingColumn_Error()
     {
         var result = OrchestratorSettingsValidator.Validate(
-            Valid with { EnabledColumns = new[] { "50-done" } }, Endpoints, Board, HasInstructions);
+            Valid with { EnabledColumns = new[] { "done-id" } }, Endpoints, Board);
 
         Assert.That(result.Errors, Has.Some.Contains("no step instructions"));
     }
@@ -69,7 +66,7 @@ public class OrchestratorSettingsValidatorTests
     {
         var empty = new EndpointsSettings(Array.Empty<EndpointSettings>(), Guid.Empty);
 
-        var result = OrchestratorSettingsValidator.Validate(Valid, empty, Board, HasInstructions);
+        var result = OrchestratorSettingsValidator.Validate(Valid, empty, Board);
 
         Assert.That(result.Errors, Has.Some.Contains("No endpoints"));
     }
@@ -78,7 +75,7 @@ public class OrchestratorSettingsValidatorTests
     public void StaleEndpointId_Error()
     {
         var result = OrchestratorSettingsValidator.Validate(
-            Valid with { EndpointId = Guid.NewGuid() }, Endpoints, Board, HasInstructions);
+            Valid with { EndpointId = Guid.NewGuid() }, Endpoints, Board);
 
         Assert.That(result.Errors, Has.Some.Contains("endpoint"));
     }
@@ -87,7 +84,7 @@ public class OrchestratorSettingsValidatorTests
     public void EmptyToolList_Error()
     {
         var result = OrchestratorSettingsValidator.Validate(
-            Valid with { AllowedTools = Array.Empty<string>() }, Endpoints, Board, HasInstructions);
+            Valid with { AllowedTools = Array.Empty<string>() }, Endpoints, Board);
 
         Assert.That(result.Errors, Has.Some.Contains("allowed-tools"));
     }
@@ -96,7 +93,7 @@ public class OrchestratorSettingsValidatorTests
     public void MissingBoardMoveCard_WarnsButValid()
     {
         var result = OrchestratorSettingsValidator.Validate(
-            Valid with { AllowedTools = new[] { "read_file" } }, Endpoints, Board, HasInstructions);
+            Valid with { AllowedTools = new[] { "read_file" } }, Endpoints, Board);
 
         Assert.That(result.IsValid, Is.True);
         Assert.That(result.Warnings, Has.Some.Contains("board_move_card"));

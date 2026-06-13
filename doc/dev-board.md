@@ -7,33 +7,39 @@ pipeline of AI-assisted steps. It lives at `/board` in the web UI.
 
 ## Where the board lives
 
-The board is a personal scratchpad — a plain, **uncommitted** directory at
-`.yamca/board` (gitignored), for the current user's immediate work. It is local
-only: never committed, tracked, or pushed, so board churn is never shared with
-your team. Each board mutation (add, move, edit, delete) is just a file write.
-Because it sits at the repository root, the one board is shared across every
+The board is a personal scratchpad — local, **uncommitted** state for the current
+user's immediate work. It is stored in `.yamca/yamca.db`, a single
+[VestPocket](https://github.com/pocketsol/VestPocket) document store (gitignored,
+shared by other local yamca data), under path-like keys: each column at
+`/board/column/{id}` and each card at `/board/card/{id}`. It is local only: never
+committed, tracked, or pushed, so board churn is never shared with your team.
+Because the store sits at the repository root, the one board is shared across every
 chat session regardless of which code branch or worktree the session is on.
 
 ## Columns
 
-Columns are materialized from numeric-prefixed directories (e.g.
-`10-idea`, `30-implement`). The numeric prefix sets the column order; the
-remainder is the display name. The default layout is
-**idea → analyze → implement → verify → done**.
+Each column has a generated, opaque **id** that is independent of its display name,
+plus an order that sets its position. The default layout is
+**idea → analyze → implement → verify → done**. Because the id is stable and
+distinct from the name, dropping and re-adding a column produces a fresh record —
+a stale id always refers to a dead column, never a quickly re-added one.
 
-- A column whose `instructions.md` has content is a **work step**: opening or
+- A column whose instructions have content is a **work step**: opening or
   running a card there starts an AI chat session seeded with those
   instructions. Work columns show a chat icon in the header.
-- A column with an empty `instructions.md` is a **resting column**: cards are
+- A column with no instructions is a **resting column**: cards are
   simply promoted onward without running a step.
 
 Edit a column's instructions via the gear icon on its header.
 
 ## Cards
 
-A card is a single markdown file living in its current column's directory, with
-YAML frontmatter (`id`, `title`, optional `priority` and `branch`) and a
-markdown body.
+A card is a stored aggregate: a title, an optional priority and branch, the id of
+the column it currently lives in, a markdown body, and its subtasks (each with its
+own done-state). Moving a card just rewrites its column id; there is no file to
+relocate. The board tools exchange a card as one markdown document — frontmatter
+(`id`, `title`, optional `priority` and `branch`) plus the body and its `- [ ]`
+checklist — so the agent-facing format is unchanged.
 
 - **Create** — the `+` button on the first column adds a card. The new-card
   dialog includes a branch field that defaults to the id-prefixed slug of the
@@ -41,9 +47,9 @@ markdown body.
   Every card is therefore born with a `branch:` already decided.
 - **Priority** — `high` / `normal` / `low`; cards sort high → normal → low
   within a column. High/low priority is shown on the card.
-- **Subtasks** — GitHub-style `- [ ]` / `- [x]` checklist lines in the body
-  render as a done/total count on the card.
-- **Branch** — the `branch:` frontmatter names the git branch the card lives on,
+- **Subtasks** — GitHub-style `- [ ]` / `- [x]` checklist lines in the body are
+  stored as the card's subtasks and render as a done/total count on the card.
+- **Branch** — the card's branch names the git branch the card lives on,
   shared by all its steps. It is editable from the card detail dialog on any
   card not yet bound to a live worktree — including cards in resting columns —
   and a change is saved on close. Choosing a branch does **not** create a
@@ -53,7 +59,7 @@ markdown body.
 ## Moving cards
 
 - **Drag and drop** a card between lanes. Moves are optimistic (the card jumps
-  immediately) with the file move running in the background; a spinner overlay
+  immediately) with the store write running in the background; a spinner overlay
   shows the in-flight work.
 - **Promote** a card to the next column from the card detail dialog.
 
@@ -63,10 +69,10 @@ Opening a card in a work column shows its detail dialog with a **Run Step**
 button; clicking that (or the per-card play button, which skips the dialog)
 starts an AI chat session:
 
-1. The card is bound to its branch (`branch:` frontmatter written).
+1. The card is bound to its branch (its `branch` is saved).
 2. A code worktree is forked off the base branch (or reused/recreated if it was
    deleted or merged).
-3. The card (title + body) plus the column's `instructions.md` seed the session.
+3. The card (title + body) plus the column's instructions seed the session.
 4. You're navigated to the chat with the seeded prompt pre-filled and sent automatically.
 
 The play button appears on cards in work columns when at least one endpoint is

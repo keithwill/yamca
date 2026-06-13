@@ -7,7 +7,7 @@ public sealed record OrchestratorRunInfo(
     string RunId,
     string CardId,
     string CardTitle,
-    string ColumnDirectory,
+    string ColumnId,
     string ColumnDisplayName,
     string Branch,
     string WorktreePath,

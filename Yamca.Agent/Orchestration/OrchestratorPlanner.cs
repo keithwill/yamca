@@ -38,7 +38,7 @@ public static class OrchestratorPlanner
 
         foreach (var column in board.Columns)
         {
-            if (!enabled.Contains(column.DirectoryName)) continue;
+            if (!enabled.Contains(column.Id)) continue;
             foreach (var card in column.Cards)
             {
                 if (states.TryGetValue(card.Id, out var state))
@@ -75,9 +75,9 @@ public static class OrchestratorPlanner
             if (taken.Count >= globalSlots) break;
             if (settings.MaxConcurrentRunsPerColumn is int cap)
             {
-                var inColumn = perColumn.GetValueOrDefault(column.DirectoryName);
+                var inColumn = perColumn.GetValueOrDefault(column.Id);
                 if (inColumn >= cap) continue;
-                perColumn[column.DirectoryName] = inColumn + 1;
+                perColumn[column.Id] = inColumn + 1;
             }
             taken.Add((card, column));
         }
@@ -96,10 +96,10 @@ public static class OrchestratorPlanner
         if (card is null)
             return ReconcileAction.CancelDeleted;
 
-        if (!string.Equals(card.ColumnDirectory, state.ColumnDirectory, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(card.ColumnId, state.ColumnId, StringComparison.OrdinalIgnoreCase))
             return ReconcileAction.CompleteAsMoved;
 
-        if (!settings.EnabledColumns.Contains(state.ColumnDirectory, StringComparer.OrdinalIgnoreCase))
+        if (!settings.EnabledColumns.Contains(state.ColumnId, StringComparer.OrdinalIgnoreCase))
             return ReconcileAction.CancelColumnDisabled;
 
         return ReconcileAction.None;

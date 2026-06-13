@@ -122,7 +122,7 @@
                          Variant="Variant.Text" Disabled="@_busy">
                     @foreach (var col in MoveTargets)
                     {
-                        <MudMenuItem OnClick="@(() => Move(col.DirectoryName))">@col.DisplayName</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => Move(col.Id))">@col.DisplayName</MudMenuItem>
                     }
                 </MudMenu>
             </MudTooltip>
@@ -201,7 +201,7 @@
     [Parameter, EditorRequired] public BoardCard Card { get; set; } = default!;
     [Parameter] public string ColumnDisplayName { get; set; } = "";
 
-    /// <summary>True when the card's column is a work step (has an <c>instructions.md</c>): the
+    /// <summary>True when the card's column is a work step (has step instructions): the
     /// dialog offers a chat-backed step run. When false the column is a resting column and the
     /// dialog offers a plain promote to the next column instead (no chat).</summary>
     [Parameter] public bool IsWorkColumn { get; set; }
@@ -236,18 +236,18 @@
     /// current column is excluded at render time.</summary>
     [Parameter] public IReadOnlyList<ColumnOption> Columns { get; set; } = Array.Empty<ColumnOption>();
 
-    /// <summary>Directory name of the column the card is currently in, so the picker can omit it.</summary>
-    [Parameter] public string CurrentColumnDirectory { get; set; } = "";
+    /// <summary>Id of the column the card is currently in, so the picker can omit it.</summary>
+    [Parameter] public string CurrentColumnId { get; set; } = "";
 
     /// <summary>A move target offered by the "Move to…" picker.</summary>
-    public sealed record ColumnOption(string DirectoryName, string DisplayName);
+    public sealed record ColumnOption(string Id, string DisplayName);
 
     /// <summary>What the dialog hands back to the page when the user runs a step. The page
     /// re-checks branch/worktree existence at run time, so the chosen branch is all it needs.</summary>
     public sealed record Result(Guid EndpointId, string Branch);
 
     /// <summary>Handed back when the user promotes a card out of a resting column. The page moves
-    /// the card to the next column on disk; there is no chat run, branch, or endpoint involved.</summary>
+    /// the card to the next column; there is no chat run, branch, or endpoint involved.</summary>
     public sealed record Promotion;
 
     /// <summary>Handed back when the user wants to merge a branch-bound card's branch back into the
@@ -259,25 +259,24 @@
     /// worktree and navigates to a chat bound to it.</summary>
     public sealed record OpenChatRequest;
 
-    /// <summary>Handed back when the user picks a column from the "Move to…" menu. The page relocates
-    /// the card's file to <paramref name="ToColumnDirectory"/>.</summary>
-    public sealed record MoveRequest(string ToColumnDirectory);
+    /// <summary>Handed back when the user picks a column from the "Move to…" menu. The page moves
+    /// the card to <paramref name="ToColumnId"/>.</summary>
+    public sealed record MoveRequest(string ToColumnId);
 
     /// <summary>Handed back when the user confirms deletion of this card. The page deletes the card
     /// file from the board.</summary>
     public sealed record DeleteRequest;
 
-    /// <summary>Handed back when the user changed the priority and clicked Close. The page writes
-    /// the updated <c>priority:</c> frontmatter field to the card file.</summary>
+    /// <summary>Handed back when the user changed the priority and clicked Close. The page saves
+    /// the updated priority on the card.</summary>
     public sealed record PriorityUpdate(CardPriority Priority);
 
     /// <summary>Handed back when the user edits the title and/or markdown body and clicks Save. The
-    /// page writes the new title (frontmatter) and body (frontmatter otherwise preserved) to the
-    /// card file.</summary>
+    /// page saves the new title and body (whose checklist lines become the card's subtasks).</summary>
     public sealed record BodyUpdate(string Title, string Body);
 
     /// <summary>Handed back when the user changed the branch field (on a card that isn't bound to a
-    /// live worktree) and closed the dialog. The page writes the <c>branch:</c> frontmatter; no
+    /// live worktree) and closed the dialog. The page saves the card's branch; no
     /// worktree is created — that still waits for the first run/chat on the card.</summary>
     public sealed record BranchUpdate(string Branch);
 
@@ -295,7 +294,7 @@
     private bool HasWorktree => !string.IsNullOrEmpty(WorktreePath);
     private bool _changesTabOpened;
 
-    // The card names an intended branch in its frontmatter…
+    // The card names an intended branch…
     private bool HasBranchAttribute => !string.IsNullOrWhiteSpace(Card.Branch);
 
     // …but the binding is only *live* when that branch also has a worktree right now. A card with a
@@ -309,7 +308,7 @@
 
     // Every column except the one the card is already in is a valid move target (forward or back).
     private IReadOnlyList<ColumnOption> MoveTargets =>
-        Columns.Where(c => !string.Equals(c.DirectoryName, CurrentColumnDirectory, StringComparison.Ordinal)).ToList();
+        Columns.Where(c => !string.Equals(c.Id, CurrentColumnId, StringComparison.Ordinal)).ToList();
 
     private bool BranchExists =>
         !string.IsNullOrWhiteSpace(_branch) &&
@@ -385,7 +384,7 @@
 
     private void Promote() => Dialog.Close(DialogResult.Ok(new Promotion()));
 
-    private void Move(string toColumnDirectory) => Dialog.Close(DialogResult.Ok(new MoveRequest(toColumnDirectory)));
+    private void Move(string toColumnId) => Dialog.Close(DialogResult.Ok(new MoveRequest(toColumnId)));
 
     private void Merge() => Dialog.Close(DialogResult.Ok(new MergeRequest()));
 

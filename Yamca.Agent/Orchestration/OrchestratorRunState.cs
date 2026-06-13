@@ -22,7 +22,7 @@ public enum CardRunStatus
 /// snapshots.</summary>
 public sealed record CardOrchestrationState(
     string CardId,
-    string ColumnDirectory,
+    string ColumnId,
     CardRunStatus Status,
     int Attempts,
     DateTimeOffset? NextAttemptUtc,

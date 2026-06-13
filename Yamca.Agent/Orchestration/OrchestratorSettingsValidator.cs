@@ -18,18 +18,14 @@ public sealed record OrchestratorValidationResult(
 /// validation failure skips dispatch but never stops reconciliation).</summary>
 public static class OrchestratorSettingsValidator
 {
-    /// <param name="columnHasInstructions">Whether a column directory has non-blank
-    /// <c>instructions.md</c> — i.e. is a work column (see <see cref="BoardService.HasInstructions"/>).</param>
     public static OrchestratorValidationResult Validate(
         OrchestratorSettings settings,
         EndpointsSettings endpoints,
-        BoardSnapshot board,
-        Func<string, bool> columnHasInstructions)
+        BoardSnapshot board)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(endpoints);
         ArgumentNullException.ThrowIfNull(board);
-        ArgumentNullException.ThrowIfNull(columnHasInstructions);
 
         var errors = new List<string>();
         var warnings = new List<string>();
@@ -37,14 +33,14 @@ public static class OrchestratorSettingsValidator
         if (settings.EnabledColumns.Count == 0)
             errors.Add("No board columns are enabled for orchestration.");
 
-        foreach (var dir in settings.EnabledColumns)
+        foreach (var columnId in settings.EnabledColumns)
         {
             var column = board.Columns.FirstOrDefault(c =>
-                string.Equals(c.DirectoryName, dir, StringComparison.OrdinalIgnoreCase));
+                string.Equals(c.Id, columnId, StringComparison.OrdinalIgnoreCase));
             if (column is null)
-                errors.Add($"Enabled column '{dir}' does not exist on the board.");
-            else if (!columnHasInstructions(column.DirectoryName))
-                errors.Add($"Enabled column '{dir}' has no step instructions (instructions.md is empty), so there is nothing to run.");
+                errors.Add($"An enabled column no longer exists on the board.");
+            else if (string.IsNullOrWhiteSpace(column.Instructions))
+                errors.Add($"Enabled column '{column.DisplayName}' has no step instructions, so there is nothing to run.");
         }
 
         if (endpoints.Items.Count == 0)

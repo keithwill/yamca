@@ -41,8 +41,9 @@ dotnet run --project Yamca.Web   # run the app locally (boots in Production)
 - **Permissions** — every tool call is gated Allow/Ask/Deny by `IPermissionResolver`;
   "Ask" routes through `IApprovalCoordinator` to a UI prompt.
 - **Local state lives under `.yamca/`** at the repo root (gitignored, never committed):
-  chat history (`.yamca/chat`), the dev board (`.yamca/board`), worktrees. User-tier
-  settings and `mcp.json` live in the OS per-user config dir, out of the workspace.
+  chat history (`.yamca/chat`), the dev board in the shared VestPocket store
+  (`.yamca/yamca.db`), worktrees. User-tier settings and `mcp.json` live in the OS
+  per-user config dir, out of the workspace.
 
 ## Conventions
 

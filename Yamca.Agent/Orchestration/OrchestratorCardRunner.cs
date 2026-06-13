@@ -45,12 +45,10 @@ public sealed class OrchestratorCardRunner
     private const int FailureTailChars = 600;
 
     private readonly BoardStore _boardStore;
-    private readonly BoardService _boardService;
 
-    public OrchestratorCardRunner(BoardStore boardStore, BoardService boardService)
+    public OrchestratorCardRunner(BoardStore boardStore)
     {
         _boardStore = boardStore;
-        _boardService = boardService;
     }
 
     public async Task<OrchestratorRunResult> RunAsync(OrchestratorRunRequest req, CancellationToken cancellationToken)
@@ -209,11 +207,10 @@ public sealed class OrchestratorCardRunner
 
     private async Task<bool> CardMovedAsync(OrchestratorRunRequest req)
     {
-        var boardRoot = await _boardStore.EnsureAsync(CancellationToken.None).ConfigureAwait(false);
-        var snapshot = _boardService.Read(boardRoot);
+        var snapshot = await _boardStore.ReadAsync(CancellationToken.None).ConfigureAwait(false);
         var card = snapshot.FindCard(req.Card.Id);
         return card is null
-            || !string.Equals(card.ColumnDirectory, req.Column.DirectoryName, StringComparison.OrdinalIgnoreCase);
+            || !string.Equals(card.ColumnId, req.Column.Id, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string TurnsExhaustedMessage(OrchestratorRunRequest req, string lastAssistant)

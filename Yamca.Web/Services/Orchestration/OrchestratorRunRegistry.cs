@@ -15,7 +15,7 @@ public sealed class OrchestratorLiveRun
         RunId = info.RunId;
         CardId = info.CardId;
         CardTitle = info.CardTitle;
-        ColumnDirectory = info.ColumnDirectory;
+        ColumnId = info.ColumnId;
         ColumnDisplayName = info.ColumnDisplayName;
         Branch = info.Branch;
         WorktreePath = info.WorktreePath;
@@ -26,7 +26,7 @@ public sealed class OrchestratorLiveRun
     public string RunId { get; }
     public string CardId { get; }
     public string CardTitle { get; }
-    public string ColumnDirectory { get; }
+    public string ColumnId { get; }
     public string ColumnDisplayName { get; }
     public string Branch { get; }
     public string WorktreePath { get; }

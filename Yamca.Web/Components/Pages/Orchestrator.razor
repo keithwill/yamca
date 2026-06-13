@@ -66,7 +66,7 @@ else
                        MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(DescribeColumns))">
                 @foreach (var col in _workColumns)
                 {
-                    <MudSelectItem T="string" Value="@col.DirectoryName">@col.DisplayName</MudSelectItem>
+                    <MudSelectItem T="string" Value="@col.Id">@col.DisplayName</MudSelectItem>
                 }
             </MudSelect>
             @if (MissingColumns.Count > 0)
@@ -178,7 +178,6 @@ else
     [Inject] private SessionSettings Session { get; set; } = default!;
     [Inject] private SettingsHydrator Hydrator { get; set; } = default!;
     [Inject] private IToolRegistry Tools { get; set; } = default!;
-    [Inject] private BoardService BoardSvc { get; set; } = default!;
     [Inject] private BoardStore BoardStore { get; set; } = default!;
     [Inject] private OrchestratorService Service { get; set; } = default!;
     [Inject] private OrchestratorRunRegistry Registry { get; set; } = default!;
@@ -208,7 +207,7 @@ else
 
     private IReadOnlyList<string> MissingColumns =>
         Settings.EnabledColumns
-            .Where(dir => !_workColumns.Any(c => string.Equals(c.DirectoryName, dir, StringComparison.OrdinalIgnoreCase)))
+            .Where(id => !_workColumns.Any(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase)))
             .ToList();
 
     protected override void OnInitialized()
@@ -228,9 +227,9 @@ else
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToList();
 
-        var boardRoot = await BoardStore.EnsureAsync(CancellationToken.None);
-        _workColumns = BoardSvc.Read(boardRoot).Columns
-            .Where(c => BoardSvc.HasInstructions(boardRoot, c.DirectoryName))
+        var snapshot = await BoardStore.ReadAsync(CancellationToken.None);
+        _workColumns = snapshot.Columns
+            .Where(c => !string.IsNullOrWhiteSpace(c.Instructions))
             .ToList();
 
         SyncFromSession();
@@ -273,10 +272,10 @@ else
         Update(s => s with { AllowedTools = _allowedTools.OrderBy(t => t, StringComparer.Ordinal).ToList() });
     }
 
-    private string DescribeColumns(IReadOnlyList<string> dirs) =>
-        string.Join(", ", dirs.Select(d =>
-            _workColumns.FirstOrDefault(c => string.Equals(c.DirectoryName, d, StringComparison.OrdinalIgnoreCase))
-                ?.DisplayName ?? d));
+    private string DescribeColumns(IReadOnlyList<string> ids) =>
+        string.Join(", ", ids.Select(id =>
+            _workColumns.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase))
+                ?.DisplayName ?? id));
 
     private async Task OpenRunsAsync()
     {

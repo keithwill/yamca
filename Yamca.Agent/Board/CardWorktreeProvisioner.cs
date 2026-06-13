@@ -58,24 +58,19 @@ public sealed class CardWorktreeProvisioner
         return ProvisionResult.Ok(new WorktreeInfo(branch, baseBranch, path, _workspace.RootPath));
     }
 
-    /// <summary>Bind a card to its branch by writing the <c>branch:</c> frontmatter. The board is
-    /// plain on-disk state, so this is just a card-file write under the board lock. Returns null
-    /// on success or an error message on failure.</summary>
-    public Task<string?> LockCardToBranchAsync(BoardCard card, string branch, CancellationToken ct)
+    /// <summary>Bind a card to its branch by setting the card's <see cref="BoardCard.Branch"/> in the
+    /// store. Returns null on success or an error message on failure.</summary>
+    public async Task<string?> LockCardToBranchAsync(BoardCard card, string branch, CancellationToken ct)
     {
-        return _boardStore.MutateAsync<string?>(async _ =>
+        try
         {
-            try
-            {
-                var raw = await File.ReadAllTextAsync(card.AbsolutePath, ct);
-                await File.WriteAllTextAsync(card.AbsolutePath, BoardService.WithBranch(raw, branch), ct);
-                return null;
-            }
-            catch (Exception ex)
-            {
-                return $"Could not bind card to '{branch}': {ex.Message}";
-            }
-        }, ct);
+            var found = await _boardStore.SetBranchAsync(card.Id, branch, ct).ConfigureAwait(false);
+            return found ? null : $"No card matching '{card.Id}' on the board.";
+        }
+        catch (Exception ex)
+        {
+            return $"Could not bind card to '{branch}': {ex.Message}";
+        }
     }
 
     /// <summary>The canonical on-disk location for a branch's worktree.</summary>

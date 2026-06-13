@@ -1,85 +1,32 @@
 using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Yamca.Agent.Board;
 
 /// <summary>
-/// Reads and parses the dev board under <c>.yamca/board</c>. Pure filesystem + parsing — no
-/// mutation. Columns are numeric-prefixed subdirectories (<c>10-idea</c>, <c>20-analyze</c>, …);
-/// a card is a markdown file living in its current column's directory. Stateless and reentrant;
-/// the board root is supplied per call so the same instance serves every caller.
+/// Pure, stateless helpers for the dev board: the default column layout, card ordering, subtask
+/// progress, and branch-name derivation. Board persistence lives in <see cref="BoardStore"/>; the
+/// agent-facing markdown ⇄ card mapping lives in <see cref="CardMarkdown"/>.
 /// </summary>
-public sealed partial class BoardService
+public sealed class BoardService
 {
-    public const string BoardRelativePath = ".yamca/board";
-    public const string InstructionsFileName = "instructions.md";
-
-    /// <summary>The default column layout used to seed a fresh board: numeric-prefixed directories,
-    /// each with an <c>instructions.md</c> (empty for resting columns). A column with non-blank
-    /// instructions is a work step run in chat; idea is a scratchpad and done is terminal, so both
-    /// rest. Shared by the board bootstrap (<c>BoardStore</c>) and the UI initialize path so there is
-    /// a single definition of the starting board.</summary>
-    public static readonly IReadOnlyList<(string Dir, string? Instructions)> DefaultColumns = new (string, string?)[]
+    /// <summary>The default column layout used to seed a fresh board: an ordered set of columns, each
+    /// with optional instructions (non-blank ⇒ a work step run in chat; null ⇒ a resting column such as
+    /// idea or done). Shared by the board bootstrap so there is a single definition of the starting
+    /// board.</summary>
+    public static readonly IReadOnlyList<(int Order, string DisplayName, string? Instructions)> DefaultColumns =
+        new (int, string, string?)[]
     {
-        ("10-idea", null),
-        ("20-analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan into the card with board_update_card. Break the work into a `- [ ]` subtask checklist where useful. When the plan is ready, move the card to the next column with board_move_card.\n"),
-        ("30-implement", "# Implement\n\nDo the work described in the card. Tick subtasks as you complete them. When the implementation is done, commit your code changes on this branch, then move the card to the next column with board_move_card.\n"),
-        ("40-verify", "# Verify\n\nBuild, run tests, and confirm the change works end to end. Fix anything that fails. Note verification results on the card with board_update_card, commit any fixes on this branch, then move the card to the next column with board_move_card.\n"),
-        ("50-done", null),
+        (10, "idea", null),
+        (20, "analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan into the card with board_update_card. Break the work into a `- [ ]` subtask checklist where useful. When the plan is ready, move the card to the next column with board_move_card.\n"),
+        (30, "implement", "# Implement\n\nDo the work described in the card. Tick subtasks as you complete them. When the implementation is done, commit your code changes on this branch, then move the card to the next column with board_move_card.\n"),
+        (40, "verify", "# Verify\n\nBuild, run tests, and confirm the change works end to end. Fix anything that fails. Note verification results on the card with board_update_card, commit any fixes on this branch, then move the card to the next column with board_move_card.\n"),
+        (50, "done", null),
     };
 
-    [GeneratedRegex(@"^(\d+)-(.+)$")]
-    private static partial Regex ColumnDirRegex();
-
-    [GeneratedRegex(@"^\s*-\s+\[([ xX])\]\s+(.*)$")]
-    private static partial Regex SubtaskRegex();
-
-    [GeneratedRegex(@"^\s*#\s+(.+?)\s*$", RegexOptions.Multiline)]
-    private static partial Regex HeadingRegex();
-
-    /// <summary>Absolute path to the board directory. The board root <em>is</em> the columns
-    /// directory, so callers pass the board path (from <c>BoardStore.EnsureAsync</c>) and this
-    /// returns it unchanged.</summary>
-    public static string BoardDirectory(string boardRoot) => boardRoot;
-
-    /// <summary>Read the whole board. Returns <see cref="BoardSnapshot.Empty"/> when the
-    /// board directory does not exist. Never throws for malformed cards.</summary>
-    public BoardSnapshot Read(string boardRoot)
-    {
-        var boardDir = BoardDirectory(boardRoot);
-        if (!Directory.Exists(boardDir)) return BoardSnapshot.Empty;
-
-        var columns = new List<BoardColumn>();
-        foreach (var dir in Directory.EnumerateDirectories(boardDir))
-        {
-            var dirName = Path.GetFileName(dir);
-            if (!TryParseColumnDir(dirName, out var order, out var displayName))
-                continue;
-
-            var cards = new List<BoardCard>();
-            foreach (var file in Directory.EnumerateFiles(dir, "*.md"))
-            {
-                if (string.Equals(Path.GetFileName(file), InstructionsFileName, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                string text;
-                try { text = File.ReadAllText(file); }
-                catch (IOException) { continue; }
-                cards.Add(ParseCard(dirName, file, text));
-            }
-
-            cards.Sort(CompareCards);
-
-            columns.Add(new BoardColumn(dirName, order, displayName, dir, cards));
-        }
-
-        columns.Sort(static (a, b) => a.Order.CompareTo(b.Order));
-        return new BoardSnapshot(columns);
-    }
-
-    /// <summary>Card order within a column: high → normal → low priority, then by leading numeric
-    /// id (oldest first), then file name. Public so the orchestrator's dispatch sort matches the
-    /// board's display order exactly.</summary>
+    /// <summary>Card order within a column: high → normal → low priority, then by leading numeric id
+    /// (oldest first), then id. Public so the orchestrator's dispatch sort matches the board's display
+    /// order exactly.</summary>
     public static int CompareCards(BoardCard a, BoardCard b)
     {
         var pc = b.Priority.CompareTo(a.Priority); // descending: high first
@@ -87,239 +34,26 @@ public sealed partial class BoardService
         var an = LeadingInt(a.Id);
         var bn = LeadingInt(b.Id);
         if (an.HasValue && bn.HasValue && an != bn) return an.Value.CompareTo(bn.Value);
-        return string.Compare(a.FileName, b.FileName, StringComparison.OrdinalIgnoreCase);
+        return string.Compare(a.Id, b.Id, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Parse a column directory name of the form <c>NN-display-name</c>.</summary>
-    public static bool TryParseColumnDir(string dirName, out int order, out string displayName)
-    {
-        order = 0;
-        displayName = string.Empty;
-        if (string.IsNullOrEmpty(dirName)) return false;
-
-        var m = ColumnDirRegex().Match(dirName);
-        if (!m.Success) return false;
-        if (!int.TryParse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out order))
-            return false;
-        displayName = m.Groups[2].Value;
-        return true;
-    }
-
-    /// <summary>Parse one card file's text into a <see cref="BoardCard"/>. Never throws.</summary>
-    public BoardCard ParseCard(string columnDirName, string absPath, string text)
-    {
-        var fileName = Path.GetFileName(absPath);
-        var stem = Path.GetFileNameWithoutExtension(fileName);
-        var (fm, body) = SplitFrontmatter(text);
-
-        var id = fm.GetValueOrDefault("id");
-        if (string.IsNullOrWhiteSpace(id))
-            id = LeadingDigits(stem) ?? stem;
-
-        var title = fm.GetValueOrDefault("title");
-        if (string.IsNullOrWhiteSpace(title))
-        {
-            var heading = HeadingRegex().Match(body);
-            title = heading.Success ? heading.Groups[1].Value : stem;
-        }
-
-        var branch = fm.GetValueOrDefault("branch");
-        if (string.IsNullOrWhiteSpace(branch)) branch = null;
-
-        var priority = fm.GetValueOrDefault("priority")?.ToLowerInvariant() switch
-        {
-            "high" => CardPriority.High,
-            "low"  => CardPriority.Low,
-            _      => CardPriority.Normal,
-        };
-
-        var subtasks = ParseSubtasks(body);
-        return new BoardCard(id.Trim(), title.Trim(), branch?.Trim(), fileName, columnDirName, absPath, body, subtasks, priority);
-    }
-
-    /// <summary>(done, total) checklist counts for a card body.</summary>
-    public static (int done, int total) SubtaskProgress(string body)
-    {
-        var done = 0;
-        var total = 0;
-        foreach (var item in ParseSubtasks(body))
-        {
-            total++;
-            if (item.Done) done++;
-        }
-        return (done, total);
-    }
-
-    /// <summary>Read a column's <c>instructions.md</c>, or null if absent.</summary>
-    public string? ReadInstructions(string workspaceRoot, string columnDirName)
-    {
-        var path = Path.Combine(BoardDirectory(workspaceRoot), columnDirName, InstructionsFileName);
-        if (!File.Exists(path)) return null;
-        try { return File.ReadAllText(path); }
-        catch (IOException) { return null; }
-    }
-
-    /// <summary>Write <paramref name="instructions"/> to a column's <c>instructions.md</c>.
-    /// Pass null or empty to clear it (making the column a resting column).</summary>
-    public Task WriteInstructionsAsync(string boardRoot, string columnDirName, string? instructions)
-    {
-        var path = Path.Combine(BoardDirectory(boardRoot), columnDirName, InstructionsFileName);
-        var content = string.IsNullOrWhiteSpace(instructions) ? string.Empty : instructions;
-        return File.WriteAllTextAsync(path, content);
-    }
-
-    /// <summary>True when a column has *non-blank* instructions, which is what makes it a *work*
-    /// step (an agent runs it in chat). A column whose <c>instructions.md</c> is missing or blank is
-    /// a *resting* column (idea scratchpad, done, blocked, …) whose cards are simply promoted to the
-    /// next column without a chat run. Resting columns still carry an empty <c>instructions.md</c> so
-    /// the seeded structure is explicit on disk.</summary>
-    public bool HasInstructions(string workspaceRoot, string columnDirName)
-        => !string.IsNullOrWhiteSpace(ReadInstructions(workspaceRoot, columnDirName));
-
-    /// <summary>Next free 4-digit card id (max existing numeric id across all columns + 1).</summary>
-    public string NextCardId(string workspaceRoot)
-    {
-        var max = 0;
-        foreach (var card in Read(workspaceRoot).AllCards)
-            if (LeadingInt(card.Id) is int n && n > max)
-                max = n;
-        return (max + 1).ToString("D4", CultureInfo.InvariantCulture);
-    }
-
-    /// <summary>Return <paramref name="rawText"/> with its frontmatter <c>branch:</c> set to
-    /// <paramref name="branch"/>, adding a frontmatter block if none exists. Used to bind a card
-    /// to a git branch. Normalizes line endings to LF.</summary>
-    public static string WithBranch(string rawText, string branch)
-        => WithFrontmatterField(rawText, "branch", branch);
-
-    /// <summary>Return <paramref name="rawText"/> with its frontmatter <c>title:</c> set to
-    /// <paramref name="title"/>, double-quoted (inner double quotes downgraded to single quotes to
-    /// keep the value a valid single-line scalar), adding a frontmatter block if none exists. Used
-    /// when the card detail dialog renames a card. Normalizes line endings to LF.</summary>
-    public static string WithTitle(string rawText, string title)
-        => WithFrontmatterField(rawText, "title", $"\"{(title ?? string.Empty).Trim().Replace("\"", "'")}\"");
-
-    /// <summary>Return <paramref name="rawText"/> with its frontmatter <c>priority:</c> set to
-    /// the string form of <paramref name="priority"/> (low / normal / high). Normalizes line
-    /// endings to LF.</summary>
-    public static string WithPriority(string rawText, CardPriority priority)
-        => WithFrontmatterField(rawText, "priority", priority.ToString().ToLowerInvariant());
-
-    /// <summary>Return <paramref name="rawText"/> with its body (everything after the frontmatter
-    /// block) replaced by <paramref name="body"/>, leaving the frontmatter untouched. Used when the
-    /// card detail dialog edits the markdown description in place. The new body is trimmed and laid
-    /// out as <c>---…---\n\n{body}\n</c> so a single blank line separates frontmatter from body.
-    /// Cards with no frontmatter are replaced wholesale. Normalizes line endings to LF.</summary>
-    public static string WithBody(string rawText, string body)
-    {
-        var normalized = (rawText ?? string.Empty).Replace("\r\n", "\n");
-        var newBody = (body ?? string.Empty).Replace("\r\n", "\n").Trim();
-
-        if (normalized.StartsWith("---\n", StringComparison.Ordinal))
-        {
-            var end = normalized.IndexOf("\n---", 4, StringComparison.Ordinal);
-            if (end >= 0)
-            {
-                // Keep the frontmatter block plus its closing fence verbatim, then re-append the body.
-                var afterFence = normalized.IndexOf('\n', end + "\n---".Length);
-                var frontmatter = afterFence < 0 ? normalized : normalized[..afterFence];
-                return $"{frontmatter}\n\n{newBody}\n";
-            }
-        }
-
-        return $"{newBody}\n";
-    }
-
-    // Sets a scalar frontmatter field, replacing an existing line for the key or appending one,
-    // and synthesizing a frontmatter block when the text has none. Backs WithBranch / WithTitle / etc.
-    private static string WithFrontmatterField(string rawText, string key, string value)
-    {
-        var normalized = (rawText ?? string.Empty).Replace("\r\n", "\n");
-
-        if (normalized.StartsWith("---\n", StringComparison.Ordinal))
-        {
-            var end = normalized.IndexOf("\n---", 4, StringComparison.Ordinal);
-            if (end >= 0)
-            {
-                var block = normalized.Substring(4, end - 4);
-                var lines = block.Split('\n').ToList();
-                var idx = lines.FindIndex(l => l.TrimStart().StartsWith($"{key}:", StringComparison.OrdinalIgnoreCase));
-                if (idx >= 0) lines[idx] = $"{key}: {value}";
-                else lines.Add($"{key}: {value}");
-
-                var afterFence = normalized.IndexOf('\n', end + "\n---".Length);
-                var body = afterFence < 0 ? string.Empty : normalized[(afterFence + 1)..];
-                return $"---\n{string.Join('\n', lines)}\n---\n{body}";
-            }
-        }
-
-        return $"---\n{key}: {value}\n---\n\n{normalized}";
-    }
-
-    /// <summary>Build a card file name <c>NNNN-slug.md</c> from an id and title.</summary>
-    public static string CardFileName(string id, string title)
-    {
-        var slug = Slugify(title);
-        return slug.Length == 0 ? $"{id}.md" : $"{id}-{slug}.md";
-    }
+    /// <summary>(done, total) checklist counts for a card's subtasks.</summary>
+    public static (int done, int total) SubtaskProgress(IReadOnlyList<SubtaskItem> subtasks)
+        => (subtasks.Count(s => s.Done), subtasks.Count);
 
     /// <summary>The default git branch name for a card: an id-prefixed slug of its title
-    /// (e.g. <c>0001-test-card</c>), mirroring <see cref="CardFileName"/>. Falls back to the
-    /// bare id when the title slugs to nothing. Used to pre-fill the branch field before a
-    /// card is bound to a branch.</summary>
+    /// (e.g. <c>0001-test-card</c>). Falls back to the bare id when the title slugs to nothing. Used to
+    /// pre-fill the branch field before a card is bound to a branch.</summary>
     public static string PresumptiveBranch(string id, string title)
     {
         var slug = Slugify(title);
         return slug.Length == 0 ? id : $"{id}-{slug}";
     }
 
-    private static IReadOnlyList<SubtaskItem> ParseSubtasks(string body)
-    {
-        var items = new List<SubtaskItem>();
-        foreach (var raw in body.Split('\n'))
-        {
-            var m = SubtaskRegex().Match(raw.TrimEnd('\r'));
-            if (!m.Success) continue;
-            var done = m.Groups[1].Value is "x" or "X";
-            items.Add(new SubtaskItem(m.Groups[2].Value.Trim(), done));
-        }
-        return items;
-    }
+    /// <summary>Format a numeric card id as a 4-digit, zero-padded string (e.g. 7 → <c>0007</c>).</summary>
+    public static string FormatCardId(int id) => id.ToString("D4", CultureInfo.InvariantCulture);
 
-    // Splits leading YAML-ish frontmatter (between '---' fences) into a flat key/value map and
-    // returns the remaining body. Hand-rolled to avoid a YAML dependency; only scalar key: value
-    // lines are read. Returns an empty map and the whole text as body when no frontmatter present.
-    private static (Dictionary<string, string> Frontmatter, string Body) SplitFrontmatter(string text)
-    {
-        var empty = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (text is null) return (empty, string.Empty);
-
-        var normalized = text.Replace("\r\n", "\n");
-        if (!normalized.StartsWith("---\n", StringComparison.Ordinal))
-            return (empty, text);
-
-        var end = normalized.IndexOf("\n---", 4, StringComparison.Ordinal);
-        if (end < 0) return (empty, text);
-
-        var block = normalized.Substring(4, end - 4);
-        var afterFence = end + "\n---".Length;
-        // skip to end of the closing fence line
-        var nl = normalized.IndexOf('\n', afterFence);
-        var body = nl < 0 ? string.Empty : normalized[(nl + 1)..];
-
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var line in block.Split('\n'))
-        {
-            var colon = line.IndexOf(':');
-            if (colon <= 0) continue;
-            var key = line[..colon].Trim();
-            var value = line[(colon + 1)..].Trim().Trim('"', '\'');
-            if (key.Length > 0) map[key] = value;
-        }
-        return (map, body);
-    }
-
-    private static string Slugify(string title)
+    internal static string Slugify(string title)
     {
         if (string.IsNullOrWhiteSpace(title)) return string.Empty;
         var sb = new StringBuilder(title.Length);
@@ -341,14 +75,14 @@ public sealed partial class BoardService
         return slug.Length > 40 ? slug[..40].Trim('-') : slug;
     }
 
-    private static string? LeadingDigits(string s)
+    internal static string? LeadingDigits(string s)
     {
         var i = 0;
         while (i < s.Length && char.IsDigit(s[i])) i++;
         return i == 0 ? null : s[..i];
     }
 
-    private static int? LeadingInt(string s)
+    internal static int? LeadingInt(string s)
     {
         var digits = LeadingDigits(s);
         return digits is not null && int.TryParse(digits, out var n) ? n : null;

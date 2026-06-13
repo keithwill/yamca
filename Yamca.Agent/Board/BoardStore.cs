@@ -1,162 +1,294 @@
-using Yamca.Agent.Workspace;
+using VestPocket;
+using Yamca.Agent.Storage;
 
 namespace Yamca.Agent.Board;
 
-/// <summary>Owns the location and bootstrap of the single, repo-anchored dev board.
+/// <summary>The dev board's repository over the shared <see cref="YamcaStore"/> (VestPocket). Columns
+/// live at keys <c>/board/column/{id}</c> and cards — aggregate roots that own their subtasks — at
+/// <c>/board/card/{id}</c>. There are no files or directories: a card's column membership is its
+/// <see cref="CardRecord.ColumnId"/> field, so a move is a field rewrite.
 ///
-/// The board is a plain, uncommitted directory at <c>&lt;RepositoryRoot&gt;/.yamca/board</c> — a
-/// personal scratchpad of the current user's work, gitignored and never tracked, committed, or
-/// pushed. Because location is resolved from the injected <em>root</em> <see cref="IWorkspace"/>
-/// (the true main-repo top-level discovered at startup) and not from any per-session workspace,
-/// every chat session and the board UI read and write the one canonical board regardless of which
-/// code branch — or code worktree — they are on.
-///
-/// All mutations funnel through <see cref="MutateAsync{T}"/>, which serializes them under a
-/// process-wide semaphore so concurrent writers (board UI + chat sessions) take turns rather than
-/// interleaving file moves. Reads are lock-free filesystem reads against <see cref="EnsureAsync"/>'s
-/// path. Adequate for a local, single-user tool.</summary>
+/// Reads are lock-free against VestPocket's in-memory index. Mutations funnel through a process-wide
+/// <see cref="SemaphoreSlim"/> so multi-step read-modify-write sequences (and reinit) are atomic against
+/// each other; individual VestPocket saves are last-write-wins, so there is no version bookkeeping.</summary>
 public sealed class BoardStore
 {
-    private readonly IWorkspace _workspace;
+    private const string CardPrefix = "/board/card/";
+    private const string ColumnPrefix = "/board/column/";
+
+    private readonly YamcaStore _yamca;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private string? _ensuredPath;
 
-    public BoardStore(IWorkspace workspace)
-    {
-        _workspace = workspace;
-    }
+    public BoardStore(YamcaStore yamca) => _yamca = yamca;
 
-    /// <summary>Resolve the board directory (<c>&lt;RepositoryRoot&gt;/.yamca/board</c>), creating it
-    /// and seeding the default columns on first use. Idempotent and cached after first success.</summary>
-    public async Task<string> EnsureAsync(CancellationToken ct)
+    private static string CardKey(string id) => CardPrefix + id;
+    private static string ColumnKey(string id) => ColumnPrefix + id;
+
+    /// <summary>Seed the default column layout if the board has no columns yet. Idempotent.</summary>
+    public async Task EnsureSeededAsync(CancellationToken ct)
     {
-        if (_ensuredPath is not null) return _ensuredPath;
+        var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
+        if (ReadColumns(store).Count > 0) return;
+
         await _gate.WaitAsync(ct).ConfigureAwait(false);
-        try { return await EnsureCoreAsync(ct).ConfigureAwait(false); }
+        try
+        {
+            if (ReadColumns(store).Count > 0) return;
+            await SeedDefaultColumnsAsync(store, ct).ConfigureAwait(false);
+        }
         finally { _gate.Release(); }
     }
 
-    /// <summary>Run a board mutation under the process-wide write lock, ensuring the board directory
-    /// first. <paramref name="action"/> receives the board path; it is the only place board files are
-    /// written. The board is plain on-disk state — a write to the file <em>is</em> the mutation; there
-    /// is no commit or remote sync.</summary>
-    public async Task<T> MutateAsync<T>(Func<string, Task<T>> action, CancellationToken ct)
+    /// <summary>Read the whole board into an immutable snapshot, seeding the default columns first if the
+    /// board is empty. Columns are ordered by <see cref="ColumnRecord.Order"/>; cards are grouped by
+    /// their <see cref="CardRecord.ColumnId"/> and sorted by <see cref="BoardService.CompareCards"/>.
+    /// Cards referencing a missing column are omitted (reinit relocates such orphans).</summary>
+    public async Task<BoardSnapshot> ReadAsync(CancellationToken ct)
     {
+        await EnsureSeededAsync(ct).ConfigureAwait(false);
+        var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
+
+        var cardsByColumn = ReadCards(store)
+            .Select(ToCard)
+            .GroupBy(c => c.ColumnId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
+        var columns = new List<BoardColumn>();
+        foreach (var col in ReadColumns(store).OrderBy(c => c.Order))
+        {
+            var cards = cardsByColumn.GetValueOrDefault(col.Id) ?? new List<BoardCard>();
+            cards.Sort(BoardService.CompareCards);
+            columns.Add(new BoardColumn(col.Id, col.Order, col.DisplayName, col.Instructions, cards));
+        }
+
+        return new BoardSnapshot(columns);
+    }
+
+    /// <summary>The next free 4-digit card id (max existing numeric id across all cards + 1).</summary>
+    public async Task<string> NextCardIdAsync(CancellationToken ct)
+    {
+        var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
+        return NextCardId(store);
+    }
+
+    /// <summary>Create a card in <paramref name="columnId"/> from a freeform body (its <c>- [ ]</c> lines
+    /// become subtasks). Returns the new card's id.</summary>
+    public async Task<string> AddCardAsync(
+        string columnId, string title, string body, string? branch, CardPriority priority, CancellationToken ct)
+    {
+        var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
         await _gate.WaitAsync(ct).ConfigureAwait(false);
-        try { return await action(await EnsureCoreAsync(ct).ConfigureAwait(false)).ConfigureAwait(false); }
+        try
+        {
+            var id = NextCardId(store);
+            var (prose, subtasks) = CardMarkdown.SplitBody(body);
+            var record = new CardRecord(
+                id, title.Trim(), string.IsNullOrWhiteSpace(branch) ? null : branch.Trim(),
+                priority, columnId, prose, ToState(subtasks));
+            await store.Save(new Kvp(CardKey(id), record)).ConfigureAwait(false);
+            return id;
+        }
         finally { _gate.Release(); }
     }
 
-    /// <summary>Lock-taking convenience for mutations with no return value.</summary>
-    public Task MutateAsync(Func<string, Task> action, CancellationToken ct)
-        => MutateAsync(async path => { await action(path).ConfigureAwait(false); return true; }, ct);
+    /// <summary>Move a card to another column by rewriting its <see cref="CardRecord.ColumnId"/>.
+    /// Returns false when no card with that id exists.</summary>
+    public Task<bool> MoveCardAsync(string cardId, string toColumnId, CancellationToken ct)
+        => MutateCardAsync(cardId, card => card with { ColumnId = toColumnId }, ct);
 
-    // Must be called with _gate held (EnsureAsync and MutateAsync both do): the semaphore is not
-    // reentrant, so locking here would deadlock when called from inside MutateAsync.
-    private async Task<string> EnsureCoreAsync(CancellationToken ct)
+    /// <summary>Delete a card.</summary>
+    public async Task<bool> DeleteCardAsync(string cardId, CancellationToken ct)
     {
-        if (_ensuredPath is not null) return _ensuredPath;
-
-        var boardPath = Path.Combine(_workspace.RepositoryRoot, ".yamca", "board");
-        if (!Directory.Exists(boardPath))
+        var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            Directory.CreateDirectory(boardPath);
-            await SeedDefaultColumnsAsync(boardPath, ct).ConfigureAwait(false);
+            if (store.Get<CardRecord>(CardKey(cardId)) is null) return false;
+            await store.Save(new Kvp(CardKey(cardId), null)).ConfigureAwait(false);
+            return true;
         }
-
-        _ensuredPath = boardPath;
-        return boardPath;
+        finally { _gate.Release(); }
     }
 
-    /// <summary>Restore the board to the default column layout. Cards already in a default column
-    /// stay in place; cards in unknown columns move to the initial (idea) column. Pass
-    /// <paramref name="wipe"/> to delete all cards instead.</summary>
-    public Task<ReinitResult> ReinitAsync(bool wipe, CancellationToken ct)
-        => MutateAsync(boardRoot => ReinitCoreAsync(boardRoot, wipe, ct), ct);
+    /// <summary>Apply a parsed card blob (from <c>board_update_card</c>): set body and subtasks, and
+    /// overwrite title/branch/priority where the frontmatter supplied them. Returns false when no card
+    /// with that id exists.</summary>
+    public Task<bool> UpdateCardContentAsync(string cardId, CardMarkdown.ParsedCard parsed, CancellationToken ct)
+        => MutateCardAsync(cardId, card => card with
+        {
+            Title = parsed.Title ?? card.Title,
+            Branch = parsed.Branch ?? card.Branch,
+            Priority = parsed.Priority ?? card.Priority,
+            Body = parsed.Body,
+            Subtasks = ToState(parsed.Subtasks),
+        }, ct);
 
-    private static async Task<ReinitResult> ReinitCoreAsync(string boardRoot, bool wipe, CancellationToken ct)
+    /// <summary>Update a card's title and body (the body's <c>- [ ]</c> lines become subtasks). Used by
+    /// the card detail dialog. Returns false when no card with that id exists.</summary>
+    public Task<bool> UpdateCardBodyAsync(string cardId, string title, string body, CancellationToken ct)
     {
-        var snapshot = new BoardService().Read(boardRoot);
-
-        var defaultDirNames = BoardService.DefaultColumns.Select(c => c.Dir).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var ideaDir = BoardService.DefaultColumns[0].Dir;
-
-        // Count what will change before seeding so the summary is accurate.
-        int columnsCreated = 0;
-        int instructionsRestored = 0;
-        foreach (var (dir, instructions) in BoardService.DefaultColumns)
+        var (prose, subtasks) = CardMarkdown.SplitBody(body);
+        return MutateCardAsync(cardId, card => card with
         {
-            var columnDir = Path.Combine(boardRoot, dir);
-            if (!Directory.Exists(columnDir))
-            {
-                columnsCreated++;
-            }
-            else
-            {
-                var instrPath = Path.Combine(columnDir, BoardService.InstructionsFileName);
-                var expected = instructions ?? "";
-                string current;
-                try { current = await File.ReadAllTextAsync(instrPath, ct).ConfigureAwait(false); }
-                catch (IOException) { current = ""; }
-                if (!string.Equals(current, expected, StringComparison.Ordinal))
-                    instructionsRestored++;
-            }
-        }
-
-        // Restore the column structure (idempotent — overwrites instructions.md unconditionally).
-        await SeedDefaultColumnsAsync(boardRoot, ct).ConfigureAwait(false);
-
-        // Relocate or delete cards.
-        int cardsPreserved = 0, cardsMoved = 0, cardsWiped = 0;
-        foreach (var card in snapshot.AllCards)
-        {
-            if (wipe)
-            {
-                File.Delete(card.AbsolutePath);
-                cardsWiped++;
-            }
-            else if (defaultDirNames.Contains(card.ColumnDirectory))
-            {
-                cardsPreserved++;
-            }
-            else
-            {
-                var dest = Path.Combine(boardRoot, ideaDir, card.FileName);
-                if (File.Exists(dest))
-                    dest = Path.Combine(boardRoot, ideaDir,
-                        Path.GetFileNameWithoutExtension(card.FileName) + "-moved.md");
-                File.Move(card.AbsolutePath, dest);
-                cardsMoved++;
-            }
-        }
-
-        // Clean up non-default column directories that are now empty (or instructions-only).
-        foreach (var dir in Directory.EnumerateDirectories(boardRoot))
-        {
-            var dirName = Path.GetFileName(dir);
-            if (!BoardService.TryParseColumnDir(dirName, out _, out _)) continue;
-            if (defaultDirNames.Contains(dirName)) continue;
-
-            var remaining = Directory.EnumerateFiles(dir)
-                .Where(f => !string.Equals(Path.GetFileName(f),
-                    BoardService.InstructionsFileName, StringComparison.OrdinalIgnoreCase))
-                .Any();
-            if (!remaining) Directory.Delete(dir, recursive: true);
-        }
-
-        return new ReinitResult(columnsCreated, instructionsRestored, cardsPreserved, cardsMoved, cardsWiped);
+            Title = title.Trim(),
+            Body = prose,
+            Subtasks = ToState(subtasks),
+        }, ct);
     }
 
-    internal static async Task SeedDefaultColumnsAsync(string boardPath, CancellationToken ct)
+    /// <summary>Set a card's priority. Returns false when no card with that id exists.</summary>
+    public Task<bool> SetPriorityAsync(string cardId, CardPriority priority, CancellationToken ct)
+        => MutateCardAsync(cardId, card => card with { Priority = priority }, ct);
+
+    /// <summary>Bind a card to a git branch. Returns false when no card with that id exists.</summary>
+    public Task<bool> SetBranchAsync(string cardId, string branch, CancellationToken ct)
+        => MutateCardAsync(cardId, card => card with { Branch = string.IsNullOrWhiteSpace(branch) ? null : branch.Trim() }, ct);
+
+    /// <summary>Set (or clear, when blank) a column's instructions. Returns false when no column with
+    /// that id exists.</summary>
+    public async Task<bool> SetColumnInstructionsAsync(string columnId, string? instructions, CancellationToken ct)
     {
-        foreach (var (dir, instructions) in BoardService.DefaultColumns)
+        var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            var columnDir = Path.Combine(boardPath, dir);
-            Directory.CreateDirectory(columnDir);
-            // Every column carries an instructions.md (empty for resting columns) so the seeded
-            // structure is explicit on disk even for resting columns.
-            var instrPath = Path.Combine(columnDir, BoardService.InstructionsFileName);
-            await File.WriteAllTextAsync(instrPath, instructions ?? "", ct).ConfigureAwait(false);
+            if (store.Get<ColumnRecord>(ColumnKey(columnId)) is not { } col) return false;
+            var normalized = string.IsNullOrWhiteSpace(instructions) ? null : instructions;
+            await store.Save(new Kvp(ColumnKey(columnId), col with { Instructions = normalized })).ConfigureAwait(false);
+            return true;
         }
+        finally { _gate.Release(); }
     }
+
+    /// <summary>Restore the board to the default column layout. Existing columns are matched to defaults
+    /// by display name (order + instructions restored); missing defaults are created. Cards already in a
+    /// default column stay; cards elsewhere move to the idea column (or are deleted when
+    /// <paramref name="wipe"/>). Non-default columns are then removed.</summary>
+    public async Task<ReinitResult> ReinitAsync(bool wipe, CancellationToken ct)
+    {
+        var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var columns = ReadColumns(store).ToList();
+            var byName = columns
+                .GroupBy(c => c.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+            var saves = new List<Kvp>();
+            int columnsCreated = 0, instructionsRestored = 0;
+            var defaultColumnIds = new HashSet<string>(StringComparer.Ordinal);
+            string ideaColumnId = string.Empty;
+
+            foreach (var (order, displayName, instructions) in BoardService.DefaultColumns)
+            {
+                if (byName.TryGetValue(displayName, out var existing))
+                {
+                    if (existing.Order != order || !string.Equals(existing.Instructions, instructions, StringComparison.Ordinal))
+                    {
+                        saves.Add(new Kvp(ColumnKey(existing.Id), existing with { Order = order, Instructions = instructions }));
+                        instructionsRestored++;
+                    }
+                    defaultColumnIds.Add(existing.Id);
+                    if (order == BoardService.DefaultColumns[0].Order) ideaColumnId = existing.Id;
+                }
+                else
+                {
+                    var id = NewColumnId();
+                    saves.Add(new Kvp(ColumnKey(id), new ColumnRecord(id, order, displayName, instructions)));
+                    defaultColumnIds.Add(id);
+                    columnsCreated++;
+                    if (order == BoardService.DefaultColumns[0].Order) ideaColumnId = id;
+                }
+            }
+
+            int cardsPreserved = 0, cardsMoved = 0, cardsWiped = 0;
+            foreach (var card in ReadCards(store))
+            {
+                if (wipe)
+                {
+                    saves.Add(new Kvp(CardKey(card.Id), null));
+                    cardsWiped++;
+                }
+                else if (defaultColumnIds.Contains(card.ColumnId))
+                {
+                    cardsPreserved++;
+                }
+                else
+                {
+                    saves.Add(new Kvp(CardKey(card.Id), card with { ColumnId = ideaColumnId }));
+                    cardsMoved++;
+                }
+            }
+
+            // Remove every column that isn't one of the defaults (their cards have been relocated above).
+            foreach (var col in columns.Where(c => !defaultColumnIds.Contains(c.Id)))
+                saves.Add(new Kvp(ColumnKey(col.Id), null));
+
+            if (saves.Count > 0) await store.Save(saves.ToArray()).ConfigureAwait(false);
+
+            return new ReinitResult(columnsCreated, instructionsRestored, cardsPreserved, cardsMoved, cardsWiped);
+        }
+        finally { _gate.Release(); }
+    }
+
+    // ---- internals -----------------------------------------------------------------------------
+
+    private async Task<bool> MutateCardAsync(string cardId, Func<CardRecord, CardRecord> mutate, CancellationToken ct)
+    {
+        var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (store.Get<CardRecord>(CardKey(cardId)) is not { } card) return false;
+            await store.Save(new Kvp(CardKey(cardId), mutate(card))).ConfigureAwait(false);
+            return true;
+        }
+        finally { _gate.Release(); }
+    }
+
+    private static Task SeedDefaultColumnsAsync(VestPocketStore store, CancellationToken ct)
+    {
+        var seeds = new List<Kvp>();
+        foreach (var (order, displayName, instructions) in BoardService.DefaultColumns)
+        {
+            var id = NewColumnId();
+            seeds.Add(new Kvp(ColumnKey(id), new ColumnRecord(id, order, displayName, instructions)));
+        }
+        return store.Save(seeds.ToArray()).AsTask();
+    }
+
+    private static string NewColumnId() => Guid.NewGuid().ToString("n");
+
+    private static string NextCardId(VestPocketStore store)
+    {
+        var max = 0;
+        foreach (var card in ReadCards(store))
+            if (BoardService.LeadingInt(card.Id) is int n && n > max)
+                max = n;
+        return BoardService.FormatCardId(max + 1);
+    }
+
+    private static List<ColumnRecord> ReadColumns(VestPocketStore store)
+    {
+        var list = new List<ColumnRecord>();
+        foreach (var kv in store.GetByPrefix(ColumnPrefix))
+            if (kv.Value is ColumnRecord c) list.Add(c);
+        return list;
+    }
+
+    private static List<CardRecord> ReadCards(VestPocketStore store)
+    {
+        var list = new List<CardRecord>();
+        foreach (var kv in store.GetByPrefix(CardPrefix))
+            if (kv.Value is CardRecord c) list.Add(c);
+        return list;
+    }
+
+    private static BoardCard ToCard(CardRecord r) => new(
+        r.Id, r.Title, r.Branch, r.ColumnId, r.Body,
+        r.Subtasks.Select(s => new SubtaskItem(s.Text, s.Done)).ToList(), r.Priority);
+
+    private static IReadOnlyList<SubtaskState> ToState(IReadOnlyList<SubtaskItem> items)
+        => items.Select(s => new SubtaskState(s.Text, s.Done)).ToList();
 }

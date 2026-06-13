@@ -8,27 +8,24 @@ namespace Yamca.Agent.Tools.Board;
 /// <summary>Lists the dev board: each column and the cards in it, with subtask progress.</summary>
 public sealed class BoardListTool : ITool
 {
-    private readonly BoardService _board;
     private readonly BoardStore _boardStore;
 
-    public BoardListTool(BoardService board, BoardStore boardStore)
+    public BoardListTool(BoardStore boardStore)
     {
-        _board = board;
         _boardStore = boardStore;
     }
 
     public string Name => "board_list";
 
     public string Description =>
-        "List the dev board under .yamca/board: every column (idea, analyze, …) and the cards currently in it, " +
-        "with subtask progress. Optionally pass 'column' to list a single column. Cards are markdown files; a card's " +
-        "column is determined solely by which column directory it lives in.";
+        "List the dev board: every column (idea, analyze, …) and the cards currently in it, " +
+        "with subtask progress. Optionally pass 'column' to list a single column.";
 
     public string ParametersSchema => """
     {
       "type": "object",
       "properties": {
-        "column": { "type": "string", "description": "Optional: restrict output to one column (display name or directory name)." }
+        "column": { "type": "string", "description": "Optional: restrict output to one column (display name or id)." }
       },
       "additionalProperties": false
     }
@@ -44,10 +41,9 @@ public sealed class BoardListTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolContext context, CancellationToken cancellationToken)
     {
-        var boardRoot = await _boardStore.EnsureAsync(cancellationToken);
-        var snapshot = _board.Read(boardRoot);
+        var snapshot = await _boardStore.ReadAsync(cancellationToken);
         if (snapshot.Columns.Count == 0)
-            return ToolResult.Ok("The board is empty or not initialized (no .yamca/board directory with NN-name columns).");
+            return ToolResult.Ok("The board is empty or not initialized.");
 
         string? only = null;
         if (arguments.ValueKind == JsonValueKind.Object
@@ -63,7 +59,7 @@ public sealed class BoardListTool : ITool
         {
             if (!string.IsNullOrWhiteSpace(only)
                 && !string.Equals(column.DisplayName, only, StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(column.DirectoryName, only, StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(column.Id, only, StringComparison.OrdinalIgnoreCase))
                 continue;
 
             sb.Append("## ").Append(column.DisplayName).Append(" (").Append(column.Cards.Count).AppendLine(")");

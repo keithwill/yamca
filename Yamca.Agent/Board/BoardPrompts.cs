@@ -7,7 +7,7 @@ public static class BoardPrompts
     /// <summary>The draft prompt that kicks off a step run, pre-filled into the composer. Inlines the
     /// card (title + body) and the step's own instructions so the session is self-contained — no system
     /// seed message and no extra board_get_card round-trip. Completion guidance (commit / board_move_card)
-    /// lives in each column's instructions.md, so it is not duplicated here.</summary>
+    /// lives in each column's instructions, so it is not duplicated here.</summary>
     public static string BuildSeedPrompt(BoardCard card, BoardColumn current, string? instructions)
     {
         return 

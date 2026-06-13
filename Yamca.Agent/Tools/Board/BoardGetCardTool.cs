@@ -7,12 +7,10 @@ namespace Yamca.Agent.Tools.Board;
 /// <summary>Returns the full markdown of a board card (frontmatter + body, verbatim).</summary>
 public sealed class BoardGetCardTool : ITool
 {
-    private readonly BoardService _board;
     private readonly BoardStore _boardStore;
 
-    public BoardGetCardTool(BoardService board, BoardStore boardStore)
+    public BoardGetCardTool(BoardStore boardStore)
     {
-        _board = board;
         _boardStore = boardStore;
     }
 
@@ -46,25 +44,13 @@ public sealed class BoardGetCardTool : ITool
         if (!ToolArguments.TryGetString(arguments, "card", out var cardRef, out var argError))
             return ToolResult.Error(argError);
 
-        var boardRoot = await _boardStore.EnsureAsync(cancellationToken);
-        var snapshot = _board.Read(boardRoot);
+        var snapshot = await _boardStore.ReadAsync(cancellationToken);
         var card = snapshot.FindCard(cardRef);
         if (card is null)
             return ToolResult.Error($"No card matching '{cardRef}' on the board.");
 
-        // The card path comes from BoardService's enumeration of the board, so it is already
-        // absolute and trusted. It is NOT clamped to the sandbox: the board lives under the
-        // repository root, which may sit above the session's workspace root.
-        var resolved = Path.GetFullPath(card.AbsolutePath);
-
-        try
-        {
-            var text = await File.ReadAllTextAsync(resolved, cancellationToken);
-            return ToolResult.Ok($"Card #{card.Id} in column '{card.ColumnDirectory}' ({card.FileName}):\n\n{text}");
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return ToolResult.Error($"Failed to read card '{card.FileName}': {ex.Message}");
-        }
+        var column = snapshot.FindColumn(card.ColumnId);
+        var columnName = column?.DisplayName ?? card.ColumnId;
+        return ToolResult.Ok($"Card #{card.Id} in column '{columnName}':\n\n{CardMarkdown.Render(card)}");
     }
 }

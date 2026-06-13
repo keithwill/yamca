@@ -3,6 +3,7 @@ using Yamca.Agent.Board;
 using Yamca.Agent.Chat;
 using Yamca.Agent.Orchestration;
 using Yamca.Agent.Settings;
+using Yamca.Agent.Storage;
 using Yamca.Agent.Tests.Support;
 using Yamca.Agent.Tools;
 using WorkspaceImpl = Yamca.Agent.Workspace.Workspace;
@@ -15,9 +16,8 @@ public class OrchestratorCardRunnerTests
     private string _root = null!;
     private WorkspaceImpl _workspace = null!;
     private BoardStore _boardStore = null!;
-    private BoardService _boardService = null!;
     private OrchestratorCardRunner _runner = null!;
-    private string _boardRoot = null!;
+    private string _implementId = null!;
     private BoardCard _card = null!;
     private BoardColumn _column = null!;
 
@@ -27,16 +27,16 @@ public class OrchestratorCardRunnerTests
         _root = Path.Combine(Path.GetFullPath(Path.GetTempPath()), "yamca-tests", "ocr-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_root);
         _workspace = new WorkspaceImpl(_root, _root);
-        _boardStore = new BoardStore(_workspace);
-        _boardService = new BoardService();
-        _runner = new OrchestratorCardRunner(_boardStore, _boardService);
+        _boardStore = new BoardStore(new YamcaStore(filePath: null));
+        _runner = new OrchestratorCardRunner(_boardStore);
 
-        _boardRoot = await _boardStore.EnsureAsync(CancellationToken.None);
-        var cardPath = Path.Combine(_boardRoot, "20-analyze", "0001-test-card.md");
-        await File.WriteAllTextAsync(cardPath, "---\nid: 0001\ntitle: Test card\n---\n\nDo the thing.\n");
+        var seeded = await _boardStore.ReadAsync(CancellationToken.None);
+        var analyzeId = seeded.FindColumn("analyze")!.Id;
+        _implementId = seeded.FindColumn("implement")!.Id;
+        await _boardStore.AddCardAsync(analyzeId, "Test card", "Do the thing.", null, CardPriority.Normal, CancellationToken.None);
 
-        var snapshot = _boardService.Read(_boardRoot);
-        _column = snapshot.FindColumn("20-analyze")!;
+        var snapshot = await _boardStore.ReadAsync(CancellationToken.None);
+        _column = snapshot.FindColumn("analyze")!;
         _card = snapshot.FindCard("0001")!;
     }
 
@@ -63,13 +63,11 @@ public class OrchestratorCardRunnerTests
             RunId: "run1",
             Observer: NoopOrchestratorObserver.Instance);
 
-    // A board_move_card stand-in that really moves the card file, so the runner's
+    // A board_move_card stand-in that really moves the card in the store, so the runner's
     // authoritative board re-read sees the change.
     private StubTool MoveCardTool() => new("board_move_card", responder: (_, _) =>
     {
-        var src = Path.Combine(_boardRoot, "20-analyze", "0001-test-card.md");
-        var dest = Path.Combine(_boardRoot, "30-implement", "0001-test-card.md");
-        File.Move(src, dest);
+        _boardStore.MoveCardAsync(_card.Id, _implementId, CancellationToken.None).GetAwaiter().GetResult();
         return ToolResult.Ok("Moved card 0001 to implement.");
     });
 
@@ -93,9 +91,7 @@ public class OrchestratorCardRunnerTests
         // detected by the post-turn board re-read.
         var sneaky = new StubTool("do_work", responder: (_, _) =>
         {
-            File.Move(
-                Path.Combine(_boardRoot, "20-analyze", "0001-test-card.md"),
-                Path.Combine(_boardRoot, "30-implement", "0001-test-card.md"));
+            _boardStore.MoveCardAsync(_card.Id, _implementId, CancellationToken.None).GetAwaiter().GetResult();
             return ToolResult.Ok("worked");
         });
         var client = new FakeChatCompletionClient()

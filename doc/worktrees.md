@@ -21,7 +21,7 @@ A workspace exposes two distinct paths (`IWorkspace`):
 
 Repo-scoped artifacts that live at `RepositoryRoot`:
 
-- `.yamca/board` — the dev board, a plain uncommitted directory (see [dev-board.md](dev-board.md))
+- `.yamca/yamca.db` — the shared local document store, holding the dev board (see [dev-board.md](dev-board.md))
 - `.yamca/worktrees` — code-branch worktrees
 - `.yamca/chat` — saved chat sessions (see [chat-sessions.md](chat-sessions.md))
 
@@ -51,7 +51,7 @@ harmless no-op rather than a crash.
 
 ## Relationship to the board
 
-The dev board is a plain, uncommitted directory at `.yamca/board` — separate
+The dev board lives in the uncommitted `.yamca/yamca.db` store — separate
 from code and never tracked. Board *cards* bind to *code* worktrees when their
 steps run. The board enumerates code-branch worktrees only to decide a card's
 liveness affordances — a card whose branch has a live worktree offers

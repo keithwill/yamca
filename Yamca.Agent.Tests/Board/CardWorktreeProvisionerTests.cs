@@ -2,6 +2,7 @@ using System.Diagnostics;
 using NUnit.Framework;
 using Yamca.Agent.Board;
 using Yamca.Agent.Git;
+using Yamca.Agent.Storage;
 using WorkspaceImpl = Yamca.Agent.Workspace.Workspace;
 
 namespace Yamca.Agent.Tests.Board;
@@ -30,7 +31,7 @@ public class CardWorktreeProvisionerTests
         await RunGit("commit", "-m", "initial");
 
         var workspace = new WorkspaceImpl(_root, _root);
-        _boardStore = new BoardStore(workspace);
+        _boardStore = new BoardStore(new YamcaStore(filePath: null));
         _provisioner = new CardWorktreeProvisioner(workspace, _git, _boardStore);
     }
 
@@ -98,31 +99,27 @@ public class CardWorktreeProvisionerTests
     }
 
     [Test]
-    public async Task LockCardToBranch_WritesBranchFrontmatter()
+    public async Task LockCardToBranch_SetsCardBranch()
     {
-        var boardRoot = await _boardStore.EnsureAsync(CancellationToken.None);
-        var cardPath = Path.Combine(boardRoot, "10-idea", "0001-test.md");
-        await File.WriteAllTextAsync(cardPath, "---\nid: 0001\ntitle: Test\n---\n\nBody\n");
-        var card = new BoardService().ParseCard("10-idea", cardPath, await File.ReadAllTextAsync(cardPath));
+        var ideaId = (await _boardStore.ReadAsync(CancellationToken.None)).FindColumn("idea")!.Id;
+        var id = await _boardStore.AddCardAsync(ideaId, "Test", "Body", null, CardPriority.Normal, CancellationToken.None);
+        var card = (await _boardStore.ReadAsync(CancellationToken.None)).FindCard(id)!;
 
         var error = await _provisioner.LockCardToBranchAsync(card, "0001-test", CancellationToken.None);
 
         Assert.That(error, Is.Null);
-        var reparsed = new BoardService().ParseCard("10-idea", cardPath, await File.ReadAllTextAsync(cardPath));
-        Assert.That(reparsed.Branch, Is.EqualTo("0001-test"));
+        var reread = (await _boardStore.ReadAsync(CancellationToken.None)).FindCard(id)!;
+        Assert.That(reread.Branch, Is.EqualTo("0001-test"));
     }
 
     [Test]
-    public async Task LockCardToBranch_ReturnsError_WhenCardFileMissing()
+    public async Task LockCardToBranch_ReturnsError_WhenCardMissing()
     {
-        var card = new BoardCard(
-            "0009", "Ghost", null, "0009-ghost.md", "10-idea",
-            Path.Combine(_root, ".yamca", "board", "10-idea", "0009-ghost.md"),
-            "", Array.Empty<SubtaskItem>());
+        var card = new BoardCard("0009", "Ghost", null, "ghost-col", "", Array.Empty<SubtaskItem>());
 
         var error = await _provisioner.LockCardToBranchAsync(card, "0009-ghost", CancellationToken.None);
 
-        Assert.That(error, Does.Contain("0009-ghost"));
+        Assert.That(error, Does.Contain("0009"));
     }
 
     private static string Norm(string path) => path.Replace('\\', '/');

@@ -7,12 +7,10 @@ namespace Yamca.Agent.Tools.Board;
 /// <summary>Replaces a card's full markdown content — used to refine the plan or tick subtasks.</summary>
 public sealed class BoardUpdateCardTool : ITool
 {
-    private readonly BoardService _board;
     private readonly BoardStore _boardStore;
 
-    public BoardUpdateCardTool(BoardService board, BoardStore boardStore)
+    public BoardUpdateCardTool(BoardStore boardStore)
     {
-        _board = board;
         _boardStore = boardStore;
     }
 
@@ -48,27 +46,15 @@ public sealed class BoardUpdateCardTool : ITool
         if (!ToolArguments.TryGetString(arguments, "content", out var content, out var contentErr))
             return ToolResult.Error(contentErr);
 
-        return await _boardStore.MutateAsync(async boardRoot =>
-        {
-            var snapshot = _board.Read(boardRoot);
-            var card = snapshot.FindCard(cardRef);
-            if (card is null)
-                return ToolResult.Error($"No card matching '{cardRef}' on the board.");
+        var snapshot = await _boardStore.ReadAsync(cancellationToken);
+        var card = snapshot.FindCard(cardRef);
+        if (card is null)
+            return ToolResult.Error($"No card matching '{cardRef}' on the board.");
 
-            // card.AbsolutePath comes from BoardService's enumeration of the board, so it is already
-            // absolute and trusted (and outside the sandbox clamp by design).
-            var resolved = Path.GetFullPath(card.AbsolutePath);
+        var parsed = CardMarkdown.Parse(content);
+        if (!await _boardStore.UpdateCardContentAsync(card.Id, parsed, cancellationToken))
+            return ToolResult.Error($"No card matching '{cardRef}' on the board.");
 
-            try
-            {
-                await File.WriteAllTextAsync(resolved, content, cancellationToken);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                return ToolResult.Error($"Failed to update card '{card.FileName}': {ex.Message}");
-            }
-
-            return ToolResult.Ok($"Updated card #{card.Id} ({card.FileName}).");
-        }, cancellationToken);
+        return ToolResult.Ok($"Updated card #{card.Id}.");
     }
 }

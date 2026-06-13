@@ -12,10 +12,10 @@ Every poll interval the orchestrator reads the board and, for each enabled colum
 eligible cards in display order (priority high → normal → low, then oldest id). For each
 dispatched card it:
 
-1. Binds the card to its branch (the same `branch:` frontmatter write as Run Step) and
+1. Binds the card to its branch (the same branch write as Run Step) and
    provisions the branch worktree, reusing a live one when it exists.
 2. Seeds a headless agent session with the card (title + body) plus the column's
-   `instructions.md` — exactly the prompt an interactive Run Step would send.
+   instructions — exactly the prompt an interactive Run Step would send.
 3. Lets the agent work with the configured tool set, **auto-approving every tool call**.
 4. Considers the run complete when the card *leaves its source column* — normally because
    the agent called `board_move_card`, per the column instructions. If the agent stops

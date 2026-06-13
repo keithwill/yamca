@@ -14,7 +14,7 @@ public sealed record StepRunRequest(
     string? ColumnInstructions);
 
 /// <summary>Provisions a chat session pre-seeded to work a board step: bound to the card's
-/// branch worktree (if any), with a self-contained draft prompt (card + the column's instructions.md
+/// branch worktree (if any), with a self-contained draft prompt (card + the column's instructions
 /// inlined) pre-filled in the composer. The session is flagged to auto-send the draft on open via
 /// <see cref="ChatViewModel.AutoSendDraft"/>.</summary>
 public sealed class BoardStepLauncher

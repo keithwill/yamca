@@ -7,10 +7,10 @@ namespace Yamca.Agent.Tests.Board;
 public class BoardPromptsTests
 {
     private static BoardCard Card() =>
-        new("7", "Add OAuth login", null, "0007-add-oauth.md", "10-idea", "/x/0007-add-oauth.md", "Plan the login flow.", Array.Empty<SubtaskItem>());
+        new("0007", "Add OAuth login", null, "idea-id", "Plan the login flow.", Array.Empty<SubtaskItem>());
 
-    private static BoardColumn Col(string dir, int order, string name) =>
-        new(dir, order, name, $"/x/{dir}", Array.Empty<BoardCard>());
+    private static BoardColumn Col(string id, int order, string name) =>
+        new(id, order, name, null, Array.Empty<BoardCard>());
 
     [Test]
     public void BuildSeedPrompt_NullInstructions_DoesNotThrow()

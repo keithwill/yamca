@@ -8,7 +8,8 @@ public interface IWorkspace
 
     /// <summary>The top-level directory of the git repository containing <see cref="RootPath"/>,
     /// or <see cref="RootPath"/> itself when not inside a repository. Repo-scoped artifacts — the
-    /// dev board (<c>.yamca/board</c>) and worktrees (<c>.yamca/worktrees</c>) — anchor here so they
+    /// shared document store (<c>.yamca/yamca.db</c>, holding the dev board) and worktrees
+    /// (<c>.yamca/worktrees</c>) — anchor here so they
     /// resolve to the same place no matter which subdirectory the session was opened to. This is
     /// NOT a sandbox boundary and may sit above <see cref="RootPath"/>.</summary>
     string RepositoryRoot { get; }

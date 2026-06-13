@@ -1,51 +1,50 @@
 namespace Yamca.Agent.Board;
 
-/// <summary>A single subtask checklist item parsed from a card body
-/// (a GitHub-style <c>- [ ]</c> / <c>- [x]</c> line).</summary>
+/// <summary>A single subtask checklist item belonging to a card.</summary>
 public sealed record SubtaskItem(string Text, bool Done);
 
-/// <summary>Card importance level stored in the frontmatter <c>priority:</c> field.
-/// <see cref="Normal"/> is the default when the field is absent or unrecognized.
-/// Cards are sorted high → normal → low within each column.</summary>
+/// <summary>Card importance level. <see cref="Normal"/> is the default. Cards are sorted
+/// high → normal → low within each column.</summary>
 public enum CardPriority { Low = -1, Normal = 0, High = 1 }
 
-/// <summary>A board card: one markdown file living in its current column's directory.
-/// <see cref="Id"/> is canonical (frontmatter <c>id</c> or the filename's leading digits);
-/// <see cref="Branch"/> is the git branch bound to the card across steps, if any.</summary>
+/// <summary>A board card. <see cref="Id"/> is the canonical 4-digit display id; <see cref="ColumnId"/>
+/// names the column the card currently lives in (a move rewrites this field); <see cref="Branch"/> is
+/// the git branch bound to the card across steps, if any. The read-model projection of a
+/// <see cref="CardRecord"/>.</summary>
 public sealed record BoardCard(
     string Id,
     string Title,
     string? Branch,
-    string FileName,
-    string ColumnDirectory,
-    string AbsolutePath,
+    string ColumnId,
     string Body,
     IReadOnlyList<SubtaskItem> Subtasks,
     CardPriority Priority = CardPriority.Normal);
 
-/// <summary>A board column, materialized from a numeric-prefixed directory
-/// (e.g. <c>30-implement</c>). <see cref="Order"/> is the numeric prefix and
-/// <see cref="DisplayName"/> is the remainder.</summary>
+/// <summary>A board column. <see cref="Id"/> is the generated, opaque column identity;
+/// <see cref="Order"/> is its position; <see cref="Instructions"/> (non-blank ⇒ work step) is the
+/// guidance an agent runs for a card in this column. The read-model projection of a
+/// <see cref="ColumnRecord"/> plus its cards.</summary>
 public sealed record BoardColumn(
-    string DirectoryName,
+    string Id,
     int Order,
     string DisplayName,
-    string AbsolutePath,
+    string? Instructions,
     IReadOnlyList<BoardCard> Cards);
 
-/// <summary>Immutable view of the whole board at a point in time.</summary>
+/// <summary>Immutable view of the whole board at a point in time. Columns are ordered by
+/// <see cref="BoardColumn.Order"/>.</summary>
 public sealed record BoardSnapshot(IReadOnlyList<BoardColumn> Columns)
 {
     public static BoardSnapshot Empty { get; } = new(Array.Empty<BoardColumn>());
 
     public IEnumerable<BoardCard> AllCards => Columns.SelectMany(c => c.Cards);
 
-    /// <summary>Locate a card by id, file name (with or without <c>.md</c>), or absolute path.
-    /// Returns null when nothing matches; throws nothing.</summary>
-    public BoardCard? FindCard(string idOrPath)
+    /// <summary>Locate a card by id. Accepts a numeric form so "7" finds a card whose id is "0007"
+    /// (and vice versa). Returns null when nothing matches; throws nothing.</summary>
+    public BoardCard? FindCard(string id)
     {
-        if (string.IsNullOrWhiteSpace(idOrPath)) return null;
-        var needle = idOrPath.Trim();
+        if (string.IsNullOrWhiteSpace(id)) return null;
+        var needle = id.Trim();
 
         foreach (var card in AllCards)
             if (string.Equals(card.Id, needle, StringComparison.OrdinalIgnoreCase))
@@ -57,29 +56,23 @@ public sealed record BoardSnapshot(IReadOnlyList<BoardColumn> Columns)
                 if (int.TryParse(card.Id, out var cardNum) && cardNum == wanted)
                     return card;
 
-        foreach (var card in AllCards)
-            if (string.Equals(card.AbsolutePath, needle, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(card.FileName, needle, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(Path.GetFileNameWithoutExtension(card.FileName), needle, StringComparison.OrdinalIgnoreCase))
-                return card;
-
         return null;
     }
 
-    /// <summary>Locate a column by display name or directory name (case-insensitive).</summary>
-    public BoardColumn? FindColumn(string nameOrDir)
+    /// <summary>Locate a column by its id or display name (case-insensitive).</summary>
+    public BoardColumn? FindColumn(string idOrName)
     {
-        if (string.IsNullOrWhiteSpace(nameOrDir)) return null;
-        var needle = nameOrDir.Trim();
+        if (string.IsNullOrWhiteSpace(idOrName)) return null;
+        var needle = idOrName.Trim();
         return Columns.FirstOrDefault(c =>
-            string.Equals(c.DisplayName, needle, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(c.DirectoryName, needle, StringComparison.OrdinalIgnoreCase));
+            string.Equals(c.Id, needle, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(c.DisplayName, needle, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>The column immediately after <paramref name="column"/> in board order, or null if it is the last.</summary>
     public BoardColumn? NextColumn(BoardColumn column)
     {
-        var idx = Columns.ToList().FindIndex(c => c.DirectoryName == column.DirectoryName);
+        var idx = Columns.ToList().FindIndex(c => c.Id == column.Id);
         return idx >= 0 && idx + 1 < Columns.Count ? Columns[idx + 1] : null;
     }
 }

@@ -31,7 +31,6 @@ public sealed class OrchestratorService : IDisposable
     private readonly IServiceScopeFactory _scopes;
     private readonly IWorkspace _rootWorkspace;
     private readonly BoardStore _boardStore;
-    private readonly BoardService _boardService;
     private readonly CardWorktreeProvisioner _provisioner;
     private readonly EndpointClientFactory _clientFactory;
     private readonly OrchestratorRunRegistry _registry;
@@ -65,7 +64,6 @@ public sealed class OrchestratorService : IDisposable
         IServiceScopeFactory scopes,
         IWorkspace rootWorkspace,
         BoardStore boardStore,
-        BoardService boardService,
         CardWorktreeProvisioner provisioner,
         EndpointClientFactory clientFactory,
         OrchestratorRunRegistry registry,
@@ -75,11 +73,10 @@ public sealed class OrchestratorService : IDisposable
         _scopes = scopes;
         _rootWorkspace = rootWorkspace;
         _boardStore = boardStore;
-        _boardService = boardService;
         _provisioner = provisioner;
         _clientFactory = clientFactory;
         _registry = registry;
-        _runner = new OrchestratorCardRunner(boardStore, boardService);
+        _runner = new OrchestratorCardRunner(boardStore);
         // The orchestrator persists run transcripts itself; like every ChatStore consumer it
         // anchors on the root workspace. Its internal lock is separate from the per-circuit
         // instances', but index.json writes are atomic and the index self-heals by rescanning,
@@ -182,18 +179,17 @@ public sealed class OrchestratorService : IDisposable
     {
         var changed = DrainMessages();
 
-        var boardRoot = await _boardStore.EnsureAsync(ct).ConfigureAwait(false);
-        var board = _boardService.Read(boardRoot);
+        var board = await _boardStore.ReadAsync(ct).ConfigureAwait(false);
 
         // Settings are re-read from disk every tick so circuit edits apply to future dispatch
         // without a restart. Validation failure keeps the last good config and skips dispatch;
         // reconciliation below still runs.
-        var (settings, endpoints, valid) = ResolveSettings(board, boardRoot);
+        var (settings, endpoints, valid) = ResolveSettings(board);
 
         changed |= Reconcile(board, settings);
 
         if (_enabled && valid)
-            changed |= Dispatch(board, boardRoot, settings, endpoints!, ct);
+            changed |= Dispatch(board, settings, endpoints!, ct);
 
         if (changed)
         {
@@ -293,7 +289,7 @@ public sealed class OrchestratorService : IDisposable
     }
 
     private (OrchestratorSettings Settings, EndpointsSettings? Endpoints, bool Valid) ResolveSettings(
-        BoardSnapshot board, string boardRoot)
+        BoardSnapshot board)
     {
         OrchestratorSettings settings;
         EndpointsSettings endpoints;
@@ -312,8 +308,7 @@ public sealed class OrchestratorService : IDisposable
             return (_lastGoodSettings, null, false);
         }
 
-        var result = OrchestratorSettingsValidator.Validate(
-            settings, endpoints, board, dir => _boardService.HasInstructions(boardRoot, dir));
+        var result = OrchestratorSettingsValidator.Validate(settings, endpoints, board);
         if (!result.IsValid)
         {
             _lastValidationError = string.Join(" ", result.Errors);
@@ -352,7 +347,7 @@ public sealed class OrchestratorService : IDisposable
             {
                 var card = board.FindCard(cardId);
                 if (card is null
-                    || !string.Equals(card.ColumnDirectory, state.ColumnDirectory, StringComparison.OrdinalIgnoreCase))
+                    || !string.Equals(card.ColumnId, state.ColumnId, StringComparison.OrdinalIgnoreCase))
                 {
                     _states.Remove(cardId);
                     changed = true;
@@ -364,7 +359,6 @@ public sealed class OrchestratorService : IDisposable
 
     private bool Dispatch(
         BoardSnapshot board,
-        string boardRoot,
         OrchestratorSettings settings,
         EndpointsSettings endpoints,
         CancellationToken loopCt)
@@ -374,7 +368,7 @@ public sealed class OrchestratorService : IDisposable
 
         var runningPerColumn = _states.Values
             .Where(s => s.Status is CardRunStatus.Queued or CardRunStatus.Running)
-            .GroupBy(s => s.ColumnDirectory, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(s => s.ColumnId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
         var runningTotal = runningPerColumn.Values.Sum();
 
@@ -386,12 +380,12 @@ public sealed class OrchestratorService : IDisposable
             var runId = Guid.NewGuid().ToString("n");
             var attempts = _states.TryGetValue(card.Id, out var prior) ? prior.Attempts : 0;
             _states[card.Id] = new CardOrchestrationState(
-                card.Id, column.DirectoryName, CardRunStatus.Queued, attempts,
+                card.Id, column.Id, CardRunStatus.Queued, attempts,
                 NextAttemptUtc: null, FailureReason: null, ActiveRunId: runId);
 
             var cts = CancellationTokenSource.CreateLinkedTokenSource(loopCt);
             var task = Task.Run(
-                () => DispatchRunAsync(card, column, boardRoot, settings, endpoints, runId, attempts + 1, cts.Token),
+                () => DispatchRunAsync(card, column, settings, endpoints, runId, attempts + 1, cts.Token),
                 CancellationToken.None);
             lock (_activeRuns) _activeRuns[runId] = new ActiveRun(card.Id, runId, cts, task);
 
@@ -409,7 +403,6 @@ public sealed class OrchestratorService : IDisposable
     private async Task DispatchRunAsync(
         BoardCard card,
         BoardColumn column,
-        string boardRoot,
         OrchestratorSettings settings,
         EndpointsSettings endpoints,
         string runId,
@@ -440,7 +433,7 @@ public sealed class OrchestratorService : IDisposable
                 return;
             }
 
-            var instructions = _boardService.ReadInstructions(boardRoot, column.DirectoryName);
+            var instructions = column.Instructions;
 
             // 2. Endpoint (re-validated here — settings may have changed since the tick).
             var endpoint = settings.EndpointId is Guid id ? endpoints.FindById(id) : endpoints.Default;
@@ -463,7 +456,7 @@ public sealed class OrchestratorService : IDisposable
             var worktreeWorkspace = new WorkspaceImpl(provision.Worktree.WorktreePath);
 
             _registry.OnRunStarted(new OrchestratorRunInfo(
-                runId, card.Id, card.Title, column.DirectoryName, column.DisplayName,
+                runId, card.Id, card.Title, column.Id, column.DisplayName,
                 branch, provision.Worktree.WorktreePath, attempt,
                 BoardPrompts.BuildSeedPrompt(card, column, instructions), DateTimeOffset.Now));
             started = true;

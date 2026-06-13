@@ -13,7 +13,6 @@
 @using Yamca.Web.Services.Orchestration
 @using WorkspaceImpl = Yamca.Agent.Workspace.Workspace
 @inject IWorkspace Workspace
-@inject BoardService BoardSvc
 @inject BoardStore BoardStore
 @inject GitService Git
 @inject CardWorktreeProvisioner Provisioner
@@ -41,11 +40,10 @@ else if (_snapshot.Columns.Count == 0)
     <MudContainer MaxWidth="MaxWidth.Small" Class="pa-8">
         <MudText Typo="Typo.h6" GutterBottom="true">No dev board yet</MudText>
         <MudText Typo="Typo.body2" Class="mb-4">
-            The board is a personal scratchpad stored at <code>.yamca/board</code> — local and
-            uncommitted, never shared. A column whose <code>instructions.md</code> has content is a
-            work step run in chat; an empty <code>instructions.md</code> marks a resting column whose
-            cards are just promoted onward. Initialize it with the default idea → analyze → implement
-            → verify → done columns?
+            The board is a personal scratchpad stored locally in <code>.yamca/yamca.db</code> —
+            uncommitted, never shared. A column with step instructions is a work step run in chat; a
+            column without them is a resting column whose cards are just promoted onward. Initialize it
+            with the default idea → analyze → implement → verify → done columns?
         </MudText>
         <MudButton Color="Color.Primary" Variant="Variant.Filled"
                    StartIcon="@Icons.Material.Filled.ViewKanban" OnClick="InitializeBoardAsync">
@@ -109,7 +107,7 @@ else
             {
                 <div class="yamca-board-lane">
                     <div class="yamca-board-lane-header">
-                        @if (_isWorkColumn.GetValueOrDefault(column.DirectoryName))
+                        @if (_isWorkColumn.GetValueOrDefault(column.Id))
                         {
                             <MudIcon Icon="@Icons.Material.Filled.Chat" Size="Size.Small"
                                      Class="yamca-board-ai-indicator" Title="AI work step" />
@@ -125,7 +123,7 @@ else
                                        OnClick="@(() => OpenColumnSettingsAsync(column))"
                                        aria-label="Edit column" />
                     </div>
-                    <div class="yamca-board-lane-cards @(_dragOverColumn == column.DirectoryName ? "yamca-board-lane-cards--dragover" : "")"
+                    <div class="yamca-board-lane-cards @(_dragOverColumn == column.Id ? "yamca-board-lane-cards--dragover" : "")"
                          @ondragover:preventDefault="true"
                          @ondragenter="@(() => OnDragEnter(column))"
                          @ondrop:preventDefault="true"
@@ -208,7 +206,7 @@ else
                                             <MudProgressCircular Indeterminate="true" Size="Size.Small" />
                                         </div>
                                     }
-                                    @if (_isWorkColumn.GetValueOrDefault(column.DirectoryName) && Session.Endpoints.Items.Count > 0)
+                                    @if (_isWorkColumn.GetValueOrDefault(column.Id) && Session.Endpoints.Items.Count > 0)
                                     {
                                         <button type="button"
                                                 class="yamca-board-card-play"
@@ -232,7 +230,6 @@ else
 @code {
     private bool _hydrated;
     private BoardSnapshot _snapshot = BoardSnapshot.Empty;
-    private string _boardRoot = "";
     private readonly HashSet<string> _busyCards = new(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, bool> _isWorkColumn = new Dictionary<string, bool>();
 
@@ -308,7 +305,7 @@ else
     private async Task RefreshAsync()
     {
         var ct = CancellationToken.None;
-        var boardRoot = await BoardStore.EnsureAsync(ct);
+        _snapshot = await BoardStore.ReadAsync(ct);
 
         var worktrees = await Git.ListWorktreesAsync(Workspace.RepositoryRoot, ct);
         var branchWorktrees = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -317,12 +314,9 @@ else
                 branchWorktrees[branch!] = path;
         _branchWorktrees = branchWorktrees;
 
-        _boardRoot = boardRoot;
-        _snapshot = BoardSvc.Read(boardRoot);
-
         var workCols = new Dictionary<string, bool>(StringComparer.Ordinal);
         foreach (var col in _snapshot.Columns)
-            workCols[col.DirectoryName] = BoardSvc.HasInstructions(boardRoot, col.DirectoryName);
+            workCols[col.Id] = !string.IsNullOrWhiteSpace(col.Instructions);
         _isWorkColumn = workCols;
     }
 
@@ -361,12 +355,12 @@ else
         return _filterStartsWith ? text.StartsWith(query) : text.Contains(query);
     }
 
-    // Bootstrap the board directory (creates .yamca/board and seeds default columns on first use).
+    // Bootstrap the board (seeds default columns in the store on first use).
     // Normally unreachable — RefreshAsync ensures the board on first navigation, so the empty-board
     // view rarely shows — but kept as an explicit affordance.
     private async Task InitializeBoardAsync()
     {
-        try { await BoardStore.EnsureAsync(CancellationToken.None); }
+        try { await BoardStore.EnsureSeededAsync(CancellationToken.None); }
         catch (Exception ex)
         {
             Snackbar.Add($"Could not initialize board: {ex.Message}", Severity.Error);
@@ -378,7 +372,7 @@ else
 
     private async Task OpenColumnSettingsAsync(BoardColumn column)
     {
-        var currentInstructions = BoardSvc.ReadInstructions(_boardRoot, column.DirectoryName);
+        var currentInstructions = column.Instructions;
 
         var parameters = new DialogParameters { ["Instructions"] = currentInstructions };
         var dialog = await Dialogs.ShowAsync<ColumnInstructionsDialog>(
@@ -391,19 +385,15 @@ else
         var newNorm = string.IsNullOrWhiteSpace(data.Instructions) ? null : data.Instructions.Trim();
         if (string.Equals(oldNorm, newNorm, StringComparison.Ordinal)) return;
 
-        var ct = CancellationToken.None;
-        await BoardStore.MutateAsync(async br =>
+        try
         {
-            try
-            {
-                await BoardSvc.WriteInstructionsAsync(br, column.DirectoryName, data.Instructions);
-                Snackbar.Add($"Column '{column.DisplayName}' updated.", Severity.Success);
-            }
-            catch (Exception ex)
-            {
-                Snackbar.Add($"Could not save instructions: {ex.Message}", Severity.Error);
-            }
-        }, ct);
+            await BoardStore.SetColumnInstructionsAsync(column.Id, data.Instructions, CancellationToken.None);
+            Snackbar.Add($"Column '{column.DisplayName}' updated.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not save instructions: {ex.Message}", Severity.Error);
+        }
 
         await RefreshAsync();
         StateHasChanged();
@@ -412,37 +402,26 @@ else
     private async Task AddCardAsync(BoardColumn column)
     {
         // Preview the id the card will take so the dialog can seed an id-prefixed default branch
-        // (matching PresumptiveBranch). The id is recomputed under the write lock below; on a local
-        // single-user board the two agree, and the branch the user accepted is written verbatim
+        // (matching PresumptiveBranch). The id is recomputed atomically inside AddCardAsync below; on a
+        // local single-user board the two agree, and the branch the user accepted is stored verbatim
         // regardless, so any drift only affects the cosmetic id prefix of the default branch.
-        var boardRoot = await BoardStore.EnsureAsync(CancellationToken.None);
-        var nextId = BoardSvc.NextCardId(boardRoot);
+        var nextId = await BoardStore.NextCardIdAsync(CancellationToken.None);
 
         var parameters = new DialogParameters { ["NextId"] = nextId };
         var dialog = await Dialogs.ShowAsync<NewCardDialog>("New card", parameters, Small());
         var result = await dialog.Result;
         if (result is null || result.Canceled || result.Data is not NewCardDialog.Result data) return;
 
-        // Write the new card into the board directory under the board write lock (the column's
-        // directory name is stable; resolve its path from the board root inside the lock). Every card
-        // is born with a `branch:` so its branch is already decided; the worktree is only created
-        // later, the first time a chat is opened or a step is run on the card.
-        await BoardStore.MutateAsync(async boardRoot =>
+        // Persist the new card. Every card is born with a `branch:` so its branch is already decided;
+        // the worktree is only created later, the first time a chat is opened or a step is run on it.
+        try
         {
-            var id = BoardSvc.NextCardId(boardRoot);
-            var path = Path.Combine(boardRoot, column.DirectoryName, BoardService.CardFileName(id, data.Title));
-            var priorityLine = data.Priority == CardPriority.Normal ? "" : $"priority: {data.Priority.ToString().ToLowerInvariant()}\n";
-            var branchLine = string.IsNullOrWhiteSpace(data.Branch) ? "" : $"branch: {data.Branch}\n";
-            var content = $"---\nid: {id}\ntitle: \"{data.Title.Replace("\"", "'")}\"\n{branchLine}{priorityLine}---\n\n{data.Body}\n";
-            try
-            {
-                await File.WriteAllTextAsync(path, content);
-            }
-            catch (Exception ex)
-            {
-                Snackbar.Add($"Could not create card: {ex.Message}", Severity.Error);
-            }
-        }, CancellationToken.None);
+            await BoardStore.AddCardAsync(column.Id, data.Title, data.Body, data.Branch, data.Priority, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not create card: {ex.Message}", Severity.Error);
+        }
 
         await RefreshAsync();
         StateHasChanged();
@@ -453,7 +432,6 @@ else
         // Branch field defaults / existing branches are gathered up front so the dialog can
         // offer them inline (combobox + endpoint dropdown) instead of chaining more modals.
         var existingBranches = await Git.ListBranchesAsync(Workspace.RepositoryRoot, CancellationToken.None);
-        var boardRoot = await BoardStore.EnsureAsync(CancellationToken.None);
         var next = _snapshot.NextColumn(column);
 
         // When the card's branch has a live code worktree, hand the dialog its path and the repo's
@@ -467,7 +445,7 @@ else
         {
             ["Card"] = card,
             ["ColumnDisplayName"] = column.DisplayName,
-            ["IsWorkColumn"] = BoardSvc.HasInstructions(boardRoot, column.DirectoryName),
+            ["IsWorkColumn"] = !string.IsNullOrWhiteSpace(column.Instructions),
             ["NextColumnDisplayName"] = next?.DisplayName,
             ["Endpoints"] = Session.Endpoints.Items,
             ["DefaultEndpointId"] = Session.Endpoints.DefaultId,
@@ -478,8 +456,8 @@ else
             ["BranchWorktreeLive"] = !string.IsNullOrWhiteSpace(card.Branch)
                                      && _branchWorktrees.ContainsKey(card.Branch!),
             ["Columns"] = _snapshot.Columns
-                .Select(c => new CardDetailDialog.ColumnOption(c.DirectoryName, c.DisplayName)).ToList(),
-            ["CurrentColumnDirectory"] = column.DirectoryName,
+                .Select(c => new CardDetailDialog.ColumnOption(c.Id, c.DisplayName)).ToList(),
+            ["CurrentColumnId"] = column.Id,
             ["WorktreePath"] = worktreePath,
             ["BaseBranch"] = baseBranch,
         };
@@ -497,7 +475,7 @@ else
             await OpenCardChatAsync(card);
         else if (result.Data is CardDetailDialog.MoveRequest move)
         {
-            var target = _snapshot.FindColumn(move.ToColumnDirectory);
+            var target = _snapshot.FindColumn(move.ToColumnId);
             if (target is not null) await MoveCardAsync(card, column, target);
         }
         else if (result.Data is CardDetailDialog.DeleteRequest)
@@ -510,7 +488,7 @@ else
             await UpdateCardBranchAsync(card, br.Branch);
     }
 
-    // Persist a branch chosen in the card dialog by writing the `branch:` frontmatter (no worktree —
+    // Persist a branch chosen in the card dialog by setting the card's branch (no worktree —
     // that waits for the first run/chat). Reuses LockCardToBranchAsync, which writes and refreshes;
     // the busy overlay just gives the card the same in-flight feedback as the other edits.
     private async Task UpdateCardBranchAsync(BoardCard card, string branch)
@@ -596,7 +574,7 @@ else
     // Highlight the lane under the cursor. dragenter bubbles from child cards too, but re-setting the
     // same column is idempotent, and moving to another lane simply switches the highlight — so no
     // dragleave bookkeeping is needed; OnDragEnd/OnDropAsync clear it.
-    private void OnDragEnter(BoardColumn column) => _dragOverColumn = column.DirectoryName;
+    private void OnDragEnter(BoardColumn column) => _dragOverColumn = column.Id;
 
     // Drop a dragged card onto a column. Snapshot and clear the drag state up front (the move triggers
     // a refresh + re-render), then delegate to MoveCardAsync, which no-ops a same-column drop.
@@ -617,7 +595,7 @@ else
     // until all in-flight mutations drain so concurrent moves don't stomp each other's optimistic state.
     private Task MoveCardAsync(BoardCard card, BoardColumn from, BoardColumn target)
     {
-        if (string.Equals(from.DirectoryName, target.DirectoryName, StringComparison.Ordinal))
+        if (string.Equals(from.Id, target.Id, StringComparison.Ordinal))
             return Task.CompletedTask;
         _snapshot = WithCardMoved(_snapshot, card, from, target);
         _busyCards.Add(card.Id);
@@ -630,28 +608,7 @@ else
         var ct = CancellationToken.None;
         try
         {
-            await BoardStore.MutateAsync(async boardRoot =>
-            {
-                var src = Path.GetFullPath(card.AbsolutePath);
-                var destColumnDir = Path.Combine(boardRoot, target.DirectoryName);
-                var dest = Path.GetFullPath(Path.Combine(destColumnDir, card.FileName));
-
-                if (File.Exists(dest))
-                {
-                    await InvokeAsync(() => Snackbar.Add($"A card named '{card.FileName}' already exists in '{target.DisplayName}'.", Severity.Error));
-                    return;
-                }
-
-                try
-                {
-                    Directory.CreateDirectory(destColumnDir);
-                    File.Move(src, dest);
-                }
-                catch (Exception ex)
-                {
-                    await InvokeAsync(() => Snackbar.Add($"Could not move card #{card.Id}: {ex.Message}", Severity.Error));
-                }
-            }, ct);
+            await BoardStore.MoveCardAsync(card.Id, target.Id, ct);
         }
         catch (Exception ex)
         {
@@ -676,17 +633,7 @@ else
         var ct = CancellationToken.None;
         try
         {
-            await BoardStore.MutateAsync(async _ =>
-            {
-                try
-                {
-                    File.Delete(card.AbsolutePath);
-                }
-                catch (Exception ex)
-                {
-                    await InvokeAsync(() => Snackbar.Add($"Could not delete card #{card.Id}: {ex.Message}", Severity.Error));
-                }
-            }, ct);
+            await BoardStore.DeleteCardAsync(card.Id, ct);
         }
         catch (Exception ex)
         {
@@ -711,26 +658,26 @@ else
 
     private static BoardSnapshot WithCardMoved(BoardSnapshot snapshot, BoardCard card, BoardColumn from, BoardColumn to)
     {
-        var moved = card with { ColumnDirectory = to.DirectoryName, AbsolutePath = Path.Combine(to.AbsolutePath, card.FileName) };
+        var moved = card with { ColumnId = to.Id };
         return new BoardSnapshot(snapshot.Columns.Select(col =>
-            col.DirectoryName == from.DirectoryName ? col with { Cards = col.Cards.Where(c => c.Id != card.Id).ToList() } :
-            col.DirectoryName == to.DirectoryName   ? col with { Cards = col.Cards.Append(moved).ToList() } :
+            col.Id == from.Id ? col with { Cards = col.Cards.Where(c => c.Id != card.Id).ToList() } :
+            col.Id == to.Id   ? col with { Cards = col.Cards.Append(moved).ToList() } :
             col).ToList());
     }
 
     private static BoardSnapshot WithCardDeleted(BoardSnapshot snapshot, BoardCard card) =>
         new BoardSnapshot(snapshot.Columns.Select(col =>
-            col.DirectoryName == card.ColumnDirectory
+            col.Id == card.ColumnId
                 ? col with { Cards = col.Cards.Where(c => c.Id != card.Id).ToList() }
                 : col).ToList());
 
     private async Task RunStepAsync(BoardCard card, BoardColumn column, CardDetailDialog.Result run)
     {
-        // 1. Bind the card to its branch by writing `branch:` frontmatter. The board is separate from
-        //    the code worktree, so this is just a write to the card file. We (re)bind both for a card
-        //    that has never had a branch and for one whose stale `branch:` attribute differs from the
-        //    branch chosen now (e.g. an idea reworked onto a fresh branch) — so the frontmatter never
-        //    lies about which branch the card lives on.
+        // 1. Bind the card to its branch by setting the card's branch in the store. The board is
+        //    separate from the code worktree, so this is just a store write. We (re)bind both for a
+        //    card that has never had a branch and for one whose stale branch differs from the branch
+        //    chosen now (e.g. an idea reworked onto a fresh branch) — so the card never lies about
+        //    which branch it lives on.
         if (!string.Equals(card.Branch, run.Branch, StringComparison.Ordinal))
         {
             if (!await LockCardToBranchAsync(card, run.Branch)) return; // error already surfaced
@@ -743,9 +690,8 @@ else
         var worktree = await ResolveWorktreeForBranchAsync(run.Branch);
         if (worktree is null) return; // error already surfaced
 
-        // 3. Column instructions (from the board worktree) + next column.
-        var boardRoot = await BoardStore.EnsureAsync(CancellationToken.None);
-        var instructions = BoardSvc.ReadInstructions(boardRoot, column.DirectoryName);
+        // 3. Column instructions + next column.
+        var instructions = column.Instructions;
         var next = _snapshot.NextColumn(column);
 
         // 4. Provision the seeded session (shown in a pane) and jump to the chat view
@@ -781,7 +727,7 @@ else
         return result.Worktree;
     }
 
-    // Bind a card to its branch by writing the `branch:` frontmatter. Returns false (after
+    // Bind a card to its branch by setting the card's branch. Returns false (after
     // surfacing an error) when the write fails.
     private async Task<bool> LockCardToBranchAsync(BoardCard card, string branch)
     {
@@ -800,23 +746,11 @@ else
         _busyCards.Add(card.Id);
         StateHasChanged();
 
-        var ct = CancellationToken.None;
-        await BoardStore.MutateAsync(async boardRoot =>
+        try { await BoardStore.SetPriorityAsync(card.Id, priority, CancellationToken.None); }
+        catch (Exception ex)
         {
-            var path = Path.Combine(boardRoot, card.ColumnDirectory, card.FileName);
-            string raw;
-            try { raw = await File.ReadAllTextAsync(path); }
-            catch (Exception ex)
-            {
-                Snackbar.Add($"Could not read card #{card.Id}: {ex.Message}", Severity.Error);
-                return;
-            }
-            try { await File.WriteAllTextAsync(path, BoardService.WithPriority(raw, priority)); }
-            catch (Exception ex)
-            {
-                Snackbar.Add($"Could not update card #{card.Id}: {ex.Message}", Severity.Error);
-            }
-        }, ct);
+            Snackbar.Add($"Could not update card #{card.Id}: {ex.Message}", Severity.Error);
+        }
 
         await InvokeAsync(async () =>
         {
@@ -826,53 +760,18 @@ else
         });
     }
 
-    // Same shape as UpdateCardPriorityAsync: mark the card busy, write the edited title (frontmatter)
-    // and markdown body (frontmatter otherwise preserved) into the board, then refresh and clear the
-    // spinner. The card file keeps its original NNNN-slug name even when the title changes — the
-    // displayed title is read from frontmatter, not the file name.
+    // Mark the card busy, write the edited title and markdown body (whose `- [ ]` lines become the
+    // card's subtasks) into the store, then refresh and clear the spinner.
     private async Task UpdateCardBodyAsync(BoardCard card, string title, string body)
     {
         _busyCards.Add(card.Id);
         StateHasChanged();
 
-        var ct = CancellationToken.None;
-        await BoardStore.MutateAsync(async boardRoot =>
+        try { await BoardStore.UpdateCardBodyAsync(card.Id, title, body, CancellationToken.None); }
+        catch (Exception ex)
         {
-            var path = Path.Combine(boardRoot, card.ColumnDirectory, card.FileName);
-            string raw;
-            try { raw = await File.ReadAllTextAsync(path); }
-            catch (Exception ex)
-            {
-                Snackbar.Add($"Could not read card #{card.Id}: {ex.Message}", Severity.Error);
-                return;
-            }
-            var updated = BoardService.WithBody(raw, body);
-            var titleChanged = !string.Equals(title.Trim(), card.Title.Trim(), StringComparison.Ordinal);
-            if (titleChanged) updated = BoardService.WithTitle(updated, title);
-            try { await File.WriteAllTextAsync(path, updated); }
-            catch (Exception ex)
-            {
-                Snackbar.Add($"Could not update card #{card.Id}: {ex.Message}", Severity.Error);
-                return;
-            }
-
-            // Keep the NNNN-slug file name in step with the title so the file name stays a
-            // recognisable card name. Skip the rename if the slug is unchanged or the target already
-            // exists (a leftover/collision) — the title edit above still lands either way.
-            var newFileName = BoardService.CardFileName(card.Id, title);
-            if (titleChanged && !string.Equals(newFileName, card.FileName, StringComparison.Ordinal))
-            {
-                var dest = Path.Combine(boardRoot, card.ColumnDirectory, newFileName);
-                if (File.Exists(dest))
-                    Snackbar.Add($"Card renamed in place; a file named '{newFileName}' already exists.", Severity.Warning);
-                else
-                    try { File.Move(path, dest); }
-                    catch (Exception ex)
-                    {
-                        Snackbar.Add($"Card updated but the file rename failed: {ex.Message}", Severity.Warning);
-                    }
-            }
-        }, ct);
+            Snackbar.Add($"Could not update card #{card.Id}: {ex.Message}", Severity.Error);
+        }
 
         await InvokeAsync(async () =>
         {

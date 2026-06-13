@@ -11,6 +11,7 @@ using Yamca.Agent.Mcp;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Settings.Persistence;
+using Yamca.Agent.Storage;
 using Yamca.Agent.Subagents;
 using Yamca.Agent.Tools;
 using Yamca.Agent.Tools.Board;
@@ -66,7 +67,8 @@ var repositoryRoot = discoveredRepoRoot ?? workspaceRoot;
 if (cli.Mode == CliMode.BoardReinit)
 {
     var workspace = new Workspace(workspaceRoot, repositoryRoot);
-    var boardStore = new BoardStore(workspace);
+    await using var yamcaStore = new YamcaStore(workspace);
+    var boardStore = new BoardStore(yamcaStore);
     var r = await boardStore.ReinitAsync(cli.Wipe, CancellationToken.None).ConfigureAwait(false);
     Console.WriteLine("Board reinitialized.");
     Console.WriteLine($"  Columns created:       {r.ColumnsCreated}");
@@ -155,12 +157,14 @@ builder.Services.AddSingleton<EndpointClientFactory>();
 // entire session.
 builder.Services.AddSingleton<IWorkspace>(_ => new Workspace(workspaceRoot, repositoryRoot));
 builder.Services.AddSingleton<GitService>();
-builder.Services.AddSingleton<BoardService>();
-// The board is a plain, uncommitted directory at <repo>/.yamca/board — a personal scratchpad,
-// gitignored and never tracked or pushed. BoardStore owns that location and bootstrap, anchored at
-// the root workspace's repository root (not any per-session workspace), so every chat session and
-// the board UI share one canonical board. Created lazily on first board access (EnsureAsync), so an
-// unused board costs nothing at startup.
+// The shared document store (VestPocket) backing all local app state at <repo>/.yamca/yamca.db —
+// gitignored, never tracked or pushed. Anchored at the root workspace's repository root (not any
+// per-session workspace), so every chat session and the board UI share one canonical store. Opened
+// lazily on first access; YamcaStoreHost warms it at startup and flushes/closes it on shutdown.
+builder.Services.AddSingleton<YamcaStore>();
+builder.Services.AddHostedService<YamcaStoreHost>();
+// The board lives in that store under /board/* keys — a personal scratchpad shared by every chat
+// session independent of which code branch it is on. BoardStore is its repository.
 builder.Services.AddSingleton<BoardStore>();
 // Shared branch-worktree provisioning for board step runs — used by both the interactive
 // Run Step flow (Board.razor) and the orchestrator's headless dispatch.

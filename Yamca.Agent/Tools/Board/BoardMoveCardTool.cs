@@ -7,27 +7,25 @@ namespace Yamca.Agent.Tools.Board;
 /// <summary>Moves a card to another column by relocating its file within the board directory.</summary>
 public sealed class BoardMoveCardTool : ITool
 {
-    private readonly BoardService _board;
     private readonly BoardStore _boardStore;
 
-    public BoardMoveCardTool(BoardService board, BoardStore boardStore)
+    public BoardMoveCardTool(BoardStore boardStore)
     {
-        _board = board;
         _boardStore = boardStore;
     }
 
     public string Name => "board_move_card";
 
     public string Description =>
-        "Move a board card to another column by relocating its markdown file into that column's directory. " +
+        "Move a board card to another column. " +
         "Commit your code changes on this branch first, then move the card.";
 
     public string ParametersSchema => """
     {
       "type": "object",
       "properties": {
-        "card":      { "type": "string", "description": "Card id (e.g. '0007') or file name." },
-        "to_column": { "type": "string", "description": "Target column display name (e.g. 'verify') or directory name." }
+        "card":      { "type": "string", "description": "Card id (e.g. '0007')." },
+        "to_column": { "type": "string", "description": "Target column display name (e.g. 'verify') or id." }
       },
       "required": ["card", "to_column"],
       "additionalProperties": false
@@ -47,38 +45,23 @@ public sealed class BoardMoveCardTool : ITool
         if (!ToolArguments.TryGetString(arguments, "to_column", out var columnRef, out var colErr))
             return ToolResult.Error(colErr);
 
-        return await _boardStore.MutateAsync(async boardRoot =>
-        {
-            var snapshot = _board.Read(boardRoot);
+        var snapshot = await _boardStore.ReadAsync(cancellationToken);
 
-            var card = snapshot.FindCard(cardRef);
-            if (card is null)
-                return ToolResult.Error($"No card matching '{cardRef}' on the board.");
+        var card = snapshot.FindCard(cardRef);
+        if (card is null)
+            return ToolResult.Error($"No card matching '{cardRef}' on the board.");
 
-            var target = snapshot.FindColumn(columnRef);
-            if (target is null)
-                return ToolResult.Error($"Unknown column '{columnRef}'. Valid columns: {string.Join(", ", snapshot.Columns.Select(c => c.DisplayName))}.");
+        var target = snapshot.FindColumn(columnRef);
+        if (target is null)
+            return ToolResult.Error($"Unknown column '{columnRef}'. Valid columns: {string.Join(", ", snapshot.Columns.Select(c => c.DisplayName))}.");
 
-            if (string.Equals(card.ColumnDirectory, target.DirectoryName, StringComparison.OrdinalIgnoreCase))
-                return ToolResult.Ok($"Card #{card.Id} is already in '{target.DisplayName}'.");
+        var from = snapshot.FindColumn(card.ColumnId);
+        if (string.Equals(card.ColumnId, target.Id, StringComparison.OrdinalIgnoreCase))
+            return ToolResult.Ok($"Card #{card.Id} is already in '{target.DisplayName}'.");
 
-            var src = Path.GetFullPath(card.AbsolutePath);
-            var dest = Path.GetFullPath(Path.Combine(target.AbsolutePath, card.FileName));
+        if (!await _boardStore.MoveCardAsync(card.Id, target.Id, cancellationToken))
+            return ToolResult.Error($"No card matching '{cardRef}' on the board.");
 
-            if (File.Exists(dest))
-                return ToolResult.Error($"A card file named '{card.FileName}' already exists in '{target.DisplayName}'.");
-
-            try
-            {
-                Directory.CreateDirectory(target.AbsolutePath);
-                File.Move(src, dest);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                return ToolResult.Error($"Could not move card #{card.Id}: {ex.Message}");
-            }
-
-            return ToolResult.Ok($"Moved card #{card.Id} from '{card.ColumnDirectory}' to '{target.DisplayName}'.");
-        }, cancellationToken);
+        return ToolResult.Ok($"Moved card #{card.Id} from '{from?.DisplayName ?? card.ColumnId}' to '{target.DisplayName}'.");
     }
 }
