@@ -27,7 +27,7 @@ chat session regardless of which code branch or worktree the session is on.
 
 Each column has a generated, opaque **id** that is independent of its display name,
 plus an order that sets its position. The default layout is
-**idea → analyze → implement → verify → done**. Because the id is stable and
+**idea → plan → implement → verify → done**. Because the id is stable and
 distinct from the name, dropping and re-adding a column produces a fresh record —
 a stale id always refers to a dead column, never a quickly re-added one.
 

@@ -29,7 +29,7 @@ worked simply cancels that run. Deleting the card does too.
 
 If a card's next column is also enabled, the next poll picks it up there — cards **chain
 through the pipeline** automatically until they reach a resting or disabled column. Enable
-only `analyze` for a human checkpoint after planning, or the whole pipeline for end-to-end
+only `plan` for a human checkpoint after planning, or the whole pipeline for end-to-end
 runs that stop at `done`.
 
 ## Enabling and disabling
