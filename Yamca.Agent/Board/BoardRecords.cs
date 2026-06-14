@@ -12,12 +12,25 @@ public sealed record ColumnRecord(string Id, int Order, string DisplayName, stri
 /// card aggregate (text plus its done flag), not a markdown line re-parsed on each read.</summary>
 public sealed record SubtaskState(string Text, bool Done);
 
+/// <summary>A named, free-form output attached to a card — the durable result of a work step kept
+/// out of the card's <see cref="CardRecord.Body"/> so the body stays the original ask/abstract.
+/// <see cref="Kind"/> is a caller-chosen label (the column instructions decide the vocabulary —
+/// e.g. <c>plan</c>, <c>analysis</c>, <c>verification</c>, <c>build-log</c>); <see cref="Content"/>
+/// is markdown/plain text; <see cref="UpdatedAt"/> records the last write. Owned inline by the card
+/// aggregate, like its subtasks, and at most one artifact exists per kind (a re-set replaces it).</summary>
+public sealed record ArtifactState(string Kind, string Content, DateTimeOffset UpdatedAt);
+
 /// <summary>The persisted shape of a board card in the VestPocket store, keyed
-/// <c>/board/card/{Id}</c>. The card is an aggregate root: it owns its <see cref="Subtasks"/>
-/// inline. <see cref="Id"/> is a monotonic integer display id starting at 1 (e.g. <c>7</c>), handed
-/// out by the <see cref="CardCounter"/> and never reused. A card's column membership is the
-/// <see cref="ColumnId"/> field — a move rewrites that field rather than relocating a file.
-/// <see cref="Body"/> is the prose description; <see cref="Subtasks"/> is the authoritative checklist.</summary>
+/// <c>/board/card/{Id}</c>. The card is an aggregate root: it owns its <see cref="Subtasks"/> and
+/// <see cref="Artifacts"/> inline. <see cref="Id"/> is a monotonic integer display id starting at 1
+/// (e.g. <c>7</c>), handed out by the <see cref="CardCounter"/> and never reused. A card's column
+/// membership is the <see cref="ColumnId"/> field — a move rewrites that field rather than relocating
+/// a file. <see cref="Body"/> is the prose description; <see cref="Subtasks"/> is the authoritative
+/// checklist; <see cref="Artifacts"/> are named step outputs (plans, notes, logs) stored apart from
+/// the body. <see cref="Artifacts"/> is an init property kept off the positional constructor so the
+/// existing call sites stay unchanged. It is nullable on purpose: a card persisted before the field
+/// existed has no <c>Artifacts</c> key, and System.Text.Json leaves such an omitted property null
+/// (it does not honor the field initializer), so every read path coalesces to empty.</summary>
 public sealed record CardRecord(
     int Id,
     string Title,
@@ -25,7 +38,10 @@ public sealed record CardRecord(
     CardPriority Priority,
     string ColumnId,
     string Body,
-    IReadOnlyList<SubtaskState> Subtasks);
+    IReadOnlyList<SubtaskState> Subtasks)
+{
+    public IReadOnlyList<ArtifactState>? Artifacts { get; init; } = Array.Empty<ArtifactState>();
+}
 
 /// <summary>The board's monotonic card-id counter, persisted at <c>/board/card/last-id</c>.
 /// <see cref="LastId"/> is the most recently assigned card id; the next card takes

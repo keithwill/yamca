@@ -18,8 +18,8 @@ public sealed class BoardService
         new (int, string, string?)[]
     {
         (10, "idea", null),
-        (20, "analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan into the card with board_update_card. Break the work into a `- [ ]` subtask checklist where useful. When the plan is ready, move the card to the next column with board_move_card.\n"),
-        (30, "implement", "# Implement\n\nDo the work described in the card. Tick subtasks as you complete them. When the implementation is done, commit your code changes on this branch, then move the card to the next column with board_move_card.\n"),
+        (20, "analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan. Save the plan as the card's `plan` artifact with board_set_artifact (kind: `plan`) — keep it out of the card body so the body stays the original request. Break the work into a `- [ ]` subtask checklist on the card with board_update_card where useful. When the plan is ready, move the card to the next column with board_move_card.\n"),
+        (30, "implement", "# Implement\n\nRead the card's `plan` artifact with board_get_artifact (the analyze step saved its implementation plan there, not in the body) and do the work it describes. Tick subtasks as you complete them with board_update_card. When the implementation is done, commit your code changes on this branch, then move the card to the next column with board_move_card.\n"),
         (40, "verify", "# Verify\n\nBuild, run tests, and confirm the change works end to end. Fix anything that fails. Note verification results on the card with board_update_card, commit any fixes on this branch, then move the card to the next column with board_move_card.\n"),
         (50, "done", null),
     };

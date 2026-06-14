@@ -3,6 +3,12 @@ namespace Yamca.Agent.Board;
 /// <summary>A single subtask checklist item belonging to a card.</summary>
 public sealed record SubtaskItem(string Text, bool Done);
 
+/// <summary>A named step-output artifact belonging to a card — read-model projection of an
+/// <see cref="ArtifactState"/>. <see cref="Kind"/> is the caller-chosen label, <see cref="Content"/>
+/// the markdown/plain-text body, <see cref="UpdatedAt"/> the last write time. Artifacts hold plans,
+/// analysis, verification notes, or logs that belong off the card's <see cref="BoardCard.Body"/>.</summary>
+public sealed record CardArtifact(string Kind, string Content, DateTimeOffset UpdatedAt);
+
 /// <summary>Card importance level. <see cref="Normal"/> is the default. Cards are sorted
 /// high → normal → low within each column.</summary>
 public enum CardPriority { Low = -1, Normal = 0, High = 1 }
@@ -10,7 +16,9 @@ public enum CardPriority { Low = -1, Normal = 0, High = 1 }
 /// <summary>A board card. <see cref="Id"/> is the canonical integer display id (starts at 1, never
 /// reused); <see cref="ColumnId"/> names the column the card currently lives in (a move rewrites this
 /// field); <see cref="Branch"/> is the git branch bound to the card across steps, if any. The
-/// read-model projection of a <see cref="CardRecord"/>.</summary>
+/// read-model projection of a <see cref="CardRecord"/>. <see cref="Artifacts"/> is an init property
+/// (defaulting to empty) rather than a constructor parameter so the existing positional call sites
+/// stay unchanged.</summary>
 public sealed record BoardCard(
     int Id,
     string Title,
@@ -18,7 +26,16 @@ public sealed record BoardCard(
     string ColumnId,
     string Body,
     IReadOnlyList<SubtaskItem> Subtasks,
-    CardPriority Priority = CardPriority.Normal);
+    CardPriority Priority = CardPriority.Normal)
+{
+    /// <summary>The card's named step-output artifacts (plan, notes, logs), kept off the
+    /// <see cref="Body"/>. Empty when the card has none.</summary>
+    public IReadOnlyList<CardArtifact> Artifacts { get; init; } = Array.Empty<CardArtifact>();
+
+    /// <summary>Locate an artifact by its kind (case-insensitive). Returns null when none matches.</summary>
+    public CardArtifact? FindArtifact(string kind)
+        => Artifacts.FirstOrDefault(a => string.Equals(a.Kind, (kind ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase));
+}
 
 /// <summary>A board column. <see cref="Id"/> is the generated, opaque column identity;
 /// <see cref="Order"/> is its position; <see cref="Instructions"/> (non-blank ⇒ work step) is the

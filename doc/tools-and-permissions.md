@@ -16,7 +16,7 @@ through a **permission** check first. Configure both at `/tools`.
 | **Background processes** | `start_process` (the LLM-facing facade); `start_process_command` (its arbitrary-command permission identity); `get_process_output`, `stop_process`, `list_processes` |
 | **Git** | `git` (the LLM-facing tool); `git_read`, `git_write` (its permission identities) |
 | **Code intelligence** | `code_search`, `code_list_symbols`, `code_find_definitions`, `code_find_calls`, `code_find_references`, `code_extract_symbol`, `code_edit_symbol`, `code_surrounding_context` |
-| **Dev board** | `board_list`, `board_get_card`, `board_get_step_instructions`, `board_move_card`, `board_update_card`, `board_reinit` |
+| **Dev board** | `board_list`, `board_get_card`, `board_get_step_instructions`, `board_get_artifact`, `board_move_card`, `board_update_card`, `board_set_artifact`, `board_reinit` |
 | **Subagents** | `subagent_run`, `loop` |
 | **Tool discovery** | `lookup_tool`, `call_tool` |
 

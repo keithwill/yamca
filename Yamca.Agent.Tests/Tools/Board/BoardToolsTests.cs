@@ -121,12 +121,94 @@ public class BoardToolsTests
     }
 
     [Test]
+    public async Task BoardSetArtifact_StoresContent_OffTheBody()
+    {
+        await _boardStore.AddCardAsync(_idea, "OAuth", "the ask", null, CardPriority.Normal, CancellationToken.None);
+
+        var result = await new BoardSetArtifactTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "kind": "plan", "content": "do A then B" }"""), Ctx(), CancellationToken.None);
+
+        Assert.That(result.IsError, Is.False, result.Content);
+        var card = (await _boardStore.ReadAsync(CancellationToken.None)).FindCard("0001")!;
+        Assert.That(card.Body, Is.EqualTo("the ask"));
+        Assert.That(card.FindArtifact("plan")!.Content, Is.EqualTo("do A then B"));
+    }
+
+    [Test]
+    public async Task BoardSetArtifact_BlankContent_Removes()
+    {
+        await _boardStore.AddCardAsync(_idea, "OAuth", "ask", null, CardPriority.Normal, CancellationToken.None);
+        await _boardStore.SetArtifactAsync(1, "plan", "x", CancellationToken.None);
+
+        var result = await new BoardSetArtifactTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "kind": "plan", "content": "" }"""), Ctx(), CancellationToken.None);
+
+        Assert.That(result.IsError, Is.False, result.Content);
+        Assert.That((await _boardStore.ReadAsync(CancellationToken.None)).FindCard("0001")!.Artifacts, Is.Empty);
+    }
+
+    [Test]
+    public async Task BoardSetArtifact_BlankKind_Error()
+    {
+        await _boardStore.AddCardAsync(_idea, "OAuth", "ask", null, CardPriority.Normal, CancellationToken.None);
+        var result = await new BoardSetArtifactTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "kind": "  ", "content": "x" }"""), Ctx(), CancellationToken.None);
+        Assert.That(result.IsError, Is.True);
+    }
+
+    [Test]
+    public async Task BoardGetArtifact_ReturnsContent_AndListsKindsWithoutKind()
+    {
+        await _boardStore.AddCardAsync(_idea, "OAuth", "ask", null, CardPriority.Normal, CancellationToken.None);
+        await _boardStore.SetArtifactAsync(1, "plan", "the plan body", CancellationToken.None);
+
+        var fetched = await new BoardGetArtifactTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "kind": "plan" }"""), Ctx(), CancellationToken.None);
+        Assert.That(fetched.IsError, Is.False, fetched.Content);
+        Assert.That(fetched.Content, Does.Contain("the plan body"));
+
+        var listed = await new BoardGetArtifactTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1" }"""), Ctx(), CancellationToken.None);
+        Assert.That(listed.IsError, Is.False);
+        Assert.That(listed.Content, Does.Contain("plan"));
+
+        var missing = await new BoardGetArtifactTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "kind": "nope" }"""), Ctx(), CancellationToken.None);
+        Assert.That(missing.IsError, Is.True);
+    }
+
+    [Test]
+    public async Task BoardGetCard_ListsArtifactKinds_AndInlinesRequested()
+    {
+        await _boardStore.AddCardAsync(_idea, "OAuth", "the ask", null, CardPriority.Normal, CancellationToken.None);
+        await _boardStore.SetArtifactAsync(1, "plan", "PLAN BODY", CancellationToken.None);
+        await _boardStore.SetArtifactAsync(1, "build-log", "LOG BODY", CancellationToken.None);
+
+        // Without the artifacts param, kinds are advertised but content stays out of the result.
+        var bare = await new BoardGetCardTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1" }"""), Ctx(), CancellationToken.None);
+        Assert.That(bare.IsError, Is.False, bare.Content);
+        Assert.That(bare.Content, Does.Contain("plan"));
+        Assert.That(bare.Content, Does.Contain("build-log"));
+        Assert.That(bare.Content, Does.Not.Contain("PLAN BODY"));
+
+        // Naming a kind inlines just that one; the rest are still only listed.
+        var withPlan = await new BoardGetCardTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "artifacts": ["plan"] }"""), Ctx(), CancellationToken.None);
+        Assert.That(withPlan.Content, Does.Contain("PLAN BODY"));
+        Assert.That(withPlan.Content, Does.Not.Contain("LOG BODY"));
+        Assert.That(withPlan.Content, Does.Contain("build-log"));
+    }
+
+    [Test]
     public void PermissionDefaults_ReadsAllow_MutationsAsk()
     {
         Assert.That(new BoardListTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Allow));
         Assert.That(new BoardGetCardTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Allow));
         Assert.That(new BoardGetStepInstructionsTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Allow));
+        Assert.That(new BoardGetArtifactTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Allow));
         Assert.That(new BoardMoveCardTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
         Assert.That(new BoardUpdateCardTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
+        Assert.That(new BoardSetArtifactTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
     }
 }

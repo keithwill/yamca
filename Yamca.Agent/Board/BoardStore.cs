@@ -159,6 +159,32 @@ public sealed class BoardStore
     public Task<bool> SetBranchAsync(int cardId, string branch, CancellationToken ct)
         => MutateCardAsync(cardId, card => card with { Branch = string.IsNullOrWhiteSpace(branch) ? null : branch.Trim() }, ct);
 
+    /// <summary>Create or replace a card's named artifact (its durable step output — a plan, notes, a
+    /// log), keyed by <paramref name="kind"/>. A re-set of the same kind overwrites it and restamps its
+    /// time; blank <paramref name="content"/> removes the artifact (a no-op when none exists). Other
+    /// card fields, subtasks, and artifacts are left untouched. Returns false when no card with that id
+    /// exists.</summary>
+    public Task<bool> SetArtifactAsync(int cardId, string kind, string? content, CancellationToken ct)
+    {
+        var trimmedKind = (kind ?? string.Empty).Trim();
+        return MutateCardAsync(cardId, card =>
+        {
+            var list = (card.Artifacts ?? Array.Empty<ArtifactState>()).ToList();
+            var idx = list.FindIndex(a => string.Equals(a.Kind, trimmedKind, StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                // Blank content is the delete gesture; replacing in place would otherwise store an empty artifact.
+                if (idx >= 0) list.RemoveAt(idx);
+            }
+            else
+            {
+                var updated = new ArtifactState(trimmedKind, content, DateTimeOffset.UtcNow);
+                if (idx >= 0) list[idx] = updated; else list.Add(updated);
+            }
+            return card with { Artifacts = list };
+        }, ct);
+    }
+
     /// <summary>Set (or clear, when blank) a column's instructions. Returns false when no column with
     /// that id exists.</summary>
     public async Task<bool> SetColumnInstructionsAsync(string columnId, string? instructions, CancellationToken ct)
@@ -303,7 +329,12 @@ public sealed class BoardStore
 
     private static BoardCard ToCard(CardRecord r) => new(
         r.Id, r.Title, r.Branch, r.ColumnId, r.Body,
-        r.Subtasks.Select(s => new SubtaskItem(s.Text, s.Done)).ToList(), r.Priority);
+        r.Subtasks.Select(s => new SubtaskItem(s.Text, s.Done)).ToList(), r.Priority)
+    {
+        // Coalesce: a card persisted before the Artifacts field existed deserializes with a null list.
+        Artifacts = (r.Artifacts ?? Array.Empty<ArtifactState>())
+            .Select(a => new CardArtifact(a.Kind, a.Content, a.UpdatedAt)).ToList(),
+    };
 
     private static IReadOnlyList<SubtaskState> ToState(IReadOnlyList<SubtaskItem> items)
         => items.Select(s => new SubtaskState(s.Text, s.Done)).ToList();

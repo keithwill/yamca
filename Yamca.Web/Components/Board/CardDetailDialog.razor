@@ -92,6 +92,31 @@
                 }
             </MudTabPanel>
 
+            @* Artifacts are the card's named step outputs (plan, analysis, notes, logs) — kept off the
+               body so the body stays the original ask. Read-only here; the agent writes them via
+               board_set_artifact. The tab only appears when the card has at least one. *@
+            @if (HasArtifacts)
+            {
+                <MudTabPanel Text="@($"Artifacts ({Card.Artifacts.Count})")">
+                    @foreach (var artifact in Card.Artifacts)
+                    {
+                        <div class="mb-4">
+                            <div class="d-flex align-center" style="gap: 6px;">
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                         Icon="@Icons.Material.Filled.Description">@artifact.Kind</MudChip>
+                                <MudText Typo="Typo.caption" Color="Color.Default">
+                                    updated @artifact.UpdatedAt.ToLocalTime().ToString("g")
+                                </MudText>
+                            </div>
+                            <div class="yamca-markdown mt-1">
+                                @((MarkupString)MarkdownRenderer.ToHtml(
+                                    string.IsNullOrWhiteSpace(artifact.Content) ? "_(empty artifact)_" : artifact.Content))
+                            </div>
+                        </div>
+                    }
+                </MudTabPanel>
+            }
+
             @if (HasWorktree)
             {
                 <MudTabPanel Text="Changes">
@@ -294,6 +319,11 @@
     private bool HasWorktree => !string.IsNullOrEmpty(WorktreePath);
     private bool _changesTabOpened;
 
+    // The Artifacts tab sits between Details (0) and Changes, and only renders when the card has
+    // artifacts — so the Changes tab's index shifts by one when it is present.
+    private bool HasArtifacts => Card.Artifacts.Count > 0;
+    private int ChangesTabIndex => HasArtifacts ? 2 : 1;
+
     // The card names an intended branch…
     private bool HasBranchAttribute => !string.IsNullOrWhiteSpace(Card.Branch);
 
@@ -324,11 +354,11 @@
         _priority = Card.Priority;
     }
 
-    // The Changes panel is index 1 (it only exists when there is a worktree). Mount its view the first
-    // time the tab is opened; the view loads its own data on init.
+    // Mount the Changes view the first time its tab is opened; the view loads its own data on init.
+    // Its index depends on whether the Artifacts tab is present (see ChangesTabIndex).
     private void OnTabChanged(int index)
     {
-        if (index == 1 && HasWorktree) _changesTabOpened = true;
+        if (index == ChangesTabIndex && HasWorktree) _changesTabOpened = true;
     }
 
     private string EndpointLabel(Guid id)

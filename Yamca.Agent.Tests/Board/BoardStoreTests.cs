@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using VestPocket;
 using Yamca.Agent.Board;
 using Yamca.Agent.Storage;
 
@@ -159,6 +160,73 @@ public class BoardStoreTests
         var card = (await _store.ReadAsync(CancellationToken.None)).FindCard(id)!;
         Assert.That(card.Priority, Is.EqualTo(CardPriority.Low));
         Assert.That(card.Branch, Is.EqualTo("feat/x"));
+    }
+
+    [Test]
+    public async Task SetArtifact_AddsReplacesAndRemoves_ByKind()
+    {
+        var (idea, _, _, _) = await ColumnsAsync();
+        var id = await _store.AddCardAsync(idea, "card", "the original ask", null, CardPriority.Normal, CancellationToken.None);
+
+        // Add two artifacts of distinct kinds.
+        Assert.That(await _store.SetArtifactAsync(id, "plan", "step 1\nstep 2", CancellationToken.None), Is.True);
+        Assert.That(await _store.SetArtifactAsync(id, "build-log", "all green", CancellationToken.None), Is.True);
+
+        var card = (await _store.ReadAsync(CancellationToken.None)).FindCard(id)!;
+        Assert.That(card.Body, Is.EqualTo("the original ask"), "artifacts must not touch the body");
+        Assert.That(card.Artifacts.Select(a => a.Kind), Is.EquivalentTo(new[] { "plan", "build-log" }));
+        Assert.That(card.FindArtifact("plan")!.Content, Is.EqualTo("step 1\nstep 2"));
+
+        // Re-setting the same kind (case-insensitive) replaces its content in place.
+        Assert.That(await _store.SetArtifactAsync(id, "PLAN", "rewritten", CancellationToken.None), Is.True);
+        card = (await _store.ReadAsync(CancellationToken.None)).FindCard(id)!;
+        Assert.That(card.Artifacts, Has.Count.EqualTo(2));
+        Assert.That(card.FindArtifact("plan")!.Content, Is.EqualTo("rewritten"));
+
+        // Blank content removes the artifact.
+        Assert.That(await _store.SetArtifactAsync(id, "plan", "   ", CancellationToken.None), Is.True);
+        card = (await _store.ReadAsync(CancellationToken.None)).FindCard(id)!;
+        Assert.That(card.Artifacts.Select(a => a.Kind), Is.EqualTo(new[] { "build-log" }));
+    }
+
+    [Test]
+    public async Task SetArtifact_MissingCard_ReturnsFalse()
+        => Assert.That(await _store.SetArtifactAsync(9999, "plan", "x", CancellationToken.None), Is.False);
+
+    [Test]
+    public async Task Card_StoredWithNullArtifacts_ProjectsToEmpty_NotNull()
+    {
+        // A card persisted before the Artifacts field existed deserializes with a null list (STJ does
+        // not honor the field initializer for an omitted property). Reading the board must still yield
+        // an empty, non-null list rather than NPE in the projection.
+        var yamca = new YamcaStore(filePath: null);
+        var store = new BoardStore(yamca);
+        var idea = (await store.ReadAsync(CancellationToken.None)).FindColumn("idea")!.Id;
+
+        var legacy = new CardRecord(1, "legacy", null, CardPriority.Normal, idea, "body",
+            Array.Empty<SubtaskState>()) { Artifacts = null };
+        var vp = await yamca.GetAsync(CancellationToken.None);
+        await vp.Save(new Kvp("/board/card/1", legacy));
+
+        var card = (await store.ReadAsync(CancellationToken.None)).FindCard(1)!;
+        Assert.That(card.Artifacts, Is.Not.Null.And.Empty);
+    }
+
+    [Test]
+    public async Task Artifacts_SurviveBodyAndColumnUpdates()
+    {
+        var (idea, analyze, _, _) = await ColumnsAsync();
+        var id = await _store.AddCardAsync(idea, "card", "ask", null, CardPriority.Normal, CancellationToken.None);
+        await _store.SetArtifactAsync(id, "plan", "the plan", CancellationToken.None);
+
+        // A body edit and a move must leave the artifact intact (the card aggregate carries it along).
+        await _store.UpdateCardBodyAsync(id, "card", "revised ask\n- [ ] todo", CancellationToken.None);
+        await _store.MoveCardAsync(id, analyze, CancellationToken.None);
+
+        var card = (await _store.ReadAsync(CancellationToken.None)).FindCard(id)!;
+        Assert.That(card.Body, Is.EqualTo("revised ask"));
+        Assert.That(card.Subtasks.Single().Text, Is.EqualTo("todo"));
+        Assert.That(card.FindArtifact("plan")!.Content, Is.EqualTo("the plan"));
     }
 
     [Test]

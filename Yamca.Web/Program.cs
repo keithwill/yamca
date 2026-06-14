@@ -233,8 +233,10 @@ builder.Services.AddScoped<ITool, CallToolTool>();
 builder.Services.AddSingleton<ITool, BoardListTool>();
 builder.Services.AddSingleton<ITool, BoardGetCardTool>();
 builder.Services.AddSingleton<ITool, BoardGetStepInstructionsTool>();
+builder.Services.AddSingleton<ITool, BoardGetArtifactTool>();
 builder.Services.AddSingleton<ITool, BoardMoveCardTool>();
 builder.Services.AddSingleton<ITool, BoardUpdateCardTool>();
+builder.Services.AddSingleton<ITool, BoardSetArtifactTool>();
 builder.Services.AddSingleton<ITool, BoardReinitTool>();
 
 // Script-tool collaborators. InterpreterResolver / ScriptRunner are stateless apart

@@ -56,6 +56,17 @@ checklist — so the agent-facing format is unchanged.
   within a column. High/low priority is shown on the card.
 - **Subtasks** — GitHub-style `- [ ]` / `- [x]` checklist lines in the body are
   stored as the card's subtasks and render as a done/total count on the card.
+- **Artifacts** — a card's durable step outputs (an implementation plan, an
+  analysis, verification notes, a captured build/migration log) are stored as
+  named *artifacts* kept **separate from the body**, so the body stays the
+  original request/abstract instead of being swamped by implementation detail.
+  Each artifact has a free-form **kind** label (the column instructions decide
+  the vocabulary — e.g. `plan`, `analysis`, `verification`, `build-log`) and
+  markdown content; setting the same kind again replaces it. The agent writes
+  them with `board_set_artifact` and reads them with `board_get_artifact`;
+  `board_get_card` lists a card's available kinds (and can inline named ones via
+  its `artifacts` argument) without pulling every artifact into context. A card
+  with at least one artifact shows an **Artifacts** tab in its detail dialog.
 - **Branch** — the card's branch names the git branch the card lives on,
   shared by all its steps. It is editable from the card detail dialog on any
   card not yet bound to a live worktree — including cards in resting columns —
