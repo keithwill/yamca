@@ -31,12 +31,12 @@ public class OrchestratorCardRunnerTests
         _runner = new OrchestratorCardRunner(_boardStore);
 
         var seeded = await _boardStore.ReadAsync(CancellationToken.None);
-        var analyzeId = seeded.FindColumn("analyze")!.Id;
+        var planId = seeded.FindColumn("plan")!.Id;
         _implementId = seeded.FindColumn("implement")!.Id;
-        await _boardStore.AddCardAsync(analyzeId, "Test card", "Do the thing.", null, CardPriority.Normal, CancellationToken.None);
+        await _boardStore.AddCardAsync(planId, "Test card", "Do the thing.", null, CardPriority.Normal, CancellationToken.None);
 
         var snapshot = await _boardStore.ReadAsync(CancellationToken.None);
-        _column = snapshot.FindColumn("analyze")!;
+        _column = snapshot.FindColumn("plan")!;
         _card = snapshot.FindCard(1)!;
     }
 

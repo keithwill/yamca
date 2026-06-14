@@ -14,7 +14,7 @@ public class BoardToolsTests
     private TempWorkspace _ws = null!;
     private BoardStore _boardStore = null!;
     private string _idea = null!;
-    private string _analyze = null!;
+    private string _plan = null!;
 
     [SetUp]
     public async Task SetUp()
@@ -24,7 +24,7 @@ public class BoardToolsTests
         _boardStore = new BoardStore(new YamcaStore(filePath: null));
         var snap = await _boardStore.ReadAsync(CancellationToken.None);
         _idea = snap.FindColumn("idea")!.Id;
-        _analyze = snap.FindColumn("analyze")!.Id;
+        _plan = snap.FindColumn("plan")!.Id;
     }
 
     [TearDown]
@@ -47,7 +47,7 @@ public class BoardToolsTests
         Assert.That(result.Content, Does.Contain("#1 Add OAuth"));
         Assert.That(result.Content, Does.Contain("[1/2]"));
         Assert.That(result.Content, Does.Contain("branch: feat/oauth"));
-        Assert.That(result.Content, Does.Contain("## analyze"));
+        Assert.That(result.Content, Does.Contain("## plan"));
     }
 
     [Test]
@@ -83,7 +83,7 @@ public class BoardToolsTests
         var present = await new BoardGetStepInstructionsTool(_boardStore).ExecuteAsync(
             Json.Parse("""{ "column": "implement" }"""), Ctx(), CancellationToken.None);
         Assert.That(present.IsError, Is.False, present.Content);
-        Assert.That(present.Content, Does.Contain("Implement"));
+        Assert.That(present.Content, Does.Contain("implementation work"));
 
         var missing = await new BoardGetStepInstructionsTool(_boardStore).ExecuteAsync(
             Json.Parse("""{ "column": "done" }"""), Ctx(), CancellationToken.None);
@@ -97,11 +97,11 @@ public class BoardToolsTests
         await _boardStore.AddCardAsync(_idea, "OAuth", "# Card", null, CardPriority.Normal, CancellationToken.None);
 
         var result = await new BoardMoveCardTool(_boardStore).ExecuteAsync(
-            Json.Parse("""{ "card": "1", "to_column": "analyze" }"""), Ctx(), CancellationToken.None);
+            Json.Parse("""{ "card": "1", "to_column": "plan" }"""), Ctx(), CancellationToken.None);
 
         Assert.That(result.IsError, Is.False, result.Content);
         var snap = await _boardStore.ReadAsync(CancellationToken.None);
-        Assert.That(snap.FindCard("0001")!.ColumnId, Is.EqualTo(_analyze));
+        Assert.That(snap.FindCard("0001")!.ColumnId, Is.EqualTo(_plan));
     }
 
     [Test]
@@ -123,14 +123,14 @@ public class BoardToolsTests
 
         Assert.That(result.IsError, Is.False, result.Content);
         var snap = await _boardStore.ReadAsync(CancellationToken.None);
-        // idea -> analyze is the first forward step.
-        Assert.That(snap.FindCard(1)!.ColumnId, Is.EqualTo(_analyze));
+        // idea -> plan is the first forward step.
+        Assert.That(snap.FindCard(1)!.ColumnId, Is.EqualTo(_plan));
     }
 
     [Test]
     public async Task BoardMoveCard_Previous_MovesBackOneColumn()
     {
-        await _boardStore.AddCardAsync(_analyze, "OAuth", "# Card", null, CardPriority.Normal, CancellationToken.None);
+        await _boardStore.AddCardAsync(_plan, "OAuth", "# Card", null, CardPriority.Normal, CancellationToken.None);
 
         var result = await new BoardMoveCardTool(_boardStore).ExecuteAsync(
             Json.Parse("""{ "card": "1", "to_column": "previous" }"""), Ctx(), CancellationToken.None);

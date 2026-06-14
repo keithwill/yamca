@@ -17,12 +17,12 @@ public class BoardStoreTests
         _store = new BoardStore(new YamcaStore(filePath: null));
     }
 
-    private async Task<(string idea, string analyze, string implement, string done)> ColumnsAsync()
+    private async Task<(string idea, string plan, string implement, string done)> ColumnsAsync()
     {
         var snap = await _store.ReadAsync(CancellationToken.None);
         return (
             snap.FindColumn("idea")!.Id,
-            snap.FindColumn("analyze")!.Id,
+            snap.FindColumn("plan")!.Id,
             snap.FindColumn("implement")!.Id,
             snap.FindColumn("done")!.Id);
     }
@@ -33,7 +33,7 @@ public class BoardStoreTests
         var snap = await _store.ReadAsync(CancellationToken.None);
 
         Assert.That(snap.Columns.Select(c => c.DisplayName),
-            Is.EqualTo(new[] { "idea", "analyze", "implement", "verify", "done" }));
+            Is.EqualTo(new[] { "idea", "plan", "implement", "verify", "done" }));
         Assert.That(snap.Columns.Select(c => c.Order), Is.EqualTo(new[] { 10, 20, 30, 40, 50 }));
     }
 
@@ -46,7 +46,7 @@ public class BoardStoreTests
         Assert.That(idea.Id, Is.Not.EqualTo("idea"));
         Assert.That(idea.Id, Has.Length.GreaterThan(8));
         // Work columns carry instructions; resting columns don't.
-        Assert.That(snap.FindColumn("analyze")!.Instructions, Is.Not.Null.And.Not.Empty);
+        Assert.That(snap.FindColumn("plan")!.Instructions, Is.Not.Null.And.Not.Empty);
         Assert.That(idea.Instructions, Is.Null);
     }
 
@@ -108,14 +108,14 @@ public class BoardStoreTests
     [Test]
     public async Task MoveCard_RewritesColumnId()
     {
-        var (idea, analyze, _, _) = await ColumnsAsync();
+        var (idea, plan, _, _) = await ColumnsAsync();
         var id = await _store.AddCardAsync(idea, "card", "", null, CardPriority.Normal, CancellationToken.None);
 
-        Assert.That(await _store.MoveCardAsync(id, analyze, CancellationToken.None), Is.True);
+        Assert.That(await _store.MoveCardAsync(id, plan, CancellationToken.None), Is.True);
 
         var snap = await _store.ReadAsync(CancellationToken.None);
         Assert.That(snap.FindColumn("idea")!.Cards, Is.Empty);
-        Assert.That(snap.FindColumn("analyze")!.Cards.Single().Id, Is.EqualTo(id));
+        Assert.That(snap.FindColumn("plan")!.Cards.Single().Id, Is.EqualTo(id));
     }
 
     [Test]
@@ -312,14 +312,14 @@ public class BoardStoreTests
     [Test]
     public async Task Artifacts_SurviveBodyAndColumnUpdates()
     {
-        var (idea, analyze, _, _) = await ColumnsAsync();
+        var (idea, plan, _, _) = await ColumnsAsync();
         var id = await _store.AddCardAsync(idea, "card", "ask", null, CardPriority.Normal, CancellationToken.None);
         await _store.SetArtifactAsync(id, "plan", "the plan", CancellationToken.None);
 
         // A body edit and a move must leave the artifact intact (the card aggregate carries it along).
         // The body is stored verbatim (checklist-looking lines are just prose now).
         await _store.UpdateCardBodyAsync(id, "card", "revised ask\n- [ ] todo", CancellationToken.None);
-        await _store.MoveCardAsync(id, analyze, CancellationToken.None);
+        await _store.MoveCardAsync(id, plan, CancellationToken.None);
 
         var card = (await _store.ReadAsync(CancellationToken.None)).FindCard(id)!;
         Assert.That(card.Body, Is.EqualTo("revised ask\n- [ ] todo"));
@@ -341,8 +341,8 @@ public class BoardStoreTests
     [Test]
     public async Task Reinit_MovesOrphanCardsToIdea_AndPreservesDefaults()
     {
-        var (idea, analyze, _, _) = await ColumnsAsync();
-        var kept = await _store.AddCardAsync(analyze, "kept", "", null, CardPriority.Normal, CancellationToken.None);
+        var (idea, plan, _, _) = await ColumnsAsync();
+        var kept = await _store.AddCardAsync(plan, "kept", "", null, CardPriority.Normal, CancellationToken.None);
         var orphanCardId = await _store.AddCardAsync(idea, "orphan", "", null, CardPriority.Normal, CancellationToken.None);
         // Manufacture an orphan by moving a card to a column id that doesn't exist.
         await _store.MoveCardAsync(orphanCardId, "ghost-column", CancellationToken.None);
@@ -352,7 +352,7 @@ public class BoardStoreTests
         Assert.That(result.CardsPreserved, Is.EqualTo(1));
         Assert.That(result.CardsMoved, Is.EqualTo(1));
         var snap = await _store.ReadAsync(CancellationToken.None);
-        Assert.That(snap.FindColumn("analyze")!.Cards.Single().Id, Is.EqualTo(kept));
+        Assert.That(snap.FindColumn("plan")!.Cards.Single().Id, Is.EqualTo(kept));
         Assert.That(snap.FindColumn("idea")!.Cards.Single().Id, Is.EqualTo(orphanCardId));
     }
 
@@ -372,6 +372,44 @@ public class BoardStoreTests
         Assert.That(await _store.NextCardIdAsync(CancellationToken.None), Is.EqualTo(1));
         Assert.That(await _store.AddCardAsync(idea, "fresh", "", null, CardPriority.Normal, CancellationToken.None),
             Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Reinit_Wipe_PersistsAcrossReopen()
+    {
+        // Regression: a wipe deletes cards by saving a null-value tombstone. The in-memory index
+        // drops them immediately (so the live read is empty), but the delete must also survive a
+        // close/reopen — earlier this silently failed and the cards reappeared on the next launch.
+        var dir = Path.Combine(Path.GetTempPath(), "yamca-board-reopen-" + Guid.NewGuid().ToString("n"));
+        var file = Path.Combine(dir, "yamca.db");
+        try
+        {
+            string idea;
+            await using (var yamca = new YamcaStore(file))
+            {
+                var store = new BoardStore(yamca);
+                idea = (await store.ReadAsync(CancellationToken.None)).FindColumn("idea")!.Id;
+                await store.AddCardAsync(idea, "a", "", null, CardPriority.Normal, CancellationToken.None);
+                await store.AddCardAsync(idea, "b", "", null, CardPriority.Normal, CancellationToken.None);
+
+                var result = await store.ReinitAsync(wipe: true, CancellationToken.None);
+                Assert.That(result.CardsWiped, Is.EqualTo(2));
+                Assert.That((await store.ReadAsync(CancellationToken.None)).AllCards, Is.Empty);
+            }
+
+            // Reopen a fresh store over the same file: the wipe must still be in effect.
+            await using (var yamca = new YamcaStore(file))
+            {
+                var store = new BoardStore(yamca);
+                var snap = await store.ReadAsync(CancellationToken.None);
+                Assert.That(snap.AllCards, Is.Empty, "wiped cards came back after reopening the store");
+                Assert.That(await store.NextCardIdAsync(CancellationToken.None), Is.EqualTo(1));
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
     }
 
     [Test]
