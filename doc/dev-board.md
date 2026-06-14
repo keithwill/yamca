@@ -42,11 +42,12 @@ Edit a column's instructions via the gear icon on its header.
 ## Cards
 
 A card is a stored aggregate: a title, an optional priority and branch, the id of
-the column it currently lives in, a markdown body, and its subtasks (each with its
-own done-state). Moving a card just rewrites its column id; there is no file to
-relocate. The board tools exchange a card as one markdown document — frontmatter
-(`id`, `title`, optional `priority` and `branch`) plus the body and its `- [ ]`
-checklist — so the agent-facing format is unchanged.
+the column it currently lives in, a markdown body (its description), and its tasks
+and artifacts (each kept off the body). Moving a card just rewrites its column id;
+there is no file to relocate. The board tools exchange a card's title/branch/
+priority/body as one markdown document — frontmatter (`id`, `title`, optional
+`priority` and `branch`) plus the body — while tasks and artifacts are addressed
+through their own tools rather than parsed out of that markdown.
 
 - **Create** — the `+` button on the first column adds a card. The new-card
   dialog includes a branch field that defaults to the id-prefixed slug of the
@@ -54,8 +55,16 @@ checklist — so the agent-facing format is unchanged.
   Every card is therefore born with a `branch:` already decided.
 - **Priority** — `high` / `normal` / `low`; cards sort high → normal → low
   within a column. High/low priority is shown on the card.
-- **Subtasks** — GitHub-style `- [ ]` / `- [x]` checklist lines in the body are
-  stored as the card's subtasks and render as a done/total count on the card.
+- **Tasks** — a card's child checklist, stored as a structured collection **kept
+  off the body** so the body stays the feature/issue/user-story description. Each
+  task has a stable card-local id (starting at 1, never reused within the card),
+  its text, and a done-state, and the card renders a done/total count. View and
+  fully manage them — add, tick/un-tick, edit text, delete — on the **Details**
+  tab of the card detail dialog, under the body. The agent edits them by id with
+  `board_add_tasks` (add one or several at once), `board_complete_task` (tick or,
+  with `done: false`, un-tick), `board_update_task` (reword), and
+  `board_remove_task` — so a single change never rewrites the whole card. The
+  current tasks (with their ids) are listed by `board_get_card`.
 - **Artifacts** — a card's durable step outputs (an implementation plan, an
   analysis, verification notes, a captured build/migration log) are stored as
   named *artifacts* kept **separate from the body**, so the body stays the
@@ -72,7 +81,8 @@ checklist — so the agent-facing format is unchanged.
   card not yet bound to a live worktree — including cards in resting columns —
   and a change is saved on close. Choosing a branch does **not** create a
   worktree; that waits for the first step run or chat opened on the card.
-- **Edit** — open a card to edit its title and description inline.
+- **Edit** — open a card to edit its title and description inline; its tasks are
+  managed in the same dialog (see **Tasks** above).
 
 ## Moving cards
 

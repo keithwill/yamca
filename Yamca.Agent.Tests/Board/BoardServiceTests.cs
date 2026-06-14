@@ -7,18 +7,18 @@ namespace Yamca.Agent.Tests.Board;
 public class BoardServiceTests
 {
     private static BoardCard Card(int id, string title, CardPriority priority = CardPriority.Normal, string columnId = "c") =>
-        new(id, title, null, columnId, "", Array.Empty<SubtaskItem>(), priority);
+        new(id, title, null, columnId, "", Array.Empty<TaskItem>(), priority);
 
     [Test]
-    public void SubtaskProgress_CountsDone()
+    public void TaskProgress_CountsDone()
     {
-        var subtasks = new[] { new SubtaskItem("a", true), new SubtaskItem("b", false), new SubtaskItem("c", true) };
-        Assert.That(BoardService.SubtaskProgress(subtasks), Is.EqualTo((2, 3)));
+        var tasks = new[] { new TaskItem(1, "a", true), new TaskItem(2, "b", false), new TaskItem(3, "c", true) };
+        Assert.That(BoardService.TaskProgress(tasks), Is.EqualTo((2, 3)));
     }
 
     [Test]
-    public void SubtaskProgress_Empty_ReturnsZeroZero()
-        => Assert.That(BoardService.SubtaskProgress(Array.Empty<SubtaskItem>()), Is.EqualTo((0, 0)));
+    public void TaskProgress_Empty_ReturnsZeroZero()
+        => Assert.That(BoardService.TaskProgress(Array.Empty<TaskItem>()), Is.EqualTo((0, 0)));
 
     [Test]
     public void PresumptiveBranch_IsIdPrefixedSlug()

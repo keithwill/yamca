@@ -138,8 +138,7 @@ else
                             @foreach (var card in visibleCards)
                             {
                                 var c = card;
-                                var done = c.Subtasks.Count(s => s.Done);
-                                var total = c.Subtasks.Count;
+                                var (done, total) = BoardService.TaskProgress(c.Tasks);
                                 <MudPaper Class="@($"yamca-board-card{(_busyCards.Contains(c.Id) ? " yamca-board-card--busy" : "")}")"
                                           Elevation="3"
                                           draggable="true"
@@ -159,7 +158,7 @@ else
                                         <span>#@c.Id</span>
                                         @if (total > 0)
                                         {
-                                            <span>@done/@total subtasks</span>
+                                            <span>@done/@total tasks</span>
                                         }
                                         @if (!string.IsNullOrWhiteSpace(c.Branch))
                                         {
@@ -760,8 +759,8 @@ else
         });
     }
 
-    // Mark the card busy, write the edited title and markdown body (whose `- [ ]` lines become the
-    // card's subtasks) into the store, then refresh and clear the spinner.
+    // Mark the card busy, write the edited title and markdown body (the card's prose description; its
+    // tasks are a separate collection) into the store, then refresh and clear the spinner.
     private async Task UpdateCardBodyAsync(BoardCard card, string title, string body)
     {
         _busyCards.Add(card.Id);

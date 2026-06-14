@@ -236,6 +236,12 @@ builder.Services.AddSingleton<ITool, BoardGetStepInstructionsTool>();
 builder.Services.AddSingleton<ITool, BoardGetArtifactTool>();
 builder.Services.AddSingleton<ITool, BoardMoveCardTool>();
 builder.Services.AddSingleton<ITool, BoardUpdateCardTool>();
+// Card tasks (the card's child checklist) are addressed by id, edited one at a time so a single
+// change never rewrites the body — add (bulk), tick/un-tick, reword, and delete.
+builder.Services.AddSingleton<ITool, BoardAddTasksTool>();
+builder.Services.AddSingleton<ITool, BoardCompleteTaskTool>();
+builder.Services.AddSingleton<ITool, BoardUpdateTaskTool>();
+builder.Services.AddSingleton<ITool, BoardRemoveTaskTool>();
 builder.Services.AddSingleton<ITool, BoardSetArtifactTool>();
 builder.Services.AddSingleton<ITool, BoardReinitTool>();
 

@@ -29,10 +29,10 @@
                       HelperText="The git branch this card will live on. Defaults from the title; edit to override. No worktree is created until you open a chat or run a step." />
 
         <MudTextField @bind-Value="_body" T="string"
-                      Label="Details / plan (optional)"
+                      Label="Description (optional)"
                       Variant="Variant.Outlined" Margin="Margin.Dense"
                       Lines="8" Class="mt-3"
-                      HelperText="Markdown. Add a '- [ ]' checklist for subtasks if you like." />
+                      HelperText="Markdown describing the feature, issue, or user story. Add tasks on the card after it's created." />
 
         @if (_error is not null)
         {

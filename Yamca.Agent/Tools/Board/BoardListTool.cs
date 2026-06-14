@@ -5,7 +5,7 @@ using Yamca.Agent.Permissions;
 
 namespace Yamca.Agent.Tools.Board;
 
-/// <summary>Lists the dev board: each column and the cards in it, with subtask progress.</summary>
+/// <summary>Lists the dev board: each column and the cards in it, with task progress.</summary>
 public sealed class BoardListTool : ITool
 {
     private readonly BoardStore _boardStore;
@@ -19,7 +19,7 @@ public sealed class BoardListTool : ITool
 
     public string Description =>
         "List the dev board: every column (idea, analyze, …) and the cards currently in it, " +
-        "with subtask progress. Optionally pass 'column' to list a single column.";
+        "with task progress. Optionally pass 'column' to list a single column.";
 
     public string ParametersSchema => """
     {
@@ -71,7 +71,7 @@ public sealed class BoardListTool : ITool
             {
                 foreach (var card in column.Cards)
                 {
-                    var (done, total) = (card.Subtasks.Count(s => s.Done), card.Subtasks.Count);
+                    var (done, total) = BoardService.TaskProgress(card.Tasks);
                     sb.Append("  #").Append(card.Id).Append(' ').Append(card.Title);
                     if (total > 0) sb.Append("  [").Append(done).Append('/').Append(total).Append(']');
                     if (!string.IsNullOrWhiteSpace(card.Branch)) sb.Append("  (branch: ").Append(card.Branch).Append(')');

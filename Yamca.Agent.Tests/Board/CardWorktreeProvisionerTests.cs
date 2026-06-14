@@ -115,7 +115,7 @@ public class CardWorktreeProvisionerTests
     [Test]
     public async Task LockCardToBranch_ReturnsError_WhenCardMissing()
     {
-        var card = new BoardCard(9, "Ghost", null, "ghost-col", "", Array.Empty<SubtaskItem>());
+        var card = new BoardCard(9, "Ghost", null, "ghost-col", "", Array.Empty<TaskItem>());
 
         var error = await _provisioner.LockCardToBranchAsync(card, "9-ghost", CancellationToken.None);
 

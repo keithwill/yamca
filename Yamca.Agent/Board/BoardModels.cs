@@ -1,7 +1,9 @@
 namespace Yamca.Agent.Board;
 
-/// <summary>A single subtask checklist item belonging to a card.</summary>
-public sealed record SubtaskItem(string Text, bool Done);
+/// <summary>A single task belonging to a card — a child checklist item kept off the card
+/// <see cref="BoardCard.Body"/>. <see cref="Id"/> is the card-local integer id (starts at 1, never
+/// reused within the card) the task tools and UI use to address it.</summary>
+public sealed record TaskItem(int Id, string Text, bool Done);
 
 /// <summary>A named step-output artifact belonging to a card — read-model projection of an
 /// <see cref="ArtifactState"/>. <see cref="Kind"/> is the caller-chosen label, <see cref="Content"/>
@@ -25,7 +27,7 @@ public sealed record BoardCard(
     string? Branch,
     string ColumnId,
     string Body,
-    IReadOnlyList<SubtaskItem> Subtasks,
+    IReadOnlyList<TaskItem> Tasks,
     CardPriority Priority = CardPriority.Normal)
 {
     /// <summary>The card's named step-output artifacts (plan, notes, logs), kept off the

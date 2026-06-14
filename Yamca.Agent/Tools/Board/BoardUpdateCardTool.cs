@@ -4,7 +4,8 @@ using Yamca.Agent.Permissions;
 
 namespace Yamca.Agent.Tools.Board;
 
-/// <summary>Replaces a card's full markdown content — used to refine the plan or tick subtasks.</summary>
+/// <summary>Replaces a card's title/branch/priority and body (the prose description). Tasks are a
+/// separate collection edited with the task tools, not through this content.</summary>
 public sealed class BoardUpdateCardTool : ITool
 {
     private readonly BoardStore _boardStore;
@@ -17,9 +18,10 @@ public sealed class BoardUpdateCardTool : ITool
     public string Name => "board_update_card";
 
     public string Description =>
-        "Replace a board card's full markdown content (frontmatter + body). Use this to refine the plan, add or " +
-        "tick subtasks ('- [ ]' → '- [x]'), etc. Fetch the current content with board_get_card first, edit it, and " +
-        "pass the complete new content.";
+        "Replace a board card's markdown content (frontmatter + body). The body is the card's description (the " +
+        "feature, issue, or user story), not implementation detail — to manage the card's tasks use board_add_tasks " +
+        "/ board_complete_task / board_update_task / board_remove_task instead. Fetch the current content with " +
+        "board_get_card first, edit it, and pass the complete new content.";
 
     public string ParametersSchema => """
     {

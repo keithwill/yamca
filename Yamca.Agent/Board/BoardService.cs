@@ -4,7 +4,7 @@ using System.Text;
 namespace Yamca.Agent.Board;
 
 /// <summary>
-/// Pure, stateless helpers for the dev board: the default column layout, card ordering, subtask
+/// Pure, stateless helpers for the dev board: the default column layout, card ordering, task
 /// progress, and branch-name derivation. Board persistence lives in <see cref="BoardStore"/>; the
 /// agent-facing markdown ⇄ card mapping lives in <see cref="CardMarkdown"/>.
 /// </summary>
@@ -18,8 +18,8 @@ public sealed class BoardService
         new (int, string, string?)[]
     {
         (10, "idea", null),
-        (20, "analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan. Save the plan as the card's `plan` artifact with board_set_artifact (kind: `plan`) — keep it out of the card body so the body stays the original request. Break the work into a `- [ ]` subtask checklist on the card with board_update_card where useful. When the plan is ready, move the card to the next column with board_move_card.\n"),
-        (30, "implement", "# Implement\n\nRead the card's `plan` artifact with board_get_artifact (the analyze step saved its implementation plan there, not in the body) and do the work it describes. Tick subtasks as you complete them with board_update_card. When the implementation is done, commit your code changes on this branch, then move the card to the next column with board_move_card.\n"),
+        (20, "analyze", "# Analyze\n\nInvestigate the codebase, identify the files and patterns involved, and write a concrete implementation plan. Save the plan as the card's `plan` artifact with board_set_artifact (kind: `plan`) — keep it out of the card body so the body stays the original request. Break the work into tasks on the card with board_add_tasks where useful. When the plan is ready, move the card to the next column with board_move_card.\n"),
+        (30, "implement", "# Implement\n\nRead the card's `plan` artifact with board_get_artifact (the analyze step saved its implementation plan there, not in the body) and do the work it describes. Tick the card's tasks off with board_complete_task as you complete them. When the implementation is done, commit your code changes on this branch, then move the card to the next column with board_move_card.\n"),
         (40, "verify", "# Verify\n\nBuild, run tests, and confirm the change works end to end. Fix anything that fails. Note verification results on the card with board_update_card, commit any fixes on this branch, then move the card to the next column with board_move_card.\n"),
         (50, "done", null),
     };
@@ -34,9 +34,9 @@ public sealed class BoardService
         return a.Id.CompareTo(b.Id);
     }
 
-    /// <summary>(done, total) checklist counts for a card's subtasks.</summary>
-    public static (int done, int total) SubtaskProgress(IReadOnlyList<SubtaskItem> subtasks)
-        => (subtasks.Count(s => s.Done), subtasks.Count);
+    /// <summary>(done, total) checklist counts for a card's tasks.</summary>
+    public static (int done, int total) TaskProgress(IReadOnlyList<TaskItem> tasks)
+        => (tasks.Count(t => t.Done), tasks.Count);
 
     /// <summary>The default git branch name for a card: an id-prefixed slug of its title
     /// (e.g. <c>1-test-card</c>). Falls back to the bare id when the title slugs to nothing. Used to

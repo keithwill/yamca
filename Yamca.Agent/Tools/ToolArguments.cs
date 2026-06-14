@@ -53,6 +53,34 @@ internal static class ToolArguments
         return false;
     }
 
+    /// <summary>Read a required integer argument, tolerating both a JSON number and a numeric string
+    /// (the model often quotes ids) — mirroring how card ids are resolved leniently from text.</summary>
+    public static bool TryGetInt(JsonElement args, string name, out int value, out string error)
+    {
+        value = 0;
+        error = string.Empty;
+
+        if (args.ValueKind != JsonValueKind.Object)
+        {
+            error = "Arguments must be a JSON object.";
+            return false;
+        }
+
+        if (!args.TryGetProperty(name, out var prop))
+        {
+            error = $"Missing required argument '{name}'.";
+            return false;
+        }
+
+        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out value))
+            return true;
+        if (prop.ValueKind == JsonValueKind.String && int.TryParse((prop.GetString() ?? string.Empty).Trim(), out value))
+            return true;
+
+        error = $"Argument '{name}' must be an integer.";
+        return false;
+    }
+
     public static bool TryGetStringArray(JsonElement args, string name, out IReadOnlyList<string> value, out string error)
     {
         value = Array.Empty<string>();

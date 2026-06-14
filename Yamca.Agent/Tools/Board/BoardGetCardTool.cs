@@ -18,10 +18,12 @@ public sealed class BoardGetCardTool : ITool
     public string Name => "board_get_card";
 
     public string Description =>
-        "Return the full, verbatim markdown of a board card (frontmatter and body, including any '- [ ]' subtask " +
-        "checklist) so it can be read or edited. Identify the card by its id (e.g. '7'). The card body is just the " +
-        "request/abstract; its step outputs are stored as separate artifacts — their kinds are listed at the end, " +
-        "and you can inline specific ones by passing 'artifacts', or fetch one later with board_get_artifact.";
+        "Return a board card: its frontmatter and body (the request/abstract), then its tasks and artifacts. " +
+        "Identify the card by its id (e.g. '7'). Tasks are the card's child checklist — each is listed with its " +
+        "id and done state; edit them with board_add_tasks / board_complete_task / board_update_task / " +
+        "board_remove_task (not by rewriting the body). Step outputs are stored as separate artifacts — their " +
+        "kinds are listed at the end, and you can inline specific ones by passing 'artifacts', or fetch one " +
+        "later with board_get_artifact.";
 
     public string ParametersSchema => """
     {
@@ -63,6 +65,15 @@ public sealed class BoardGetCardTool : ITool
         var sb = new StringBuilder();
         sb.Append("Card #").Append(card.Id).Append(" in column '").Append(columnName).Append("':\n\n");
         sb.Append(CardMarkdown.Render(card));
+
+        // Tasks live off the body too: list them with their ids and done state (read-only here — they are
+        // edited by id with board_add_tasks / board_complete_task / board_update_task / board_remove_task).
+        if (card.Tasks.Count > 0)
+        {
+            sb.Append("\nTasks (edit by id with board_add_tasks / board_complete_task / board_update_task / board_remove_task):\n");
+            foreach (var task in card.Tasks)
+                sb.Append("- #").Append(task.Id).Append(" [").Append(task.Done ? 'x' : ' ').Append("] ").Append(task.Text).Append('\n');
+        }
 
         // Artifacts live off the body. Inline the kinds the caller named; for the rest, just advertise
         // their availability so the body stays uncluttered and large logs aren't pulled in unasked-for.

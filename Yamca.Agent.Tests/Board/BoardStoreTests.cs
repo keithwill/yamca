@@ -65,7 +65,9 @@ public class BoardStoreTests
     {
         var (idea, _, _, _) = await ColumnsAsync();
 
-        var id = await _store.AddCardAsync(idea, "Add OAuth", "Plan it\n- [ ] step one\n- [x] step two", "feat/oauth", CardPriority.High, CancellationToken.None);
+        // The body is stored verbatim now (checklist-looking lines are just prose); tasks start empty
+        // and are added through the task tools afterward.
+        var id = await _store.AddCardAsync(idea, "Add OAuth", "Plan it\n- [ ] step one", "feat/oauth", CardPriority.High, CancellationToken.None);
 
         Assert.That(id, Is.EqualTo(1));
         var card = (await _store.ReadAsync(CancellationToken.None)).FindCard(1)!;
@@ -73,10 +75,8 @@ public class BoardStoreTests
         Assert.That(card.Branch, Is.EqualTo("feat/oauth"));
         Assert.That(card.Priority, Is.EqualTo(CardPriority.High));
         Assert.That(card.ColumnId, Is.EqualTo(idea));
-        Assert.That(card.Body, Is.EqualTo("Plan it"));
-        Assert.That(card.Subtasks, Has.Count.EqualTo(2));
-        Assert.That(card.Subtasks[0], Is.EqualTo(new SubtaskItem("step one", false)));
-        Assert.That(card.Subtasks[1], Is.EqualTo(new SubtaskItem("step two", true)));
+        Assert.That(card.Body, Is.EqualTo("Plan it\n- [ ] step one"));
+        Assert.That(card.Tasks, Is.Empty);
     }
 
     [Test]
@@ -133,19 +133,116 @@ public class BoardStoreTests
     }
 
     [Test]
-    public async Task UpdateCardContent_AppliesParsedFields()
+    public async Task UpdateCardContent_AppliesParsedFields_AndLeavesTasksUntouched()
     {
         var (idea, _, _, _) = await ColumnsAsync();
         var id = await _store.AddCardAsync(idea, "old", "old body", null, CardPriority.Normal, CancellationToken.None);
+        await _store.AddTasksAsync(id, new[] { "keep me" }, CancellationToken.None);
 
+        // Checklist-looking lines in the content stay in the body verbatim; the card's tasks are a
+        // separate collection that board_update_card does not touch.
         var parsed = CardMarkdown.Parse("---\ntitle: New\npriority: high\n---\nfresh body\n- [x] did it");
         Assert.That(await _store.UpdateCardContentAsync(id, parsed, CancellationToken.None), Is.True);
 
         var card = (await _store.ReadAsync(CancellationToken.None)).FindCard(id)!;
         Assert.That(card.Title, Is.EqualTo("New"));
         Assert.That(card.Priority, Is.EqualTo(CardPriority.High));
-        Assert.That(card.Body, Is.EqualTo("fresh body"));
-        Assert.That(card.Subtasks.Single(), Is.EqualTo(new SubtaskItem("did it", true)));
+        Assert.That(card.Body, Is.EqualTo("fresh body\n- [x] did it"));
+        Assert.That(card.Tasks.Select(t => t.Text), Is.EqualTo(new[] { "keep me" }));
+    }
+
+    [Test]
+    public async Task AddTasks_AssignsSequentialIds_AndReturnsList()
+    {
+        var (idea, _, _, _) = await ColumnsAsync();
+        var id = await _store.AddCardAsync(idea, "card", "ask", null, CardPriority.Normal, CancellationToken.None);
+
+        var afterFirst = await _store.AddTasksAsync(id, new[] { "a", "b" }, CancellationToken.None);
+        Assert.That(afterFirst!.Select(t => (t.Id, t.Text, t.Done)),
+            Is.EqualTo(new[] { (1, "a", false), (2, "b", false) }));
+
+        // A second add continues the id sequence and skips blank texts.
+        var afterSecond = await _store.AddTasksAsync(id, new[] { "  ", "c" }, CancellationToken.None);
+        Assert.That(afterSecond!.Select(t => t.Id), Is.EqualTo(new[] { 1, 2, 3 }));
+        Assert.That(afterSecond![^1].Text, Is.EqualTo("c"));
+    }
+
+    [Test]
+    public async Task AddTasks_MissingCard_ReturnsNull()
+        => Assert.That(await _store.AddTasksAsync(9999, new[] { "x" }, CancellationToken.None), Is.Null);
+
+    [Test]
+    public async Task SetTaskDone_TicksAndUnticks_ByTaskId()
+    {
+        var (idea, _, _, _) = await ColumnsAsync();
+        var id = await _store.AddCardAsync(idea, "card", "ask", null, CardPriority.Normal, CancellationToken.None);
+        await _store.AddTasksAsync(id, new[] { "a", "b" }, CancellationToken.None);
+
+        Assert.That(await _store.SetTaskDoneAsync(id, 2, true, CancellationToken.None), Is.True);
+        var card = (await _store.ReadAsync(CancellationToken.None)).FindCard(id)!;
+        Assert.That(card.Tasks.Single(t => t.Id == 2).Done, Is.True);
+        Assert.That(card.Tasks.Single(t => t.Id == 1).Done, Is.False);
+
+        Assert.That(await _store.SetTaskDoneAsync(id, 2, false, CancellationToken.None), Is.True);
+        Assert.That((await _store.ReadAsync(CancellationToken.None)).FindCard(id)!.Tasks.Single(t => t.Id == 2).Done, Is.False);
+
+        // Unknown task id is a clean failure.
+        Assert.That(await _store.SetTaskDoneAsync(id, 99, true, CancellationToken.None), Is.False);
+    }
+
+    [Test]
+    public async Task UpdateTaskText_RewritesText_RejectsBlank_AndMissingTask()
+    {
+        var (idea, _, _, _) = await ColumnsAsync();
+        var id = await _store.AddCardAsync(idea, "card", "ask", null, CardPriority.Normal, CancellationToken.None);
+        await _store.AddTasksAsync(id, new[] { "old" }, CancellationToken.None);
+
+        Assert.That(await _store.UpdateTaskTextAsync(id, 1, "new", CancellationToken.None), Is.True);
+        Assert.That((await _store.ReadAsync(CancellationToken.None)).FindCard(id)!.Tasks.Single().Text, Is.EqualTo("new"));
+
+        Assert.That(await _store.UpdateTaskTextAsync(id, 1, "   ", CancellationToken.None), Is.False);
+        Assert.That(await _store.UpdateTaskTextAsync(id, 99, "x", CancellationToken.None), Is.False);
+    }
+
+    [Test]
+    public async Task RemoveTask_DeletesIt_AndDoesNotReuseTheId()
+    {
+        var (idea, _, _, _) = await ColumnsAsync();
+        var id = await _store.AddCardAsync(idea, "card", "ask", null, CardPriority.Normal, CancellationToken.None);
+        await _store.AddTasksAsync(id, new[] { "a", "b" }, CancellationToken.None);
+
+        Assert.That(await _store.RemoveTaskAsync(id, 2, CancellationToken.None), Is.True);
+        Assert.That((await _store.ReadAsync(CancellationToken.None)).FindCard(id)!.Tasks.Select(t => t.Id),
+            Is.EqualTo(new[] { 1 }));
+
+        // The counter does not rewind: the next added task takes 3, not the freed 2.
+        var after = await _store.AddTasksAsync(id, new[] { "c" }, CancellationToken.None);
+        Assert.That(after!.Select(t => t.Id), Is.EqualTo(new[] { 1, 3 }));
+
+        Assert.That(await _store.RemoveTaskAsync(id, 99, CancellationToken.None), Is.False);
+    }
+
+    [Test]
+    public async Task LegacyTasks_WithoutIds_AreRenumbered_OnReadAndOnMutation()
+    {
+        // Simulate a card persisted before tasks carried ids (the old "Subtasks" shape): every id 0.
+        var yamca = new YamcaStore(filePath: null);
+        var store = new BoardStore(yamca);
+        var idea = (await store.ReadAsync(CancellationToken.None)).FindColumn("idea")!.Id;
+
+        var legacy = new CardRecord(1, "legacy", null, CardPriority.Normal, idea, "ask",
+            new[] { new TaskState(0, "first", false), new TaskState(0, "second", true) });
+        var vp = await yamca.GetAsync(CancellationToken.None);
+        await vp.Save(new Kvp("/board/card/1", legacy));
+
+        // Read projection renumbers positionally 1..n.
+        var card = (await store.ReadAsync(CancellationToken.None)).FindCard(1)!;
+        Assert.That(card.Tasks.Select(t => (t.Id, t.Text)), Is.EqualTo(new[] { (1, "first"), (2, "second") }));
+
+        // A by-id mutation persists those ids, and a subsequent add continues past them (no reuse).
+        Assert.That(await store.SetTaskDoneAsync(1, 1, true, CancellationToken.None), Is.True);
+        var added = await store.AddTasksAsync(1, new[] { "third" }, CancellationToken.None);
+        Assert.That(added!.Select(t => t.Id), Is.EqualTo(new[] { 1, 2, 3 }));
     }
 
     [Test]
@@ -204,7 +301,7 @@ public class BoardStoreTests
         var idea = (await store.ReadAsync(CancellationToken.None)).FindColumn("idea")!.Id;
 
         var legacy = new CardRecord(1, "legacy", null, CardPriority.Normal, idea, "body",
-            Array.Empty<SubtaskState>()) { Artifacts = null };
+            Array.Empty<TaskState>()) { Artifacts = null };
         var vp = await yamca.GetAsync(CancellationToken.None);
         await vp.Save(new Kvp("/board/card/1", legacy));
 
@@ -220,12 +317,12 @@ public class BoardStoreTests
         await _store.SetArtifactAsync(id, "plan", "the plan", CancellationToken.None);
 
         // A body edit and a move must leave the artifact intact (the card aggregate carries it along).
+        // The body is stored verbatim (checklist-looking lines are just prose now).
         await _store.UpdateCardBodyAsync(id, "card", "revised ask\n- [ ] todo", CancellationToken.None);
         await _store.MoveCardAsync(id, analyze, CancellationToken.None);
 
         var card = (await _store.ReadAsync(CancellationToken.None)).FindCard(id)!;
-        Assert.That(card.Body, Is.EqualTo("revised ask"));
-        Assert.That(card.Subtasks.Single().Text, Is.EqualTo("todo"));
+        Assert.That(card.Body, Is.EqualTo("revised ask\n- [ ] todo"));
         Assert.That(card.FindArtifact("plan")!.Content, Is.EqualTo("the plan"));
     }
 

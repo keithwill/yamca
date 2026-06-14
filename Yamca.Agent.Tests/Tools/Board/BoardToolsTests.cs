@@ -35,7 +35,9 @@ public class BoardToolsTests
     [Test]
     public async Task BoardList_FormatsColumnsCardsAndProgress()
     {
-        await _boardStore.AddCardAsync(_idea, "Add OAuth", "- [x] a\n- [ ] b", "feat/oauth", CardPriority.Normal, CancellationToken.None);
+        await _boardStore.AddCardAsync(_idea, "Add OAuth", "the ask", "feat/oauth", CardPriority.Normal, CancellationToken.None);
+        await _boardStore.AddTasksAsync(1, new[] { "a", "b" }, CancellationToken.None);
+        await _boardStore.SetTaskDoneAsync(1, 1, true, CancellationToken.None);
 
         var result = await new BoardListTool(_boardStore).ExecuteAsync(
             Json.Parse("{}"), Ctx(), CancellationToken.None);
@@ -49,9 +51,11 @@ public class BoardToolsTests
     }
 
     [Test]
-    public async Task BoardGetCard_ReturnsRenderedMarkdown()
+    public async Task BoardGetCard_ReturnsRenderedMarkdown_AndListsTasksWithIds()
     {
         await _boardStore.AddCardAsync(_idea, "OAuth", "# Body\ntext", null, CardPriority.Normal, CancellationToken.None);
+        await _boardStore.AddTasksAsync(1, new[] { "write tests", "ship it" }, CancellationToken.None);
+        await _boardStore.SetTaskDoneAsync(1, 2, true, CancellationToken.None);
 
         var result = await new BoardGetCardTool(_boardStore).ExecuteAsync(
             Json.Parse("""{ "card": "1" }"""), Ctx(), CancellationToken.None);
@@ -60,6 +64,9 @@ public class BoardToolsTests
         Assert.That(result.Content, Does.Contain("# Body"));
         Assert.That(result.Content, Does.Contain("id: 1"));
         Assert.That(result.Content, Does.Contain("in column 'idea'"));
+        // Tasks are listed (read-only) with their ids and done state, off the body.
+        Assert.That(result.Content, Does.Contain("- #1 [ ] write tests"));
+        Assert.That(result.Content, Does.Contain("- #2 [x] ship it"));
     }
 
     [Test]
@@ -116,8 +123,76 @@ public class BoardToolsTests
 
         Assert.That(result.IsError, Is.False, result.Content);
         var card = (await _boardStore.ReadAsync(CancellationToken.None)).FindCard("0001")!;
-        Assert.That(card.Body, Is.EqualTo("new content"));
-        Assert.That(card.Subtasks.Single(), Is.EqualTo(new SubtaskItem("done", true)));
+        // Checklist-looking lines stay in the body verbatim; the card has no tasks (those use the task tools).
+        Assert.That(card.Body, Is.EqualTo("new content\n- [x] done"));
+        Assert.That(card.Tasks, Is.Empty);
+    }
+
+    [Test]
+    public async Task BoardAddTasks_AppendsWithIds_AndReportsThem()
+    {
+        await _boardStore.AddCardAsync(_idea, "OAuth", "ask", null, CardPriority.Normal, CancellationToken.None);
+
+        var result = await new BoardAddTasksTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "tasks": ["write tests", "ship it"] }"""), Ctx(), CancellationToken.None);
+
+        Assert.That(result.IsError, Is.False, result.Content);
+        Assert.That(result.Content, Does.Contain("- #1 [ ] write tests"));
+        Assert.That(result.Content, Does.Contain("- #2 [ ] ship it"));
+        var card = (await _boardStore.ReadAsync(CancellationToken.None)).FindCard("0001")!;
+        Assert.That(card.Tasks.Select(t => t.Text), Is.EqualTo(new[] { "write tests", "ship it" }));
+    }
+
+    [Test]
+    public async Task BoardCompleteTask_TicksByIdAndUnticksWithDoneFalse()
+    {
+        await _boardStore.AddCardAsync(_idea, "OAuth", "ask", null, CardPriority.Normal, CancellationToken.None);
+        await _boardStore.AddTasksAsync(1, new[] { "a" }, CancellationToken.None);
+
+        var tick = await new BoardCompleteTaskTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "task": 1 }"""), Ctx(), CancellationToken.None);
+        Assert.That(tick.IsError, Is.False, tick.Content);
+        Assert.That((await _boardStore.ReadAsync(CancellationToken.None)).FindCard("0001")!.Tasks.Single().Done, Is.True);
+
+        var untick = await new BoardCompleteTaskTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "task": 1, "done": false }"""), Ctx(), CancellationToken.None);
+        Assert.That(untick.IsError, Is.False, untick.Content);
+        Assert.That((await _boardStore.ReadAsync(CancellationToken.None)).FindCard("0001")!.Tasks.Single().Done, Is.False);
+
+        var missing = await new BoardCompleteTaskTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "task": 99 }"""), Ctx(), CancellationToken.None);
+        Assert.That(missing.IsError, Is.True);
+    }
+
+    [Test]
+    public async Task BoardUpdateTask_RewritesText()
+    {
+        await _boardStore.AddCardAsync(_idea, "OAuth", "ask", null, CardPriority.Normal, CancellationToken.None);
+        await _boardStore.AddTasksAsync(1, new[] { "old" }, CancellationToken.None);
+
+        var result = await new BoardUpdateTaskTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "task": 1, "text": "new" }"""), Ctx(), CancellationToken.None);
+
+        Assert.That(result.IsError, Is.False, result.Content);
+        Assert.That((await _boardStore.ReadAsync(CancellationToken.None)).FindCard("0001")!.Tasks.Single().Text, Is.EqualTo("new"));
+    }
+
+    [Test]
+    public async Task BoardRemoveTask_DeletesById()
+    {
+        await _boardStore.AddCardAsync(_idea, "OAuth", "ask", null, CardPriority.Normal, CancellationToken.None);
+        await _boardStore.AddTasksAsync(1, new[] { "a", "b" }, CancellationToken.None);
+
+        var result = await new BoardRemoveTaskTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "task": 1 }"""), Ctx(), CancellationToken.None);
+
+        Assert.That(result.IsError, Is.False, result.Content);
+        Assert.That((await _boardStore.ReadAsync(CancellationToken.None)).FindCard("0001")!.Tasks.Select(t => t.Id),
+            Is.EqualTo(new[] { 2 }));
+
+        var missing = await new BoardRemoveTaskTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "task": 99 }"""), Ctx(), CancellationToken.None);
+        Assert.That(missing.IsError, Is.True);
     }
 
     [Test]
@@ -210,5 +285,9 @@ public class BoardToolsTests
         Assert.That(new BoardMoveCardTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
         Assert.That(new BoardUpdateCardTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
         Assert.That(new BoardSetArtifactTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
+        Assert.That(new BoardAddTasksTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
+        Assert.That(new BoardCompleteTaskTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
+        Assert.That(new BoardUpdateTaskTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
+        Assert.That(new BoardRemoveTaskTool(_boardStore).DefaultPermission, Is.EqualTo(PermissionLevel.Ask));
     }
 }

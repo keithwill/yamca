@@ -4,6 +4,7 @@
 @using Yamca.Web.Services
 @inject GitService Git
 @inject IDialogService Dialogs
+@inject BoardStore BoardStore
 
 <MudDialog>
     <TitleContent>
@@ -64,6 +65,53 @@
                         @((MarkupString)MarkdownRenderer.ToHtml(string.IsNullOrWhiteSpace(Card.Body) ? "_(empty card)_" : Card.Body))
                     </div>
                 }
+
+                @* The card's tasks — its child checklist, kept off the body. Unlike the other edits in
+                   this dialog (priority/body/branch close and hand a result back to the page), task
+                   changes persist straight through BoardStore and update the list in place so the modal
+                   stays open; the page's refresh on close repaints the kanban progress badge. *@
+                <MudDivider Class="my-2" />
+                <div class="d-flex align-center mb-1" style="gap: 6px;">
+                    <MudText Typo="Typo.subtitle2">Tasks</MudText>
+                    @if (_tasks.Count > 0)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Default">@_tasks.Count(t => t.Done)/@_tasks.Count</MudText>
+                    }
+                </div>
+                @foreach (var task in _tasks)
+                {
+                    var t = task;
+                    <div class="d-flex align-center" style="gap: 4px;">
+                        <MudCheckBox T="bool" Value="t.Done" Dense="true" Color="Color.Primary"
+                                     Disabled="@_busy" ValueChanged="@((bool v) => ToggleTask(t, v))" />
+                        @if (_editingTaskId == t.Id)
+                        {
+                            <MudTextField @bind-Value="_taskEditText" T="string" Variant="Variant.Text"
+                                          Margin="Margin.Dense" Immediate="true" AutoFocus="true"
+                                          Class="flex-grow-1" OnKeyDown="@(e => OnTaskEditKey(e, t))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary"
+                                           Disabled="@_busy" OnClick="@(() => SaveTaskEdit(t))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                           Disabled="@_busy" OnClick="CancelTaskEdit" />
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Class="flex-grow-1"
+                                     Style="@(t.Done ? "text-decoration: line-through; opacity: 0.6;" : "")">@t.Text</MudText>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           Disabled="@_busy" OnClick="@(() => BeginEditTask(t))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                           Disabled="@_busy" OnClick="@(() => RemoveTask(t))" />
+                        }
+                    </div>
+                }
+                <div class="d-flex align-center mt-1" style="gap: 4px;">
+                    <MudTextField @bind-Value="_newTaskText" T="string" Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" Placeholder="Add a task…" Immediate="true"
+                                  Class="flex-grow-1" OnKeyDown="OnNewTaskKey" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Add" Size="Size.Small" Color="Color.Primary"
+                                   Disabled="@(_busy || string.IsNullOrWhiteSpace(_newTaskText))" OnClick="AddTask" />
+                </div>
 
                 @* The branch is editable on any card that isn't already bound to a live worktree —
                    including cards in resting columns — so its branch can be decided up front. A
@@ -297,7 +345,8 @@
     public sealed record PriorityUpdate(CardPriority Priority);
 
     /// <summary>Handed back when the user edits the title and/or markdown body and clicks Save. The
-    /// page saves the new title and body (whose checklist lines become the card's subtasks).</summary>
+    /// page saves the new title and body (the card's prose description). Tasks are edited separately,
+    /// in place, and are not part of this result.</summary>
     public sealed record BodyUpdate(string Title, string Body);
 
     /// <summary>Handed back when the user changed the branch field (on a card that isn't bound to a
@@ -313,6 +362,13 @@
     private bool _editingBody;
     private string _body = "";
     private string _title = "";
+
+    // The card's task checklist, managed in place (persisted straight through BoardStore) so the modal
+    // stays open across edits. Seeded from the card at open; reloaded from the store after each change.
+    private List<TaskItem> _tasks = new();
+    private int? _editingTaskId;
+    private string _taskEditText = "";
+    private string _newTaskText = "";
 
     // Changes tab: the embedded view loads lazily the first time the tab is opened, so opening the
     // dialog stays cheap when the diff is never viewed.
@@ -352,6 +408,78 @@
         _branch = HasBranchAttribute ? Card.Branch : PresumptiveBranch;
         _endpointId = DefaultEndpointId;
         _priority = Card.Priority;
+        _tasks = Card.Tasks.ToList();
+    }
+
+    // Task edits persist immediately and keep the modal open, so after each one we re-read the card's
+    // tasks from the store — this also picks up the one-time id normalization a legacy card gets on its
+    // first mutation, keeping the displayed ids in step with what's persisted.
+    private async Task ReloadTasksAsync()
+    {
+        var snapshot = await BoardStore.ReadAsync(CancellationToken.None);
+        _tasks = snapshot.FindCard(Card.Id)?.Tasks.ToList() ?? _tasks;
+    }
+
+    private async Task ToggleTask(TaskItem task, bool done)
+    {
+        _busy = true;
+        try { await BoardStore.SetTaskDoneAsync(Card.Id, task.Id, done, CancellationToken.None); await ReloadTasksAsync(); }
+        finally { _busy = false; }
+    }
+
+    private void BeginEditTask(TaskItem task)
+    {
+        _editingTaskId = task.Id;
+        _taskEditText = task.Text;
+    }
+
+    private void CancelTaskEdit()
+    {
+        _editingTaskId = null;
+        _taskEditText = "";
+    }
+
+    private async Task SaveTaskEdit(TaskItem task)
+    {
+        var text = (_taskEditText ?? string.Empty).Trim();
+        if (text.Length == 0 || string.Equals(text, task.Text, StringComparison.Ordinal))
+        {
+            CancelTaskEdit();
+            return;
+        }
+        _busy = true;
+        try { await BoardStore.UpdateTaskTextAsync(Card.Id, task.Id, text, CancellationToken.None); await ReloadTasksAsync(); }
+        finally { _busy = false; }
+        CancelTaskEdit();
+    }
+
+    private async Task RemoveTask(TaskItem task)
+    {
+        _busy = true;
+        try { await BoardStore.RemoveTaskAsync(Card.Id, task.Id, CancellationToken.None); await ReloadTasksAsync(); }
+        finally { _busy = false; }
+        if (_editingTaskId == task.Id) CancelTaskEdit();
+    }
+
+    private async Task AddTask()
+    {
+        var text = (_newTaskText ?? string.Empty).Trim();
+        if (text.Length == 0) return;
+        _busy = true;
+        try { await BoardStore.AddTasksAsync(Card.Id, new[] { text }, CancellationToken.None); await ReloadTasksAsync(); }
+        finally { _busy = false; }
+        _newTaskText = "";
+    }
+
+    private async Task OnNewTaskKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await AddTask();
+    }
+
+    private async Task OnTaskEditKey(KeyboardEventArgs e, TaskItem task)
+    {
+        if (e.Key == "Enter") await SaveTaskEdit(task);
+        else if (e.Key == "Escape") CancelTaskEdit();
     }
 
     // Mount the Changes view the first time its tab is opened; the view loads its own data on init.

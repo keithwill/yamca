@@ -11,7 +11,7 @@ public class OrchestratorPlannerTests
     private static readonly DateTimeOffset Now = new(2026, 6, 10, 12, 0, 0, TimeSpan.Zero);
 
     private static BoardCard Card(int id, string column, CardPriority priority = CardPriority.Normal) =>
-        new(id, $"Card {id}", null, column, "", Array.Empty<SubtaskItem>(), priority);
+        new(id, $"Card {id}", null, column, "", Array.Empty<TaskItem>(), priority);
 
     private static BoardColumn Column(string dir, int order, params BoardCard[] cards) =>
         new(dir, order, dir.Length > 3 ? dir[3..] : dir, null, cards);

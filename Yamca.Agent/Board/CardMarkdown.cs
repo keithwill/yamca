@@ -1,19 +1,14 @@
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Yamca.Agent.Board;
 
 /// <summary>The agent-facing boundary between a structured <see cref="BoardCard"/> aggregate and the
 /// single markdown blob the board tools exchange with the model. <see cref="Render"/> projects a card
-/// to <c>frontmatter + body + checklist</c>; <see cref="Parse"/> splits a submitted blob back into
-/// fields, separating the prose body from the <c>- [ ]</c> checklist (which becomes structured
-/// subtasks). Keeping this here means the board's stored shape can be fully structured while the
-/// tool contract stays "one markdown document with frontmatter and a checklist".</summary>
-public static partial class CardMarkdown
+/// to <c>frontmatter + body</c>; <see cref="Parse"/> splits a submitted blob back into fields. The
+/// body is the card's prose description (the feature/issue/user story) only — a card's child tasks are
+/// a separate structured collection edited through the task tools, not parsed out of this markdown.</summary>
+public static class CardMarkdown
 {
-    [GeneratedRegex(@"^\s*-\s+\[([ xX])\]\s+(.*)$")]
-    private static partial Regex SubtaskRegex();
-
     /// <summary>The fields parsed from a submitted card blob. A null <see cref="Title"/>,
     /// <see cref="Branch"/>, or <see cref="Priority"/> means the frontmatter omitted that field and the
     /// caller should keep the card's existing value.</summary>
@@ -21,11 +16,11 @@ public static partial class CardMarkdown
         string? Title,
         string? Branch,
         CardPriority? Priority,
-        string Body,
-        IReadOnlyList<SubtaskItem> Subtasks);
+        string Body);
 
     /// <summary>Render a card as the markdown the agent sees: a frontmatter block (id, title, branch,
-    /// priority) followed by the prose body and the subtasks as a <c>- [ ]</c>/<c>- [x]</c> checklist.</summary>
+    /// priority) followed by the prose body. Tasks are not part of this blob — they are listed and
+    /// edited separately through the task tools.</summary>
     public static string Render(BoardCard card)
     {
         var sb = new StringBuilder();
@@ -40,19 +35,13 @@ public static partial class CardMarkdown
         var body = (card.Body ?? string.Empty).Replace("\r\n", "\n").Trim();
         if (body.Length > 0) sb.Append(body).Append('\n');
 
-        if (card.Subtasks.Count > 0)
-        {
-            if (body.Length > 0) sb.Append('\n');
-            foreach (var s in card.Subtasks)
-                sb.Append("- [").Append(s.Done ? 'x' : ' ').Append("] ").Append(s.Text).Append('\n');
-        }
-
         return sb.ToString();
     }
 
     /// <summary>Parse a submitted card blob into fields. Frontmatter scalars become title/branch/priority
-    /// (the <c>id</c> is ignored — card identity is fixed by the tool argument), the remaining text minus
-    /// its <c>- [ ]</c> checklist lines becomes the body, and those checklist lines become subtasks.</summary>
+    /// (the <c>id</c> is ignored — card identity is fixed by the tool argument) and the remaining text is
+    /// the body verbatim. Any checklist-looking lines stay in the body; tasks are edited via the task
+    /// tools, not authored through this markdown.</summary>
     public static ParsedCard Parse(string content)
     {
         var (fm, rawBody) = SplitFrontmatter(content ?? string.Empty);
@@ -68,26 +57,7 @@ public static partial class CardMarkdown
             _ => null,
         } : null;
 
-        var (body, subtasks) = SplitBody(rawBody);
-        return new ParsedCard(title, branch, priority, body, subtasks);
-    }
-
-    /// <summary>Separate a markdown body into its prose (with the <c>- [ ]</c> checklist lines removed)
-    /// and the structured subtasks those lines represent. Used both when parsing a submitted card blob
-    /// and when authoring a card from a freeform body in the UI.</summary>
-    public static (string Body, IReadOnlyList<SubtaskItem> Subtasks) SplitBody(string body)
-    {
-        var subtasks = new List<SubtaskItem>();
-        var prose = new List<string>();
-        foreach (var line in (body ?? string.Empty).Replace("\r\n", "\n").Split('\n'))
-        {
-            var m = SubtaskRegex().Match(line);
-            if (m.Success)
-                subtasks.Add(new SubtaskItem(m.Groups[2].Value.Trim(), m.Groups[1].Value is "x" or "X"));
-            else
-                prose.Add(line);
-        }
-        return (string.Join('\n', prose).Trim(), subtasks);
+        return new ParsedCard(title, branch, priority, rawBody.Replace("\r\n", "\n").Trim());
     }
 
     // Splits leading YAML-ish frontmatter (between '---' fences) into a flat key/value map and returns

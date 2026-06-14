@@ -5,7 +5,7 @@ using Yamca.Agent.Storage;
 namespace Yamca.Agent.Board;
 
 /// <summary>The dev board's repository over the shared <see cref="YamcaStore"/> (VestPocket). Columns
-/// live at keys <c>/board/column/{id}</c> and cards — aggregate roots that own their subtasks — at
+/// live at keys <c>/board/column/{id}</c> and cards — aggregate roots that own their tasks — at
 /// <c>/board/card/{id}</c>. There are no files or directories: a card's column membership is its
 /// <see cref="CardRecord.ColumnId"/> field, so a move is a field rewrite.
 ///
@@ -78,9 +78,9 @@ public sealed class BoardStore
         return ReadLastId(store) + 1;
     }
 
-    /// <summary>Create a card in <paramref name="columnId"/> from a freeform body (its <c>- [ ]</c> lines
-    /// become subtasks). Advances the card-id counter and stamps the card with the new id, persisting
-    /// both atomically. Returns the new card's id.</summary>
+    /// <summary>Create a card in <paramref name="columnId"/> from a freeform body (stored verbatim as the
+    /// card's description; the card starts with no tasks). Advances the card-id counter and stamps the
+    /// card with the new id, persisting both atomically. Returns the new card's id.</summary>
     public async Task<int> AddCardAsync(
         string columnId, string title, string body, string? branch, CardPriority priority, CancellationToken ct)
     {
@@ -89,10 +89,9 @@ public sealed class BoardStore
         try
         {
             var id = ReadLastId(store) + 1;
-            var (prose, subtasks) = CardMarkdown.SplitBody(body);
             var record = new CardRecord(
                 id, title.Trim(), string.IsNullOrWhiteSpace(branch) ? null : branch.Trim(),
-                priority, columnId, prose, ToState(subtasks));
+                priority, columnId, (body ?? string.Empty).Trim(), Array.Empty<TaskState>());
             // Advance the counter and write the card in one transaction so a card's id is never
             // reused even if it (or a later card) is subsequently deleted.
             await store.Save(new[]
@@ -125,9 +124,9 @@ public sealed class BoardStore
         finally { _gate.Release(); }
     }
 
-    /// <summary>Apply a parsed card blob (from <c>board_update_card</c>): set body and subtasks, and
-    /// overwrite title/branch/priority where the frontmatter supplied them. Returns false when no card
-    /// with that id exists.</summary>
+    /// <summary>Apply a parsed card blob (from <c>board_update_card</c>): set the body and overwrite
+    /// title/branch/priority where the frontmatter supplied them. The card's tasks are a separate
+    /// collection and are left untouched. Returns false when no card with that id exists.</summary>
     public Task<bool> UpdateCardContentAsync(int cardId, CardMarkdown.ParsedCard parsed, CancellationToken ct)
         => MutateCardAsync(cardId, card => card with
         {
@@ -135,20 +134,78 @@ public sealed class BoardStore
             Branch = parsed.Branch ?? card.Branch,
             Priority = parsed.Priority ?? card.Priority,
             Body = parsed.Body,
-            Subtasks = ToState(parsed.Subtasks),
         }, ct);
 
-    /// <summary>Update a card's title and body (the body's <c>- [ ]</c> lines become subtasks). Used by
-    /// the card detail dialog. Returns false when no card with that id exists.</summary>
+    /// <summary>Update a card's title and body (the prose description). Used by the card detail dialog.
+    /// The card's tasks are managed separately and left untouched. Returns false when no card with that
+    /// id exists.</summary>
     public Task<bool> UpdateCardBodyAsync(int cardId, string title, string body, CancellationToken ct)
-    {
-        var (prose, subtasks) = CardMarkdown.SplitBody(body);
-        return MutateCardAsync(cardId, card => card with
+        => MutateCardAsync(cardId, card => card with
         {
             Title = title.Trim(),
-            Body = prose,
-            Subtasks = ToState(subtasks),
+            Body = (body ?? string.Empty).Trim(),
         }, ct);
+
+    /// <summary>Append one or more tasks to a card, assigning each the next card-local id from the
+    /// card's <see cref="CardRecord.LastTaskId"/> counter (advanced past any ids already present, so
+    /// ids are never reused even after deletes). Blank texts are skipped. Returns the card's full task
+    /// list after the add, or null when no card with that id exists.</summary>
+    public async Task<IReadOnlyList<TaskItem>?> AddTasksAsync(int cardId, IReadOnlyList<string> texts, CancellationToken ct)
+    {
+        var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (store.Get<CardRecord>(CardKey(cardId)) is not { } card) return null;
+            card = NormalizeTaskIds(card);
+
+            var tasks = card.Tasks.ToList();
+            var nextId = Math.Max(card.LastTaskId, tasks.Count == 0 ? 0 : tasks.Max(t => t.Id));
+            foreach (var text in texts)
+            {
+                var trimmed = (text ?? string.Empty).Trim();
+                if (trimmed.Length == 0) continue;
+                tasks.Add(new TaskState(++nextId, trimmed, false));
+            }
+
+            var updated = card with { Tasks = tasks, LastTaskId = nextId };
+            await store.Save(new Kvp(CardKey(cardId), updated)).ConfigureAwait(false);
+            return ToTasks(updated);
+        }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>Set a single task's done flag. Returns false when no card with that id exists or the
+    /// card has no task with that task id.</summary>
+    public Task<bool> SetTaskDoneAsync(int cardId, int taskId, bool done, CancellationToken ct)
+        => MutateTaskAsync(cardId, taskId, t => t with { Done = done }, ct);
+
+    /// <summary>Replace a single task's text (blank is rejected). Returns false when no card with that
+    /// id exists or the card has no task with that task id.</summary>
+    public Task<bool> UpdateTaskTextAsync(int cardId, int taskId, string text, CancellationToken ct)
+    {
+        var trimmed = (text ?? string.Empty).Trim();
+        if (trimmed.Length == 0) return Task.FromResult(false);
+        return MutateTaskAsync(cardId, taskId, t => t with { Text = trimmed }, ct);
+    }
+
+    /// <summary>Delete a single task from a card. The card's <see cref="CardRecord.LastTaskId"/> counter
+    /// is left untouched so the deleted task id is never handed out again. Returns false when no card
+    /// with that id exists or the card has no task with that task id.</summary>
+    public async Task<bool> RemoveTaskAsync(int cardId, int taskId, CancellationToken ct)
+    {
+        var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (store.Get<CardRecord>(CardKey(cardId)) is not { } card) return false;
+            card = NormalizeTaskIds(card);
+            var tasks = card.Tasks.ToList();
+            if (tasks.RemoveAll(t => t.Id == taskId) == 0) return false;
+            await store.Save(new Kvp(CardKey(cardId), card with { Tasks = tasks })).ConfigureAwait(false);
+            return true;
+        }
+        finally { _gate.Release(); }
     }
 
     /// <summary>Set a card's priority. Returns false when no card with that id exists.</summary>
@@ -162,7 +219,7 @@ public sealed class BoardStore
     /// <summary>Create or replace a card's named artifact (its durable step output — a plan, notes, a
     /// log), keyed by <paramref name="kind"/>. A re-set of the same kind overwrites it and restamps its
     /// time; blank <paramref name="content"/> removes the artifact (a no-op when none exists). Other
-    /// card fields, subtasks, and artifacts are left untouched. Returns false when no card with that id
+    /// card fields, tasks, and artifacts are left untouched. Returns false when no card with that id
     /// exists.</summary>
     public Task<bool> SetArtifactAsync(int cardId, string kind, string? content, CancellationToken ct)
     {
@@ -293,6 +350,27 @@ public sealed class BoardStore
         finally { _gate.Release(); }
     }
 
+    // Replace a single task (matched by its card-local id) in place via <paramref name="mutate"/>.
+    // Returns false when the card or the task id is missing, so a no-match is a clean failure rather
+    // than a silent rewrite.
+    private async Task<bool> MutateTaskAsync(int cardId, int taskId, Func<TaskState, TaskState> mutate, CancellationToken ct)
+    {
+        var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (store.Get<CardRecord>(CardKey(cardId)) is not { } card) return false;
+            card = NormalizeTaskIds(card);
+            var tasks = card.Tasks.ToList();
+            var idx = tasks.FindIndex(t => t.Id == taskId);
+            if (idx < 0) return false;
+            tasks[idx] = mutate(tasks[idx]);
+            await store.Save(new Kvp(CardKey(cardId), card with { Tasks = tasks })).ConfigureAwait(false);
+            return true;
+        }
+        finally { _gate.Release(); }
+    }
+
     private static Task SeedDefaultColumnsAsync(VestPocketStore store, CancellationToken ct)
     {
         var seeds = new List<Kvp>();
@@ -328,14 +406,34 @@ public sealed class BoardStore
     }
 
     private static BoardCard ToCard(CardRecord r) => new(
-        r.Id, r.Title, r.Branch, r.ColumnId, r.Body,
-        r.Subtasks.Select(s => new SubtaskItem(s.Text, s.Done)).ToList(), r.Priority)
+        r.Id, r.Title, r.Branch, r.ColumnId, r.Body, ToTasks(r), r.Priority)
     {
         // Coalesce: a card persisted before the Artifacts field existed deserializes with a null list.
         Artifacts = (r.Artifacts ?? Array.Empty<ArtifactState>())
             .Select(a => new CardArtifact(a.Kind, a.Content, a.UpdatedAt)).ToList(),
     };
 
-    private static IReadOnlyList<SubtaskState> ToState(IReadOnlyList<SubtaskItem> items)
-        => items.Select(s => new SubtaskState(s.Text, s.Done)).ToList();
+    // Project a record's tasks to the read model, renumbering legacy id-less lists (see RenumberLegacy).
+    private static IReadOnlyList<TaskItem> ToTasks(CardRecord r)
+        => RenumberLegacy(r.Tasks ?? Array.Empty<TaskState>())
+            .Select(t => new TaskItem(t.Id, t.Text, t.Done)).ToList();
+
+    // Persist-side counterpart to the read projection: when a card's tasks are legacy id-less (id 0),
+    // bake in the same positional ids the read model exposes — and advance LastTaskId past them — before
+    // a by-id mutation, so persisted ids match what the caller saw. A no-op once tasks carry ids.
+    private static CardRecord NormalizeTaskIds(CardRecord card)
+    {
+        var tasks = card.Tasks ?? Array.Empty<TaskState>();
+        if (tasks.All(t => t.Id != 0)) return card with { Tasks = tasks.ToList() };
+        var renumbered = RenumberLegacy(tasks);
+        return card with { Tasks = renumbered, LastTaskId = Math.Max(card.LastTaskId, renumbered.Count) };
+    }
+
+    // Legacy data (persisted before tasks carried ids, or under the old body-checklist "Subtasks" shape)
+    // deserializes with every id 0; renumber such a list positionally 1..n so ids are stable and distinct.
+    // A list whose tasks already carry ids is returned as-is.
+    private static List<TaskState> RenumberLegacy(IReadOnlyList<TaskState> tasks)
+        => tasks.Any(t => t.Id == 0)
+            ? tasks.Select((t, i) => new TaskState(i + 1, t.Text, t.Done)).ToList()
+            : tasks.ToList();
 }
