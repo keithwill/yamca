@@ -165,11 +165,11 @@ else
                                         {
                                             <span>⎇ @c.Branch</span>
                                         }
-                                        @if (Orchestrator.CardStates.TryGetValue(c.Id, out var orch))
+                                        @if (Orchestrator.CardStates.TryGetValue(c.Id.ToString(), out var orch))
                                         {
                                             <span class="yamca-board-card-orch" title="@OrchTooltip(orch)"
                                                   @onclick:stopPropagation="true"
-                                                  @onclick="@(() => OpenOrchestratorRunsAsync(c.Id))">
+                                                  @onclick="@(() => OpenOrchestratorRunsAsync(c.Id.ToString()))">
                                                 @switch (orch.Status)
                                                 {
                                                     case CardRunStatus.Queued:
@@ -194,7 +194,7 @@ else
                                             {
                                                 <span class="yamca-board-card-orch" title="Retry this card now"
                                                       @onclick:stopPropagation="true"
-                                                      @onclick="@(() => Orchestrator.RetryNow(c.Id))">
+                                                      @onclick="@(() => Orchestrator.RetryNow(c.Id.ToString()))">
                                                     <MudIcon Icon="@Icons.Material.Filled.Replay" Style="font-size:0.9rem;" />
                                                 </span>
                                             }
@@ -230,7 +230,7 @@ else
 @code {
     private bool _hydrated;
     private BoardSnapshot _snapshot = BoardSnapshot.Empty;
-    private readonly HashSet<string> _busyCards = new(StringComparer.Ordinal);
+    private readonly HashSet<int> _busyCards = new();
     private IReadOnlyDictionary<string, bool> _isWorkColumn = new Dictionary<string, bool>();
 
     // Code-branch name → worktree root path, from the last refresh's `git worktree list`. The board
@@ -648,7 +648,7 @@ else
     // Remove the card from _busyCards and refresh once all in-flight mutations have settled.
     // Deferring the refresh until the set drains prevents concurrent optimistic moves from
     // briefly reverting each other while their writes are still queued under the board lock.
-    private async Task FinishMutationAsync(string cardId)
+    private async Task FinishMutationAsync(int cardId)
     {
         _busyCards.Remove(cardId);
         if (_busyCards.Count == 0)

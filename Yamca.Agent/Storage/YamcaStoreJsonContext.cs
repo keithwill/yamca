@@ -11,4 +11,5 @@ namespace Yamca.Agent.Storage;
 [JsonSourceGenerationOptions(WriteIndented = false)]
 [JsonSerializable(typeof(ColumnRecord))]
 [JsonSerializable(typeof(CardRecord))]
+[JsonSerializable(typeof(CardCounter))]
 internal partial class YamcaStoreJsonContext : JsonSerializerContext;

@@ -1,3 +1,4 @@
+using System.Globalization;
 using VestPocket;
 using Yamca.Agent.Storage;
 
@@ -16,12 +17,16 @@ public sealed class BoardStore
     private const string CardPrefix = "/board/card/";
     private const string ColumnPrefix = "/board/column/";
 
+    // The monotonic card-id counter. It lives under the card prefix but holds a CardCounter, not a
+    // CardRecord, so ReadCards — which type-filters on CardRecord — skips it during the card scan.
+    private const string CounterKey = CardPrefix + "last-id";
+
     private readonly YamcaStore _yamca;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public BoardStore(YamcaStore yamca) => _yamca = yamca;
 
-    private static string CardKey(string id) => CardPrefix + id;
+    private static string CardKey(int id) => CardPrefix + id.ToString(CultureInfo.InvariantCulture);
     private static string ColumnKey(string id) => ColumnPrefix + id;
 
     /// <summary>Seed the default column layout if the board has no columns yet. Idempotent.</summary>
@@ -64,28 +69,37 @@ public sealed class BoardStore
         return new BoardSnapshot(columns);
     }
 
-    /// <summary>The next free 4-digit card id (max existing numeric id across all cards + 1).</summary>
-    public async Task<string> NextCardIdAsync(CancellationToken ct)
+    /// <summary>A preview of the id the next card would take (the counter's last id + 1). The id is
+    /// only actually assigned — and the counter advanced — inside <see cref="AddCardAsync"/>, so this
+    /// is advisory (e.g. to seed a default branch name).</summary>
+    public async Task<int> NextCardIdAsync(CancellationToken ct)
     {
         var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
-        return NextCardId(store);
+        return ReadLastId(store) + 1;
     }
 
     /// <summary>Create a card in <paramref name="columnId"/> from a freeform body (its <c>- [ ]</c> lines
-    /// become subtasks). Returns the new card's id.</summary>
-    public async Task<string> AddCardAsync(
+    /// become subtasks). Advances the card-id counter and stamps the card with the new id, persisting
+    /// both atomically. Returns the new card's id.</summary>
+    public async Task<int> AddCardAsync(
         string columnId, string title, string body, string? branch, CardPriority priority, CancellationToken ct)
     {
         var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var id = NextCardId(store);
+            var id = ReadLastId(store) + 1;
             var (prose, subtasks) = CardMarkdown.SplitBody(body);
             var record = new CardRecord(
                 id, title.Trim(), string.IsNullOrWhiteSpace(branch) ? null : branch.Trim(),
                 priority, columnId, prose, ToState(subtasks));
-            await store.Save(new Kvp(CardKey(id), record)).ConfigureAwait(false);
+            // Advance the counter and write the card in one transaction so a card's id is never
+            // reused even if it (or a later card) is subsequently deleted.
+            await store.Save(new[]
+            {
+                new Kvp(CounterKey, new CardCounter(id)),
+                new Kvp(CardKey(id), record),
+            }).ConfigureAwait(false);
             return id;
         }
         finally { _gate.Release(); }
@@ -93,11 +107,12 @@ public sealed class BoardStore
 
     /// <summary>Move a card to another column by rewriting its <see cref="CardRecord.ColumnId"/>.
     /// Returns false when no card with that id exists.</summary>
-    public Task<bool> MoveCardAsync(string cardId, string toColumnId, CancellationToken ct)
+    public Task<bool> MoveCardAsync(int cardId, string toColumnId, CancellationToken ct)
         => MutateCardAsync(cardId, card => card with { ColumnId = toColumnId }, ct);
 
-    /// <summary>Delete a card.</summary>
-    public async Task<bool> DeleteCardAsync(string cardId, CancellationToken ct)
+    /// <summary>Delete a card. The card-id counter is left untouched, so the deleted id is never
+    /// handed out again.</summary>
+    public async Task<bool> DeleteCardAsync(int cardId, CancellationToken ct)
     {
         var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
         await _gate.WaitAsync(ct).ConfigureAwait(false);
@@ -113,7 +128,7 @@ public sealed class BoardStore
     /// <summary>Apply a parsed card blob (from <c>board_update_card</c>): set body and subtasks, and
     /// overwrite title/branch/priority where the frontmatter supplied them. Returns false when no card
     /// with that id exists.</summary>
-    public Task<bool> UpdateCardContentAsync(string cardId, CardMarkdown.ParsedCard parsed, CancellationToken ct)
+    public Task<bool> UpdateCardContentAsync(int cardId, CardMarkdown.ParsedCard parsed, CancellationToken ct)
         => MutateCardAsync(cardId, card => card with
         {
             Title = parsed.Title ?? card.Title,
@@ -125,7 +140,7 @@ public sealed class BoardStore
 
     /// <summary>Update a card's title and body (the body's <c>- [ ]</c> lines become subtasks). Used by
     /// the card detail dialog. Returns false when no card with that id exists.</summary>
-    public Task<bool> UpdateCardBodyAsync(string cardId, string title, string body, CancellationToken ct)
+    public Task<bool> UpdateCardBodyAsync(int cardId, string title, string body, CancellationToken ct)
     {
         var (prose, subtasks) = CardMarkdown.SplitBody(body);
         return MutateCardAsync(cardId, card => card with
@@ -137,11 +152,11 @@ public sealed class BoardStore
     }
 
     /// <summary>Set a card's priority. Returns false when no card with that id exists.</summary>
-    public Task<bool> SetPriorityAsync(string cardId, CardPriority priority, CancellationToken ct)
+    public Task<bool> SetPriorityAsync(int cardId, CardPriority priority, CancellationToken ct)
         => MutateCardAsync(cardId, card => card with { Priority = priority }, ct);
 
     /// <summary>Bind a card to a git branch. Returns false when no card with that id exists.</summary>
-    public Task<bool> SetBranchAsync(string cardId, string branch, CancellationToken ct)
+    public Task<bool> SetBranchAsync(int cardId, string branch, CancellationToken ct)
         => MutateCardAsync(cardId, card => card with { Branch = string.IsNullOrWhiteSpace(branch) ? null : branch.Trim() }, ct);
 
     /// <summary>Set (or clear, when blank) a column's instructions. Returns false when no column with
@@ -221,6 +236,11 @@ public sealed class BoardStore
                 }
             }
 
+            // A wipe is the explicit "start the whole board over" gesture, so reset the id counter:
+            // the next card created numbers from 1 again. A non-wipe reinit keeps surviving cards and
+            // their ids, so its counter is left advanced — resetting it would collide with them.
+            if (wipe) saves.Add(new Kvp(CounterKey, null));
+
             // Remove every column that isn't one of the defaults (their cards have been relocated above).
             foreach (var col in columns.Where(c => !defaultColumnIds.Contains(c.Id)))
                 saves.Add(new Kvp(ColumnKey(col.Id), null));
@@ -234,7 +254,7 @@ public sealed class BoardStore
 
     // ---- internals -----------------------------------------------------------------------------
 
-    private async Task<bool> MutateCardAsync(string cardId, Func<CardRecord, CardRecord> mutate, CancellationToken ct)
+    private async Task<bool> MutateCardAsync(int cardId, Func<CardRecord, CardRecord> mutate, CancellationToken ct)
     {
         var store = await _yamca.GetAsync(ct).ConfigureAwait(false);
         await _gate.WaitAsync(ct).ConfigureAwait(false);
@@ -260,14 +280,10 @@ public sealed class BoardStore
 
     private static string NewColumnId() => Guid.NewGuid().ToString("n");
 
-    private static string NextCardId(VestPocketStore store)
-    {
-        var max = 0;
-        foreach (var card in ReadCards(store))
-            if (BoardService.LeadingInt(card.Id) is int n && n > max)
-                max = n;
-        return BoardService.FormatCardId(max + 1);
-    }
+    /// <summary>The most recently assigned card id (0 when no card has ever been created). Read from
+    /// the persisted <see cref="CardCounter"/>; the next id is always this + 1.</summary>
+    private static int ReadLastId(VestPocketStore store)
+        => store.Get<CardCounter>(CounterKey)?.LastId ?? 0;
 
     private static List<ColumnRecord> ReadColumns(VestPocketStore store)
     {

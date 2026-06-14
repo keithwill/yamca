@@ -24,17 +24,14 @@ public sealed class BoardService
         (50, "done", null),
     };
 
-    /// <summary>Card order within a column: high → normal → low priority, then by leading numeric id
-    /// (oldest first), then id. Public so the orchestrator's dispatch sort matches the board's display
-    /// order exactly.</summary>
+    /// <summary>Card order within a column: high → normal → low priority, then by id ascending
+    /// (oldest first, since ids are handed out monotonically). Public so the orchestrator's dispatch
+    /// sort matches the board's display order exactly.</summary>
     public static int CompareCards(BoardCard a, BoardCard b)
     {
         var pc = b.Priority.CompareTo(a.Priority); // descending: high first
         if (pc != 0) return pc;
-        var an = LeadingInt(a.Id);
-        var bn = LeadingInt(b.Id);
-        if (an.HasValue && bn.HasValue && an != bn) return an.Value.CompareTo(bn.Value);
-        return string.Compare(a.Id, b.Id, StringComparison.OrdinalIgnoreCase);
+        return a.Id.CompareTo(b.Id);
     }
 
     /// <summary>(done, total) checklist counts for a card's subtasks.</summary>
@@ -42,16 +39,14 @@ public sealed class BoardService
         => (subtasks.Count(s => s.Done), subtasks.Count);
 
     /// <summary>The default git branch name for a card: an id-prefixed slug of its title
-    /// (e.g. <c>0001-test-card</c>). Falls back to the bare id when the title slugs to nothing. Used to
+    /// (e.g. <c>1-test-card</c>). Falls back to the bare id when the title slugs to nothing. Used to
     /// pre-fill the branch field before a card is bound to a branch.</summary>
-    public static string PresumptiveBranch(string id, string title)
+    public static string PresumptiveBranch(int id, string title)
     {
+        var idText = id.ToString(CultureInfo.InvariantCulture);
         var slug = Slugify(title);
-        return slug.Length == 0 ? id : $"{id}-{slug}";
+        return slug.Length == 0 ? idText : $"{idText}-{slug}";
     }
-
-    /// <summary>Format a numeric card id as a 4-digit, zero-padded string (e.g. 7 → <c>0007</c>).</summary>
-    public static string FormatCardId(int id) => id.ToString("D4", CultureInfo.InvariantCulture);
 
     internal static string Slugify(string title)
     {
@@ -73,18 +68,5 @@ public sealed class BoardService
         }
         var slug = sb.ToString().Trim('-');
         return slug.Length > 40 ? slug[..40].Trim('-') : slug;
-    }
-
-    internal static string? LeadingDigits(string s)
-    {
-        var i = 0;
-        while (i < s.Length && char.IsDigit(s[i])) i++;
-        return i == 0 ? null : s[..i];
-    }
-
-    internal static int? LeadingInt(string s)
-    {
-        var digits = LeadingDigits(s);
-        return digits is not null && int.TryParse(digits, out var n) ? n : null;
     }
 }

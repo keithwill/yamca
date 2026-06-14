@@ -60,14 +60,14 @@ public class BoardStoreTests
     }
 
     [Test]
-    public async Task AddCard_AssignsZeroPaddedId_AndStoresFields()
+    public async Task AddCard_AssignsSequentialId_StartingAtOne_AndStoresFields()
     {
         var (idea, _, _, _) = await ColumnsAsync();
 
         var id = await _store.AddCardAsync(idea, "Add OAuth", "Plan it\n- [ ] step one\n- [x] step two", "feat/oauth", CardPriority.High, CancellationToken.None);
 
-        Assert.That(id, Is.EqualTo("0001"));
-        var card = (await _store.ReadAsync(CancellationToken.None)).FindCard("0001")!;
+        Assert.That(id, Is.EqualTo(1));
+        var card = (await _store.ReadAsync(CancellationToken.None)).FindCard(1)!;
         Assert.That(card.Title, Is.EqualTo("Add OAuth"));
         Assert.That(card.Branch, Is.EqualTo("feat/oauth"));
         Assert.That(card.Priority, Is.EqualTo(CardPriority.High));
@@ -79,13 +79,29 @@ public class BoardStoreTests
     }
 
     [Test]
-    public async Task NextCardId_IsMaxPlusOne()
+    public async Task NextCardId_IsLastAssignedPlusOne()
     {
         var (idea, _, _, _) = await ColumnsAsync();
         await _store.AddCardAsync(idea, "a", "", null, CardPriority.Normal, CancellationToken.None);
         await _store.AddCardAsync(idea, "b", "", null, CardPriority.Normal, CancellationToken.None);
 
-        Assert.That(await _store.NextCardIdAsync(CancellationToken.None), Is.EqualTo("0003"));
+        Assert.That(await _store.NextCardIdAsync(CancellationToken.None), Is.EqualTo(3));
+    }
+
+    [Test]
+    public async Task AddCard_DoesNotReuseDeletedIds()
+    {
+        var (idea, _, _, _) = await ColumnsAsync();
+        var first = await _store.AddCardAsync(idea, "a", "", null, CardPriority.Normal, CancellationToken.None);
+        await _store.AddCardAsync(idea, "b", "", null, CardPriority.Normal, CancellationToken.None);
+
+        // Delete the most recent card; its id must not be handed out again.
+        Assert.That(await _store.DeleteCardAsync(2, CancellationToken.None), Is.True);
+        Assert.That(await _store.NextCardIdAsync(CancellationToken.None), Is.EqualTo(3));
+
+        var third = await _store.AddCardAsync(idea, "c", "", null, CardPriority.Normal, CancellationToken.None);
+        Assert.That(third, Is.EqualTo(3));
+        Assert.That(first, Is.EqualTo(1));
     }
 
     [Test]
@@ -103,7 +119,7 @@ public class BoardStoreTests
 
     [Test]
     public async Task MoveCard_MissingCard_ReturnsFalse()
-        => Assert.That(await _store.MoveCardAsync("9999", "nope", CancellationToken.None), Is.False);
+        => Assert.That(await _store.MoveCardAsync(9999, "nope", CancellationToken.None), Is.False);
 
     [Test]
     public async Task DeleteCard_RemovesIt()
@@ -176,7 +192,7 @@ public class BoardStoreTests
     }
 
     [Test]
-    public async Task Reinit_Wipe_DeletesAllCards()
+    public async Task Reinit_Wipe_DeletesAllCards_AndResetsIdCounter()
     {
         var (idea, _, _, _) = await ColumnsAsync();
         await _store.AddCardAsync(idea, "a", "", null, CardPriority.Normal, CancellationToken.None);
@@ -186,6 +202,26 @@ public class BoardStoreTests
 
         Assert.That(result.CardsWiped, Is.EqualTo(2));
         Assert.That((await _store.ReadAsync(CancellationToken.None)).AllCards, Is.Empty);
+
+        // A wipe is a full start-over, so numbering restarts at 1.
+        Assert.That(await _store.NextCardIdAsync(CancellationToken.None), Is.EqualTo(1));
+        Assert.That(await _store.AddCardAsync(idea, "fresh", "", null, CardPriority.Normal, CancellationToken.None),
+            Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Reinit_NonWipe_KeepsIdCounter_SoSurvivingIdsAreNotReused()
+    {
+        var (idea, _, _, _) = await ColumnsAsync();
+        await _store.AddCardAsync(idea, "a", "", null, CardPriority.Normal, CancellationToken.None);
+        await _store.AddCardAsync(idea, "b", "", null, CardPriority.Normal, CancellationToken.None);
+
+        // Non-wipe reinit preserves the cards, so the counter must stay advanced past them.
+        await _store.ReinitAsync(wipe: false, CancellationToken.None);
+
+        Assert.That(await _store.NextCardIdAsync(CancellationToken.None), Is.EqualTo(3));
+        Assert.That(await _store.AddCardAsync(idea, "c", "", null, CardPriority.Normal, CancellationToken.None),
+            Is.EqualTo(3));
     }
 
     [Test]

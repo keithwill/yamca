@@ -58,6 +58,7 @@ public sealed class YamcaStore : IAsyncDisposable
             };
             options.AddType<ColumnRecord>();
             options.AddType<CardRecord>();
+            options.AddType<CardCounter>();
 
             var store = new VestPocketStore(options);
             await store.OpenAsync(ct).ConfigureAwait(false);

@@ -6,7 +6,7 @@ namespace Yamca.Agent.Tests.Board;
 [TestFixture]
 public class BoardServiceTests
 {
-    private static BoardCard Card(string id, string title, CardPriority priority = CardPriority.Normal, string columnId = "c") =>
+    private static BoardCard Card(int id, string title, CardPriority priority = CardPriority.Normal, string columnId = "c") =>
         new(id, title, null, columnId, "", Array.Empty<SubtaskItem>(), priority);
 
     [Test]
@@ -23,44 +23,38 @@ public class BoardServiceTests
     [Test]
     public void PresumptiveBranch_IsIdPrefixedSlug()
     {
-        Assert.That(BoardService.PresumptiveBranch("0001", "Test Card"), Is.EqualTo("0001-test-card"));
-        Assert.That(BoardService.PresumptiveBranch("0008", "Add OAuth Login!"), Is.EqualTo("0008-add-oauth-login"));
-        Assert.That(BoardService.PresumptiveBranch("0008", "   "), Is.EqualTo("0008"));
+        Assert.That(BoardService.PresumptiveBranch(1, "Test Card"), Is.EqualTo("1-test-card"));
+        Assert.That(BoardService.PresumptiveBranch(8, "Add OAuth Login!"), Is.EqualTo("8-add-oauth-login"));
+        Assert.That(BoardService.PresumptiveBranch(8, "   "), Is.EqualTo("8"));
     }
 
     [Test]
-    public void FormatCardId_ZeroPadsToFour()
-    {
-        Assert.That(BoardService.FormatCardId(1), Is.EqualTo("0001"));
-        Assert.That(BoardService.FormatCardId(42), Is.EqualTo("0042"));
-        Assert.That(BoardService.FormatCardId(12345), Is.EqualTo("12345"));
-    }
-
-    [Test]
-    public void CompareCards_SortsByPriority_ThenNumericId()
+    public void CompareCards_SortsByPriority_ThenId()
     {
         var cards = new List<BoardCard>
         {
-            Card("0003", "c"),
-            Card("0001", "a", CardPriority.Low),
-            Card("0002", "b", CardPriority.High),
+            Card(3, "c"),
+            Card(1, "a", CardPriority.Low),
+            Card(2, "b", CardPriority.High),
         };
         cards.Sort(BoardService.CompareCards);
 
-        Assert.That(cards.Select(c => c.Id), Is.EqualTo(new[] { "0002", "0003", "0001" }));
+        Assert.That(cards.Select(c => c.Id), Is.EqualTo(new[] { 2, 3, 1 }));
     }
 
     [Test]
-    public void Snapshot_FindCard_ByExactAndNumericId()
+    public void Snapshot_FindCard_ByIntAndTextualId()
     {
         var snap = new BoardSnapshot(new[]
         {
-            new BoardColumn("idea-id", 10, "idea", null, new[] { Card("0007", "Foo", columnId: "idea-id") }),
+            new BoardColumn("idea-id", 10, "idea", null, new[] { Card(7, "Foo", columnId: "idea-id") }),
         });
 
-        Assert.That(snap.FindCard("0007")?.Title, Is.EqualTo("Foo"));
-        Assert.That(snap.FindCard("7")?.Title, Is.EqualTo("Foo"), "numeric form should match the padded id");
+        Assert.That(snap.FindCard(7)?.Title, Is.EqualTo("Foo"));
+        Assert.That(snap.FindCard("7")?.Title, Is.EqualTo("Foo"));
+        Assert.That(snap.FindCard("0007")?.Title, Is.EqualTo("Foo"), "leading zeros tolerated");
         Assert.That(snap.FindCard("nope"), Is.Null);
+        Assert.That(snap.FindCard(99), Is.Null);
     }
 
     [Test]

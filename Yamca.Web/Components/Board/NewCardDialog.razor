@@ -53,7 +53,7 @@
 
     /// <summary>The card id the new card will be assigned, used to derive the default branch name
     /// (an id-prefixed slug of the title, matching <see cref="BoardService.PresumptiveBranch"/>).</summary>
-    [Parameter] public string NextId { get; set; } = "";
+    [Parameter] public int NextId { get; set; }
 
     private string _title = "";
     private string _body = "";

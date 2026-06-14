@@ -42,7 +42,7 @@ public class BoardToolsTests
 
         Assert.That(result.IsError, Is.False, result.Content);
         Assert.That(result.Content, Does.Contain("## idea"));
-        Assert.That(result.Content, Does.Contain("#0001 Add OAuth"));
+        Assert.That(result.Content, Does.Contain("#1 Add OAuth"));
         Assert.That(result.Content, Does.Contain("[1/2]"));
         Assert.That(result.Content, Does.Contain("branch: feat/oauth"));
         Assert.That(result.Content, Does.Contain("## analyze"));
@@ -58,7 +58,7 @@ public class BoardToolsTests
 
         Assert.That(result.IsError, Is.False, result.Content);
         Assert.That(result.Content, Does.Contain("# Body"));
-        Assert.That(result.Content, Does.Contain("id: 0001"));
+        Assert.That(result.Content, Does.Contain("id: 1"));
         Assert.That(result.Content, Does.Contain("in column 'idea'"));
     }
 

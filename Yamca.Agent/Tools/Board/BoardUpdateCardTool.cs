@@ -25,7 +25,7 @@ public sealed class BoardUpdateCardTool : ITool
     {
       "type": "object",
       "properties": {
-        "card":    { "type": "string", "description": "Card id (e.g. '0007') or file name." },
+        "card":    { "type": "string", "description": "Card id (e.g. '7')." },
         "content": { "type": "string", "description": "The complete new markdown content for the card file." }
       },
       "required": ["card", "content"],

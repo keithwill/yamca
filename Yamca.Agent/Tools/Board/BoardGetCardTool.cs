@@ -18,13 +18,13 @@ public sealed class BoardGetCardTool : ITool
 
     public string Description =>
         "Return the full, verbatim markdown of a board card (frontmatter and body, including any '- [ ]' subtask " +
-        "checklist) so it can be read or edited. Identify the card by its id (e.g. '7' or '0007') or file name.";
+        "checklist) so it can be read or edited. Identify the card by its id (e.g. '7').";
 
     public string ParametersSchema => """
     {
       "type": "object",
       "properties": {
-        "card": { "type": "string", "description": "Card id (e.g. '0007') or file name." }
+        "card": { "type": "string", "description": "Card id (e.g. '7')." }
       },
       "required": ["card"],
       "additionalProperties": false

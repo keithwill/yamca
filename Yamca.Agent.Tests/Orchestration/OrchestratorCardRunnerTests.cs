@@ -37,7 +37,7 @@ public class OrchestratorCardRunnerTests
 
         var snapshot = await _boardStore.ReadAsync(CancellationToken.None);
         _column = snapshot.FindColumn("analyze")!;
-        _card = snapshot.FindCard("0001")!;
+        _card = snapshot.FindCard(1)!;
     }
 
     [TearDown]

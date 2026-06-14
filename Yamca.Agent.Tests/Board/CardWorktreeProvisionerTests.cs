@@ -115,11 +115,11 @@ public class CardWorktreeProvisionerTests
     [Test]
     public async Task LockCardToBranch_ReturnsError_WhenCardMissing()
     {
-        var card = new BoardCard("0009", "Ghost", null, "ghost-col", "", Array.Empty<SubtaskItem>());
+        var card = new BoardCard(9, "Ghost", null, "ghost-col", "", Array.Empty<SubtaskItem>());
 
-        var error = await _provisioner.LockCardToBranchAsync(card, "0009-ghost", CancellationToken.None);
+        var error = await _provisioner.LockCardToBranchAsync(card, "9-ghost", CancellationToken.None);
 
-        Assert.That(error, Does.Contain("0009"));
+        Assert.That(error, Does.Contain("9"));
     }
 
     private static string Norm(string path) => path.Replace('\\', '/');

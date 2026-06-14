@@ -7,12 +7,12 @@ public sealed record SubtaskItem(string Text, bool Done);
 /// high → normal → low within each column.</summary>
 public enum CardPriority { Low = -1, Normal = 0, High = 1 }
 
-/// <summary>A board card. <see cref="Id"/> is the canonical 4-digit display id; <see cref="ColumnId"/>
-/// names the column the card currently lives in (a move rewrites this field); <see cref="Branch"/> is
-/// the git branch bound to the card across steps, if any. The read-model projection of a
-/// <see cref="CardRecord"/>.</summary>
+/// <summary>A board card. <see cref="Id"/> is the canonical integer display id (starts at 1, never
+/// reused); <see cref="ColumnId"/> names the column the card currently lives in (a move rewrites this
+/// field); <see cref="Branch"/> is the git branch bound to the card across steps, if any. The
+/// read-model projection of a <see cref="CardRecord"/>.</summary>
 public sealed record BoardCard(
-    string Id,
+    int Id,
     string Title,
     string? Branch,
     string ColumnId,
@@ -39,25 +39,14 @@ public sealed record BoardSnapshot(IReadOnlyList<BoardColumn> Columns)
 
     public IEnumerable<BoardCard> AllCards => Columns.SelectMany(c => c.Cards);
 
-    /// <summary>Locate a card by id. Accepts a numeric form so "7" finds a card whose id is "0007"
-    /// (and vice versa). Returns null when nothing matches; throws nothing.</summary>
+    /// <summary>Locate a card by its integer id. Returns null when nothing matches.</summary>
+    public BoardCard? FindCard(int id) => AllCards.FirstOrDefault(c => c.Id == id);
+
+    /// <summary>Locate a card from a textual id reference (e.g. a tool argument). Tolerates leading
+    /// zeros and surrounding whitespace so "7" and "0007" both match card 7. Returns null when the
+    /// reference is blank, non-numeric, or matches no card.</summary>
     public BoardCard? FindCard(string id)
-    {
-        if (string.IsNullOrWhiteSpace(id)) return null;
-        var needle = id.Trim();
-
-        foreach (var card in AllCards)
-            if (string.Equals(card.Id, needle, StringComparison.OrdinalIgnoreCase))
-                return card;
-
-        // Numeric match so "7" finds a card whose id is "0007" (and vice versa).
-        if (int.TryParse(needle, out var wanted))
-            foreach (var card in AllCards)
-                if (int.TryParse(card.Id, out var cardNum) && cardNum == wanted)
-                    return card;
-
-        return null;
-    }
+        => int.TryParse((id ?? string.Empty).Trim(), out var n) ? FindCard(n) : null;
 
     /// <summary>Locate a column by its id or display name (case-insensitive).</summary>
     public BoardColumn? FindColumn(string idOrName)

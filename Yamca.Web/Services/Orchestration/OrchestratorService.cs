@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Threading.Channels;
 using Yamca.Agent.Board;
 using Yamca.Agent.Chat;
@@ -378,16 +379,19 @@ public sealed class OrchestratorService : IDisposable
         foreach (var (card, column) in dispatchable)
         {
             var runId = Guid.NewGuid().ToString("n");
-            var attempts = _states.TryGetValue(card.Id, out var prior) ? prior.Attempts : 0;
-            _states[card.Id] = new CardOrchestrationState(
-                card.Id, column.Id, CardRunStatus.Queued, attempts,
+            // The orchestrator tracks cards by their id as an opaque string token (dictionary key /
+            // correlation id), so stringify the board card's integer id at this boundary.
+            var cardId = card.Id.ToString(CultureInfo.InvariantCulture);
+            var attempts = _states.TryGetValue(cardId, out var prior) ? prior.Attempts : 0;
+            _states[cardId] = new CardOrchestrationState(
+                cardId, column.Id, CardRunStatus.Queued, attempts,
                 NextAttemptUtc: null, FailureReason: null, ActiveRunId: runId);
 
             var cts = CancellationTokenSource.CreateLinkedTokenSource(loopCt);
             var task = Task.Run(
                 () => DispatchRunAsync(card, column, settings, endpoints, runId, attempts + 1, cts.Token),
                 CancellationToken.None);
-            lock (_activeRuns) _activeRuns[runId] = new ActiveRun(card.Id, runId, cts, task);
+            lock (_activeRuns) _activeRuns[runId] = new ActiveRun(cardId, runId, cts, task);
 
             _log.LogInformation("orchestrator dispatching card {CardId} ({Title}) in {Column}, attempt {Attempt}",
                 card.Id, card.Title, column.DisplayName, attempts + 1);
@@ -411,6 +415,7 @@ public sealed class OrchestratorService : IDisposable
     {
         var outcome = OrchestratorRunOutcome.Failed("run did not start");
         var started = false;
+        var cardId = card.Id.ToString(CultureInfo.InvariantCulture); // opaque string token for run records
         try
         {
             // 1. Branch + worktree, exactly like the interactive Run Step flow.
@@ -456,11 +461,11 @@ public sealed class OrchestratorService : IDisposable
             var worktreeWorkspace = new WorkspaceImpl(provision.Worktree.WorktreePath);
 
             _registry.OnRunStarted(new OrchestratorRunInfo(
-                runId, card.Id, card.Title, column.Id, column.DisplayName,
+                runId, cardId, card.Title, column.Id, column.DisplayName,
                 branch, provision.Worktree.WorktreePath, attempt,
                 BoardPrompts.BuildSeedPrompt(card, column, instructions), DateTimeOffset.Now));
             started = true;
-            _messages.Writer.TryWrite(new RunStarted(card.Id, runId));
+            _messages.Writer.TryWrite(new RunStarted(cardId, runId));
             Wake();
 
             // 4. Drive the headless run.
@@ -485,7 +490,7 @@ public sealed class OrchestratorService : IDisposable
         finally
         {
             if (started) _registry.OnRunCompleted(runId, outcome);
-            _messages.Writer.TryWrite(new RunCompleted(card.Id, runId, outcome));
+            _messages.Writer.TryWrite(new RunCompleted(cardId, runId, outcome));
             Wake();
         }
     }

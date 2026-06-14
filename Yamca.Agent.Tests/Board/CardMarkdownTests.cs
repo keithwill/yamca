@@ -7,7 +7,7 @@ namespace Yamca.Agent.Tests.Board;
 public class CardMarkdownTests
 {
     private static BoardCard Card(string body, params SubtaskItem[] subtasks) =>
-        new("0007", "Add OAuth", "feat/oauth", "col", body, subtasks, CardPriority.High);
+        new(7, "Add OAuth", "feat/oauth", "col", body, subtasks, CardPriority.High);
 
     [Test]
     public void Render_EmitsFrontmatterBodyAndChecklist()
@@ -15,7 +15,7 @@ public class CardMarkdownTests
         var md = CardMarkdown.Render(Card("Plan the flow.", new SubtaskItem("a", false), new SubtaskItem("b", true)));
 
         Assert.That(md, Does.StartWith("---\n"));
-        Assert.That(md, Does.Contain("id: 0007"));
+        Assert.That(md, Does.Contain("id: 7"));
         Assert.That(md, Does.Contain("title: \"Add OAuth\""));
         Assert.That(md, Does.Contain("branch: feat/oauth"));
         Assert.That(md, Does.Contain("priority: high"));
@@ -27,7 +27,7 @@ public class CardMarkdownTests
     [Test]
     public void Render_OmitsBranch_WhenAbsent()
     {
-        var card = new BoardCard("0001", "T", null, "col", "body", Array.Empty<SubtaskItem>(), CardPriority.Normal);
+        var card = new BoardCard(1, "T", null, "col", "body", Array.Empty<SubtaskItem>(), CardPriority.Normal);
         Assert.That(CardMarkdown.Render(card), Does.Not.Contain("branch:"));
     }
 

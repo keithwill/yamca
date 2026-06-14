@@ -1,3 +1,4 @@
+using System.Globalization;
 using Yamca.Agent.Board;
 using Yamca.Agent.Settings;
 
@@ -41,7 +42,8 @@ public static class OrchestratorPlanner
             if (!enabled.Contains(column.Id)) continue;
             foreach (var card in column.Cards)
             {
-                if (states.TryGetValue(card.Id, out var state))
+                // States are keyed by the orchestrator's opaque string card-id token.
+                if (states.TryGetValue(card.Id.ToString(CultureInfo.InvariantCulture), out var state))
                 {
                     if (state.Status is CardRunStatus.Queued or CardRunStatus.Running or CardRunStatus.Parked)
                         continue;

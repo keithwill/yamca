@@ -24,7 +24,7 @@ public sealed class BoardMoveCardTool : ITool
     {
       "type": "object",
       "properties": {
-        "card":      { "type": "string", "description": "Card id (e.g. '0007')." },
+        "card":      { "type": "string", "description": "Card id (e.g. '7')." },
         "to_column": { "type": "string", "description": "Target column display name (e.g. 'verify') or id." }
       },
       "required": ["card", "to_column"],

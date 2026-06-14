@@ -13,6 +13,13 @@ user's immediate work. It is stored in `.yamca/yamca.db`, a single
 shared by other local yamca data), under path-like keys: each column at
 `/board/column/{id}` and each card at `/board/card/{id}`. It is local only: never
 committed, tracked, or pushed, so board churn is never shared with your team.
+
+Card ids are integers starting at **1**, handed out by a monotonic counter stored
+at `/board/card/last-id` (the most recently assigned id). The counter only ever
+advances as cards are created — deleting a card never frees its id — so a given id
+refers to at most one card. The one exception is a board **wipe-reinit** (reinit
+with `wipe: true`, which clears every card): it resets the counter so the next card
+starts back at 1. A non-wipe reinit keeps surviving cards and their ids.
 Because the store sits at the repository root, the one board is shared across every
 chat session regardless of which code branch or worktree the session is on.
 
