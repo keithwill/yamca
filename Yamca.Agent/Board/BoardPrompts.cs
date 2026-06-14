@@ -4,17 +4,17 @@ namespace Yamca.Agent.Board;
 /// work a board step. Kept in the agent layer (no UI/session dependencies) so they are unit-testable.</summary>
 public static class BoardPrompts
 {
-    /// <summary>The draft prompt that kicks off a step run, pre-filled into the composer. Inlines the
-    /// card (title + body) and the step's own instructions so the session is self-contained — no system
-    /// seed message and no extra board_get_card round-trip. Completion guidance (commit / board_move_card)
-    /// lives in each column's instructions, so it is not duplicated here.</summary>
+    /// <summary>The draft prompt that kicks off a step run, pre-filled into the composer. Passes the
+    /// step's own instructions plus the bare card ID — deliberately *not* the card title or body.
+    /// Inlining the card details tended to confuse the LLM (it would re-fetch the card via tool calls
+    /// anyway); the column instructions are the single source of truth for what to do with the card ID.
+    /// Completion guidance (commit / board_move_card) lives in those instructions, so it is not
+    /// duplicated here.</summary>
     public static string BuildSeedPrompt(BoardCard card, BoardColumn current, string? instructions)
     {
-        return 
-$@"Card Title: {card.Title}
-Card Body: {card.Body}
+        return
+$@"{instructions}
 
-Instructions:
-{instructions}";
+Card ID: {card.Id}";
     }
 }
