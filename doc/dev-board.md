@@ -39,6 +39,12 @@ a stale id always refers to a dead column, never a quickly re-added one.
 
 Edit a column's instructions via the gear icon on its header.
 
+Step instructions move cards along with `board_move_card`. They should pass the
+special target `next` (or `previous`) rather than a column name: the tool resolves
+it relative to the card's current column, so instructions stay short, save a
+board lookup at runtime, and survive columns being renamed or reordered. Moving
+`next` from the last column (or `previous` from the first) is a no-op.
+
 ## Cards
 
 A card is a stored aggregate: a title, an optional priority and branch, the id of

@@ -83,6 +83,13 @@ public sealed record BoardSnapshot(IReadOnlyList<BoardColumn> Columns)
         var idx = Columns.ToList().FindIndex(c => c.Id == column.Id);
         return idx >= 0 && idx + 1 < Columns.Count ? Columns[idx + 1] : null;
     }
+
+    /// <summary>The column immediately before <paramref name="column"/> in board order, or null if it is the first.</summary>
+    public BoardColumn? PreviousColumn(BoardColumn column)
+    {
+        var idx = Columns.ToList().FindIndex(c => c.Id == column.Id);
+        return idx >= 1 ? Columns[idx - 1] : null;
+    }
 }
 
 /// <summary>Summary of what <c>board reinit</c> changed.</summary>

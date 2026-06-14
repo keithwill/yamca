@@ -114,6 +114,63 @@ public class BoardToolsTests
     }
 
     [Test]
+    public async Task BoardMoveCard_Next_AdvancesOneColumn()
+    {
+        await _boardStore.AddCardAsync(_idea, "OAuth", "# Card", null, CardPriority.Normal, CancellationToken.None);
+
+        var result = await new BoardMoveCardTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "to_column": "next" }"""), Ctx(), CancellationToken.None);
+
+        Assert.That(result.IsError, Is.False, result.Content);
+        var snap = await _boardStore.ReadAsync(CancellationToken.None);
+        // idea -> analyze is the first forward step.
+        Assert.That(snap.FindCard(1)!.ColumnId, Is.EqualTo(_analyze));
+    }
+
+    [Test]
+    public async Task BoardMoveCard_Previous_MovesBackOneColumn()
+    {
+        await _boardStore.AddCardAsync(_analyze, "OAuth", "# Card", null, CardPriority.Normal, CancellationToken.None);
+
+        var result = await new BoardMoveCardTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "to_column": "previous" }"""), Ctx(), CancellationToken.None);
+
+        Assert.That(result.IsError, Is.False, result.Content);
+        var snap = await _boardStore.ReadAsync(CancellationToken.None);
+        Assert.That(snap.FindCard(1)!.ColumnId, Is.EqualTo(_idea));
+    }
+
+    [Test]
+    public async Task BoardMoveCard_Next_AtLastColumn_IsNoOp()
+    {
+        var snap0 = await _boardStore.ReadAsync(CancellationToken.None);
+        var done = snap0.FindColumn("done")!.Id;
+        await _boardStore.AddCardAsync(done, "OAuth", "# Card", null, CardPriority.Normal, CancellationToken.None);
+
+        var result = await new BoardMoveCardTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "to_column": "next" }"""), Ctx(), CancellationToken.None);
+
+        Assert.That(result.IsError, Is.False, result.Content);
+        Assert.That(result.Content, Does.Contain("last column"));
+        var snap = await _boardStore.ReadAsync(CancellationToken.None);
+        Assert.That(snap.FindCard(1)!.ColumnId, Is.EqualTo(done));
+    }
+
+    [Test]
+    public async Task BoardMoveCard_Previous_AtFirstColumn_IsNoOp()
+    {
+        await _boardStore.AddCardAsync(_idea, "OAuth", "# Card", null, CardPriority.Normal, CancellationToken.None);
+
+        var result = await new BoardMoveCardTool(_boardStore).ExecuteAsync(
+            Json.Parse("""{ "card": "1", "to_column": "previous" }"""), Ctx(), CancellationToken.None);
+
+        Assert.That(result.IsError, Is.False, result.Content);
+        Assert.That(result.Content, Does.Contain("first column"));
+        var snap = await _boardStore.ReadAsync(CancellationToken.None);
+        Assert.That(snap.FindCard(1)!.ColumnId, Is.EqualTo(_idea));
+    }
+
+    [Test]
     public async Task BoardUpdateCard_AppliesContent()
     {
         await _boardStore.AddCardAsync(_idea, "old", "old", null, CardPriority.Normal, CancellationToken.None);
