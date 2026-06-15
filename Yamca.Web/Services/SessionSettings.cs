@@ -651,11 +651,24 @@ public sealed class SessionSettings : ISessionSettings
         var dict = new Dictionary<string, ToolPermissionSettings>(StringComparer.Ordinal);
         foreach (var (name, entry) in dto)
         {
+            var permission = entry.Permission;
+            var availability = entry.Availability;
+
+            // Migration: Deny is no longer a user-selectable permission. A persisted Deny meant
+            // "this tool must never run", which is now expressed as Hidden availability — strictly
+            // better, since the model never even sees a hidden tool. Convert on load so old blobs
+            // keep working and a stored Deny can never resurface.
+            if (permission == PermissionLevel.Deny)
+            {
+                permission = null;
+                availability = Availability.Hidden;
+            }
+
             dict[name] = new ToolPermissionSettings
             {
-                Permission = entry.Permission,
+                Permission = permission,
                 RestrictToWorkspace = entry.RestrictToWorkspace,
-                Availability = entry.Availability,
+                Availability = availability,
             };
         }
         return new ToolSettingsMap(dict);

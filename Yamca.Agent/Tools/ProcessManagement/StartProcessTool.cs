@@ -113,7 +113,8 @@ public sealed class StartProcessTool : ITool
             var approvals = _services.GetRequiredService<IApprovalCoordinator>();
             var decision = await approvals.RequestApprovalAsync(effectiveName, arguments, cancellationToken).ConfigureAwait(false);
             level = decision.Approved ? PermissionLevel.Allow : PermissionLevel.Deny;
-            if (decision.Persistence != ApprovalPersistence.None)
+            // Persist approvals only; a rejection is one-shot (no stored Deny — use Hidden instead).
+            if (decision.Approved && decision.Persistence != ApprovalPersistence.None)
                 _services.GetRequiredService<IPermissionStore>().Persist(effectiveName, level, decision.Persistence);
         }
         if (level == PermissionLevel.Deny)

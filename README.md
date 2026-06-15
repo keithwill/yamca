@@ -52,7 +52,7 @@ Yamca listening on http://127.0.0.1:51234  (workspace: C:\Repos\yamca)
 - **[Orchestrator](https://github.com/keithwill/yamca/blob/main/doc/orchestrator.md)** — Symphony-inspired autonomous mode for the board: enabled columns are worked headlessly, card by card, with retries, live transcripts, and a hard off switch.
 - **[Chat Sessions](https://github.com/keithwill/yamca/blob/main/doc/chat-sessions.md)** — streaming, tool-using conversations (up to 4 at once), with persistence, compaction, and a split view.
 - **[Endpoints](https://github.com/keithwill/yamca/blob/main/doc/endpoints.md)** — OpenAI-compatible LLM backends (llama.cpp, vllm, OpenAI).
-- **[Tools & Permissions](https://github.com/keithwill/yamca/blob/main/doc/tools-and-permissions.md)** — the agent's file, search, execution, and code-intelligence tools, gated by an Allow/Ask/Deny permission model with the option for deferred loading.
+- **[Tools & Permissions](https://github.com/keithwill/yamca/blob/main/doc/tools-and-permissions.md)** — the agent's file, search, execution, and code-intelligence tools, gated by an Allow/Ask permission model with the option for deferred loading.
 - **[Subagents](https://github.com/keithwill/yamca/blob/main/doc/subagents.md)** — named, headless agents the chat can delegate self-contained tasks to, keeping the parent context small.
 - **[Loop](https://github.com/keithwill/yamca/blob/main/doc/loop.md)** — fan one prompt out across many items, each handled by its own subagent, with a single roll-up of the results.
 - **[Worktrees](https://github.com/keithwill/yamca/blob/main/doc/worktrees.md)** — isolated git worktrees for branch work which can be tied to chat sessions so they can work independantly.

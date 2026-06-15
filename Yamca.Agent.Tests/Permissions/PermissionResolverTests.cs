@@ -45,9 +45,9 @@ public class PermissionResolverTests
     public void UserOverrides_ToolDefault()
     {
         var (resolver, settings) = NewResolver();
-        settings.User = Map("read_file", level: PermissionLevel.Deny);
+        settings.User = Map("read_file", level: PermissionLevel.Ask); // tool default is Allow
 
-        Assert.That(resolver.Resolve("read_file"), Is.EqualTo(PermissionLevel.Deny));
+        Assert.That(resolver.Resolve("read_file"), Is.EqualTo(PermissionLevel.Ask));
     }
 
     [Test]
@@ -55,9 +55,9 @@ public class PermissionResolverTests
     {
         var (resolver, settings) = NewResolver();
         settings.User = Map("write_file", level: PermissionLevel.Allow);
-        settings.Project = Map("write_file", level: PermissionLevel.Deny);
+        settings.Project = Map("write_file", level: PermissionLevel.Ask);
 
-        Assert.That(resolver.Resolve("write_file"), Is.EqualTo(PermissionLevel.Deny));
+        Assert.That(resolver.Resolve("write_file"), Is.EqualTo(PermissionLevel.Ask));
     }
 
     [Test]

@@ -90,11 +90,17 @@ running processes are stopped gracefully when Yamca shuts down. These tools are
 
 ## Permission levels
 
-Each tool resolves to one of three levels (`PermissionLevel`):
+Each tool resolves to one of two levels (`PermissionLevel`):
 
 - **Allow** — runs without prompting.
 - **Ask** — pauses for your approval before each call.
-- **Deny** — the tool is refused.
+
+To forbid a tool outright, you don't set a permission — you set its
+[**availability**](#availability) to **Hidden**, so the model never even sees it.
+That is strictly better than a "deny" permission would be: a hidden tool can't be
+called, so the model never wastes a turn invoking something that could only ever be
+refused. (Earlier versions had a third `Deny` permission; any setting saved with it
+is migrated to Hidden on load.)
 
 Resolution is layered: the **Project** setting wins if set, otherwise the
 **User** setting applies. The User tier always carries an explicit value for

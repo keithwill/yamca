@@ -304,7 +304,9 @@ public sealed class AgentLoop
                                                .ConfigureAwait(false);
 
                 var resolved = decision.Approved ? PermissionLevel.Allow : PermissionLevel.Deny;
-                if (decision.Persistence != ApprovalPersistence.None)
+                // Only an approval is ever persisted. A rejection is one-shot: "never again" is
+                // expressed by hiding the tool (Availability.Hidden), not by storing a Deny.
+                if (decision.Approved && decision.Persistence != ApprovalPersistence.None)
                     _permissionStore.Persist(target.ToolName, resolved, decision.Persistence);
 
                 level = resolved;

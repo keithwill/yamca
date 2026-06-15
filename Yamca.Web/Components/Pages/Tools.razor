@@ -73,7 +73,7 @@ else
                         }
                         <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Allow)">Allow</MudSelectItem>
                         <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Ask)">Ask</MudSelectItem>
-                        <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Deny)">Deny</MudSelectItem>
+                        @* No "Deny" option: to forbid a tool entirely, set its Availability to Hidden. *@
                     </MudSelect>
                 </MudTd>
                 <MudTd>

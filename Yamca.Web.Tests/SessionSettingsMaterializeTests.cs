@@ -78,6 +78,32 @@ public class SessionSettingsMaterializeTests
         Assert.That(settings.User.Get("write_file")!.Permission, Is.EqualTo(PermissionLevel.Allow));
     }
 
+    [Test]
+    public void Hydrate_MigratesLegacyDenyPermission_ToHiddenAvailability()
+    {
+        var settings = new SessionSettings();
+        // A blob written by an older build, where "never run this" was a Deny permission.
+        // restrictToWorkspace is carried through; the (now-removed) Deny becomes Hidden.
+        settings.HydrateUser("""{"tools":{"execute_command":{"permission":"Deny","restrictToWorkspace":false}}}""");
+
+        var entry = settings.User.Get("execute_command")!;
+        Assert.That(entry.Permission, Is.Null, "the legacy Deny permission is dropped");
+        Assert.That(entry.Availability, Is.EqualTo(Availability.Hidden), "and re-expressed as Hidden");
+        Assert.That(entry.RestrictToWorkspace, Is.False, "other fields are preserved");
+    }
+
+    [Test]
+    public void Hydrate_DenyMigration_OverridesAnyStoredAvailability()
+    {
+        var settings = new SessionSettings();
+        // Deny + an explicit Eager is contradictory; the migration resolves it to Hidden.
+        settings.HydrateProject("""{"tools":{"git_write":{"permission":"Deny","availability":"Eager"}}}""");
+
+        var entry = settings.Project.Get("git_write")!;
+        Assert.That(entry.Permission, Is.Null);
+        Assert.That(entry.Availability, Is.EqualTo(Availability.Hidden));
+    }
+
     private sealed class FakeTool : ITool
     {
         public FakeTool(string name, PermissionLevel permission, Availability availability, bool supportsWorkspace)
