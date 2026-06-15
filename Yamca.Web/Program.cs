@@ -252,8 +252,11 @@ builder.Services.AddSingleton<InterpreterResolver>();
 builder.Services.AddSingleton<ShellResolver>();
 builder.Services.AddSingleton<ScriptRunner>();
 builder.Services.AddScoped<ScriptRegistryLookup>();
-builder.Services.AddScoped<ITool, ExecuteRegisteredScriptTool>();
-builder.Services.AddScoped<ITool, ExecuteDiscoveredScriptTool>();
+// execute_allowed runs the curated registry (commands by name, scripts by path) and is always
+// Allow — the registry is the allowlist. execute_script runs ad-hoc unregistered scripts by path
+// (default Ask, with an "allow and register" approval path). Both scoped: they read the per-circuit
+// ISessionSettings registry.
+builder.Services.AddScoped<ITool, ExecuteAllowedTool>();
 builder.Services.AddScoped<ITool, ExecuteScriptTool>();
 
 // Git tool. One LLM-facing 'git' tool runs a curated set of subcommands; it resolves the real
@@ -281,8 +284,8 @@ builder.Services.AddScoped<ITool, LoopTool>();
 builder.Services.AddSingleton<BackgroundProcessManager>();
 builder.Services.AddSingleton<IBackgroundProcessManager>(sp => sp.GetRequiredService<BackgroundProcessManager>());
 builder.Services.AddHostedService<BackgroundProcessHost>();
-// start_process is an LLM-facing facade (hidden from the settings table): it runs registered inline
-// commands under the execute_registered_script permission and arbitrary commands under the
+// start_process is an LLM-facing facade (hidden from the settings table): it runs registered
+// commands under the always-Allow execute_allowed permission and arbitrary commands under the
 // start_process_command identity (the Ask-by-default settings row). Scoped so the facade's
 // IServiceProvider is the per-session scope owning IPermissionResolver.
 builder.Services.AddScoped<ITool, StartProcessCommandTool>();

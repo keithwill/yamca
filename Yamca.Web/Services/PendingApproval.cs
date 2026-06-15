@@ -20,7 +20,7 @@ public sealed class PendingApproval
         Request.Arguments,
         new JsonSerializerOptions { WriteIndented = true });
 
-    public bool IsDiscoveredScript => string.Equals(ToolName, "execute_discovered_script", StringComparison.Ordinal);
+    public bool IsUnregisteredScript => string.Equals(ToolName, "execute_script", StringComparison.Ordinal);
 
     /// <summary>The pending change as a before/after pair when this is a file-mutating tool
     /// (<c>edit_file</c>/<c>write_file</c>), so the prompt can show a diff instead of raw JSON.

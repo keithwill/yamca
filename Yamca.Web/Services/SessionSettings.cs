@@ -345,7 +345,11 @@ public sealed class SessionSettings : ISessionSettings
 
             var filled = new ToolPermissionSettings
             {
-                Permission = current?.Permission ?? tool.DefaultPermission,
+                // Tools whose permission is fixed (e.g. execute_allowed, always Allow) never store a
+                // permission override — the resolver falls through to their DefaultPermission.
+                Permission = tool.ConfigurablePermission
+                    ? current?.Permission ?? tool.DefaultPermission
+                    : null,
                 Availability = current?.Availability ?? tool.DefaultAvailability,
                 // Only tools that support workspace restriction expose the control; the rest
                 // render as "n/a", so leave their flag unset rather than inventing a value.
@@ -494,7 +498,7 @@ public sealed class SessionSettings : ISessionSettings
             AllowedTools: new[]
             {
                 "read_file", "write_file", "edit_file", "delete_file", "list_directory", "find_files", "grep",
-                "execute_registered_script",
+                "execute_allowed",
             },
             RestrictToWorkspace: true);
 
@@ -516,8 +520,8 @@ public sealed class SessionSettings : ISessionSettings
             ["delete_file"]              = Workspace(PermissionLevel.Allow),
             ["list_directory"]           = Workspace(PermissionLevel.Allow),
             ["execute_command"]          = new ToolPermissionSettings { Permission = PermissionLevel.Ask },
-            ["execute_registered_script"] = Workspace(PermissionLevel.Allow),
-            ["execute_discovered_script"] = Workspace(PermissionLevel.Ask),
+            // execute_allowed is always Allow (not configurable), so it needs no permission seed.
+            ["execute_script"]           = Workspace(PermissionLevel.Ask),
         });
     }
 
@@ -653,6 +657,7 @@ public sealed class SessionSettings : ISessionSettings
         {
             var permission = entry.Permission;
             var availability = entry.Availability;
+            var restrict = entry.RestrictToWorkspace;
 
             // Migration: Deny is no longer a user-selectable permission. A persisted Deny meant
             // "this tool must never run", which is now expressed as Hidden availability — strictly
@@ -664,10 +669,32 @@ public sealed class SessionSettings : ISessionSettings
                 availability = Availability.Hidden;
             }
 
-            dict[name] = new ToolPermissionSettings
+            // Migration: the execute_registered_script / execute_discovered_script identities were
+            // collapsed into execute_allowed (always Allow) and execute_script (the plain Ask tool).
+            //  - execute_discovered_script → execute_script: carry permission/restrict/availability.
+            //  - execute_registered_script → execute_allowed: its permission/restrict no longer apply
+            //    (always Allow, no workspace toggle); preserve only an availability override.
+            var key = name;
+            switch (name)
+            {
+                case "execute_discovered_script":
+                    key = "execute_script";
+                    break;
+                case "execute_registered_script":
+                    key = "execute_allowed";
+                    permission = null;
+                    restrict = null;
+                    break;
+            }
+
+            // Don't let a migrated legacy key clobber an explicit entry for the new name.
+            if (key != name && dict.ContainsKey(key))
+                continue;
+
+            dict[key] = new ToolPermissionSettings
             {
                 Permission = permission,
-                RestrictToWorkspace = entry.RestrictToWorkspace,
+                RestrictToWorkspace = restrict,
                 Availability = availability,
             };
         }

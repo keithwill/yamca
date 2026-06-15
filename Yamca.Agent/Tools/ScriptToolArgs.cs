@@ -11,7 +11,8 @@ internal static class ScriptToolArgs
         out IReadOnlyList<string> args,
         out int timeoutSeconds,
         out int? maxOutputLines,
-        out string error)
+        out string error,
+        string targetProperty = "script_path")
     {
         scriptPath = string.Empty;
         args = Array.Empty<string>();
@@ -19,7 +20,7 @@ internal static class ScriptToolArgs
         maxOutputLines = null;
         error = string.Empty;
 
-        if (!ToolArguments.TryGetString(arguments, "script_path", out scriptPath, out error))
+        if (!ToolArguments.TryGetString(arguments, targetProperty, out scriptPath, out error))
             return false;
 
         if (arguments.TryGetProperty("arguments", out var argsProp))

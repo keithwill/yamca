@@ -7,12 +7,12 @@ using Yamca.Agent.Tools.ScriptExecution;
 namespace Yamca.Agent.Tools.ProcessManagement;
 
 /// <summary>LLM-facing facade for starting a long-lived background process that keeps running after
-/// the chat turn (and session) ends. Like <c>execute_script</c> / <c>git</c>, it passes the
+/// the chat turn (and session) ends. Like <c>execute_allowed</c> / <c>git</c>, it passes the
 /// AgentLoop permission gate (<see cref="DefaultPermission"/> = Allow) and runs the real check
-/// internally under one of two identities so each is independently configurable:
+/// internally under one of two identities:
 /// <list type="bullet">
-/// <item><c>execute_registered_script</c> when the target names a registered inline command — the
-/// same green-light that governs running that command one-shot, so allowing it there also allows
+/// <item><c>execute_allowed</c> when the target names a registered command — always-Allow, the same
+/// green-light that governs running that command one-shot, so allowing it there also allows
 /// backgrounding it.</item>
 /// <item><c>start_process_command</c> (default Ask) for an arbitrary command line.</item>
 /// </list>
@@ -69,7 +69,7 @@ public sealed class StartProcessTool : ITool
     public bool SupportsWorkspaceRestriction => false;
 
     // Allow so the AgentLoop passes through; the real check runs internally under
-    // execute_registered_script (registered command) or start_process_command (arbitrary).
+    // execute_allowed (registered command) or start_process_command (arbitrary).
     public PermissionLevel DefaultPermission => PermissionLevel.Allow;
 
     public bool ExposedInSettings => false;
@@ -101,10 +101,11 @@ public sealed class StartProcessTool : ITool
         if (!TryGetPorts(arguments, out var ports, out var portsError))
             return ToolResult.Error(portsError);
 
-        // A registered inline command (matched by name or verbatim) rides the registered-script
-        // permission; anything else is an arbitrary background command gated by start_process_command.
+        // A registered inline command (matched by name or verbatim) rides the always-Allow
+        // execute_allowed permission; anything else is an arbitrary background command gated by
+        // start_process_command.
         var registered = _registry.TryResolveInline(command, out var inlineEntry);
-        var effectiveName = registered ? "execute_registered_script" : "start_process_command";
+        var effectiveName = registered ? "execute_allowed" : "start_process_command";
 
         var permissions = _services.GetRequiredService<IPermissionResolver>();
         var level = permissions.Resolve(effectiveName);

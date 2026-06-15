@@ -19,7 +19,7 @@ public sealed record RegisteredScriptDirectory(string Path, string? Description,
 /// default process name when the command is launched in the background via <c>start_process</c>.
 /// <see cref="Description"/> is surfaced to the LLM at session start. When
 /// <see cref="SuppressOutputOnSuccess"/> is set, a successful run returns only the status to the LLM.
-/// When <see cref="Background"/> is set, running the command (via <c>execute_script</c>) launches it
+/// When <see cref="Background"/> is set, running the command (via <c>execute_allowed</c>) launches it
 /// as a long-lived background process instead of running it to completion — for watchers and dev
 /// servers, so the model doesn't have to know to reach for <c>start_process</c>.</summary>
 public sealed record RegisteredInlineScript(
@@ -29,8 +29,8 @@ public sealed record RegisteredInlineScript(
     string? Name = null,
     bool Background = false);
 
-/// <summary>User-curated list of scripts the LLM is permitted to run via the
-/// <c>execute_registered_script</c> tool. Stored per tier (user + project) on
+/// <summary>User-curated list of scripts and commands the LLM is permitted to run via the
+/// always-Allow <c>execute_allowed</c> tool. Stored per tier (user + project) on
 /// disk and merged at use site.</summary>
 public sealed class ScriptRegistry
 {

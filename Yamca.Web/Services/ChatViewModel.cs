@@ -356,9 +356,9 @@ public sealed class ChatViewModel : IDisposable
         Raise();
     }
 
-    /// <summary>"Allow and register" flow for execute_discovered_script: add the script
-    /// to the project-tier registry, then resolve the approval as Allow (no permission
-    /// persistence — registration is the persistence mechanism for script tools).</summary>
+    /// <summary>"Allow and register" flow for execute_script: add the script to the project-tier
+    /// registry, then resolve the approval as Allow (no permission persistence — registration is the
+    /// persistence mechanism for script tools; once registered the script runs via execute_allowed).</summary>
     public void RegisterAndAllow(PendingApproval approval, string? description)
     {
         var path = approval.ScriptPath;

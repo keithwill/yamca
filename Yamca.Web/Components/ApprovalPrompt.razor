@@ -19,7 +19,7 @@
         </MudText>
     </div>
 
-    @if (Approval.IsDiscoveredScript && Approval.ScriptPath is { } scriptPath)
+    @if (Approval.IsUnregisteredScript && Approval.ScriptPath is { } scriptPath)
     {
         <MudText Typo="Typo.caption" Class="mb-1">Script</MudText>
         <pre class="mud-paper-outlined pa-2 mb-2" style="overflow:auto; font-size: 0.8rem;">@scriptPath</pre>

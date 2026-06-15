@@ -12,7 +12,7 @@ through a **permission** check first. Configure both at `/tools`.
 |----------|-------|
 | **Files** | `read_file`, `write_file`, `edit_file`, `delete_file`, `list_directory` |
 | **Search** | `grep`, `find_files` |
-| **Execution** | `execute_command`, `execute_script`, `execute_registered_script`, `execute_discovered_script` |
+| **Execution** | `execute_command`, `execute_allowed`, `execute_script` |
 | **Background processes** | `start_process` (the LLM-facing facade); `start_process_command` (its arbitrary-command permission identity); `get_process_output`, `stop_process`, `list_processes` |
 | **Git** | `git` (the LLM-facing tool); `git_read`, `git_write` (its permission identities) |
 | **Code intelligence** | `code_search`, `code_list_symbols`, `code_find_definitions`, `code_find_calls`, `code_find_references`, `code_extract_symbol`, `code_edit_symbol`, `code_surrounding_context` |
@@ -25,6 +25,25 @@ Java, JavaScript, TypeScript/TSX, Python, Ruby, PHP, Rust, Go, …) so the agent
 can extract or edit a function/class by name instead of by line range.
 
 [MCP servers](mcp.md) contribute additional tools beyond this built-in set.
+
+### Execution tools
+
+Three tools run things, with deliberately different trust levels:
+
+- **`execute_allowed`** — runs a **pre-allowed** entry: a registered command (by name) or a
+  registered script (by workspace-relative path, including a file under a registered directory).
+  This is the curated allowlist path, so its permission is **fixed at Allow and not configurable** —
+  greenlighting the registry is its whole purpose. It is the tool the model should reach for
+  whenever a task matches something listed at session start. On a successful run its output may be
+  withheld to save context (see *Hide Success* in [scripts.md](scripts.md) / [commands.md](commands.md)).
+- **`execute_script`** — runs an **unregistered** script by workspace-relative path. Defaults to
+  **Ask**, and the approval prompt offers to add the script to the registry (after which it runs via
+  `execute_allowed`). A path that is already registered is refused and redirected to `execute_allowed`.
+- **`execute_command`** — runs an **arbitrary** shell command line. Defaults to **Ask**.
+
+If `execute_allowed` is given a string that matches both a registered command name and a registered
+script path, the **command name wins**. Manage the registry at `/commands` (commands) and `/scripts`
+(script files and directories); see [scripts.md](scripts.md) and [commands.md](commands.md).
 
 ### The `git` tool
 
@@ -58,9 +77,9 @@ while the chat continues:
   immediately. The caller gives it a stable `name` (e.g. `"web"`) used by the other tools, and may
   supply a `working_directory`, an optional `stop_command`, and the `ports` it listens on. Starting a
   `name` that is already running **reuses** the existing process rather than spawning a duplicate
-  (dedupe-by-name). Like the `git` and `execute_script` tools it is a **facade**: it is not itself a
-  settings row, but resolves the real permission under one of two identities depending on what it is
-  asked to start (see below).
+  (dedupe-by-name). Like the `git` tool it is a **facade**: it is not itself a settings row, but
+  resolves the real permission under one of two identities depending on what it is asked to start
+  (see below).
 - **`get_process_output`** (default **Allow**) — reads the buffered stdout/stderr. Pass the
   `next_cursor` from a previous call as `since` to fetch only new output.
 - **`stop_process`** (default **Ask**) — runs the `stop_command` if set, waits a grace
@@ -68,16 +87,15 @@ while the chat continues:
 - **`list_processes`** (default **Allow**) — lists every process with pid, status, ports,
   and uptime.
 
-`start_process` resolves its permission the same way `execute_script` does — by what it is asked to
-launch:
+`start_process` resolves its permission by what it is asked to launch:
 
-- If `command` names a **registered inline command** (matched by its name or its exact command line),
-  it runs under **`execute_registered_script`** (default *Allow*) — the same green-light that governs
-  running that command one-shot. Registering `npm run dev` as *Allow* therefore also lets the agent
-  start it in the background without prompting. The registered command's name becomes the default
-  process `name`. An inline command flagged **Background** in `/scripts` is launched this way
-  automatically when it's run via `execute_script` — so a watcher "just runs" without the model
-  having to choose `start_process` (see [scripts.md](scripts.md#background-commands)).
+- If `command` names a **registered command** (matched by its name or its exact command line),
+  it runs under **`execute_allowed`** (always *Allow*) — the same green-light that governs running
+  that command one-shot. Registering `npm run dev` therefore also lets the agent start it in the
+  background without prompting. The registered command's name becomes the default process `name`. A
+  command flagged **Background** in `/commands` is launched this way automatically when it's run via
+  `execute_allowed` — so a watcher "just runs" without the model having to choose `start_process`
+  (see [commands.md](commands.md)).
 - Otherwise it is an **arbitrary** command, gated by **`start_process_command`** (default **Ask**) — a
   settings identity (not exposed to the LLM) distinct from `execute_command`, because a long-lived,
   OS-wide process that outlives the session is a bigger grant than a one-shot command.
@@ -152,6 +170,7 @@ the request includes a diff so you can see the change before it lands.
 
 ## See also
 
-- [scripts.md](scripts.md) — registered vs. discovered scripts and their distinct permissions
+- [scripts.md](scripts.md) — registering script files and directories (run via `execute_allowed`)
+- [commands.md](commands.md) — registering one-line commands (run via `execute_allowed`)
 - [mcp.md](mcp.md) — tools contributed by MCP servers
 - [settings-and-backup.md](settings-and-backup.md) — Project vs. User settings tiers

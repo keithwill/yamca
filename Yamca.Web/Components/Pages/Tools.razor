@@ -28,7 +28,7 @@ else
             <RowTemplate>
                 <MudTd>
                     <MudTooltip Text="@context.Description" Placement="Placement.Right">
-                        <MudText Typo="Typo.body2"><b>@ToolDisplayName(context.Name)</b></MudText>
+                        <MudText Typo="Typo.body2"><b>@context.Name</b></MudText>
                     </MudTooltip>
                 </MudTd>
                 <MudTd>
@@ -60,21 +60,29 @@ else
                     </div>
                 </MudTd>
                 <MudTd>
-                    @{
+                    @if (context.ConfigurablePermission)
+                    {
                         var entry = CurrentMap.Get(context.Name);
                         var selected = entry?.Permission;
+                        <MudSelect T="PermissionLevel?" Value="selected"
+                                   ValueChanged="@((PermissionLevel? p) => SetPermission(context.Name, p))"
+                                   Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                            @if (ShowInherit(selected))
+                            {
+                                <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)null)">inherit</MudSelectItem>
+                            }
+                            <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Allow)">Allow</MudSelectItem>
+                            <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Ask)">Ask</MudSelectItem>
+                            @* No "Deny" option: to forbid a tool entirely, set its Availability to Hidden. *@
+                        </MudSelect>
                     }
-                    <MudSelect T="PermissionLevel?" Value="selected"
-                               ValueChanged="@((PermissionLevel? p) => SetPermission(context.Name, p))"
-                               Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
-                        @if (ShowInherit(selected))
-                        {
-                            <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)null)">inherit</MudSelectItem>
-                        }
-                        <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Allow)">Allow</MudSelectItem>
-                        <MudSelectItem T="PermissionLevel?" Value="@((PermissionLevel?)PermissionLevel.Ask)">Ask</MudSelectItem>
-                        @* No "Deny" option: to forbid a tool entirely, set its Availability to Hidden. *@
-                    </MudSelect>
+                    else
+                    {
+                        @* Permission is fixed (e.g. execute_allowed is always Allow — the registry is the allowlist). *@
+                        <MudTooltip Text="Always Allow — not configurable.">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success">Allow</MudChip>
+                        </MudTooltip>
+                    }
                 </MudTd>
                 <MudTd>
                     @if (context.SupportsWorkspaceRestriction)
@@ -136,13 +144,6 @@ else
 
     private bool _hydrated;
     private SettingsTier _tier = SettingsTier.User; // User shown by default
-
-    private static string ToolDisplayName(string name) => name switch
-    {
-        "execute_registered_script" => "execute_script (registered)",
-        "execute_discovered_script" => "execute_script (discovered)",
-        _ => name,
-    };
 
     private SettingsTier CurrentTier => _tier;
     private ToolSettingsMap CurrentMap => CurrentTier == SettingsTier.Project ? Session.Project : Session.User;

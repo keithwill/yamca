@@ -7,7 +7,7 @@ namespace Yamca.Agent.Tools.ProcessManagement;
 /// long-lived background process. Not exposed to the LLM — it exists so the settings table shows a
 /// configurable row (default Ask) that the <c>start_process</c> tool resolves against when the
 /// requested command is not a registered inline command. A registered command instead rides the
-/// <c>execute_registered_script</c> permission. Never invoked directly.</summary>
+/// always-Allow <c>execute_allowed</c> permission. Never invoked directly.</summary>
 public sealed class StartProcessCommandTool : ITool
 {
     private const string Schema = """{ "type": "object", "properties": {}, "additionalProperties": false }""";

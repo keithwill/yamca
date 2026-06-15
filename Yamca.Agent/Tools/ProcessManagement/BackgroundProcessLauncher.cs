@@ -3,8 +3,8 @@ using System.Text;
 namespace Yamca.Agent.Tools.ProcessManagement;
 
 /// <summary>Starts a background process and renders the outcome as a <see cref="ToolResult"/>.
-/// Shared by <see cref="StartProcessTool"/> and <c>execute_script</c>'s delegation for
-/// background-flagged inline commands, so both report a start the same way.</summary>
+/// Shared by <see cref="StartProcessTool"/> and <c>execute_allowed</c>'s delegation for
+/// background-flagged registered commands, so both report a start the same way.</summary>
 internal static class BackgroundProcessLauncher
 {
     public static ToolResult Start(IBackgroundProcessManager manager, StartRequest request)

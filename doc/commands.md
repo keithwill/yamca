@@ -5,18 +5,23 @@ managed at `/commands`. They give the model a curated set of known entry points 
 things like `npm install` or `dotnet build` — that it can run by name instead of
 guessing the exact invocation.
 
+The LLM runs a registered command through the always-allowed **`execute_allowed`**
+tool by passing the command's **name** (or its exact command line) — it runs
+without prompting. See [tools-and-permissions.md](tools-and-permissions.md).
+
 ## Registering a command
 
-Each entry is a single CLI command line. The LLM runs it verbatim by passing the
-exact command line — or the command's optional **name** — as the script path; no
-arguments are appended. Add the commands you'd like the LLM to reach for, and
-optionally give each one:
+Each entry is a single CLI command line that the LLM runs verbatim; no arguments
+are appended. Add the commands you'd like the LLM to reach for, and optionally give
+each one:
 
-- A **name** — a short, stable handle the LLM can reference instead of
-  reproducing the exact command line, which avoids brittle whitespace/quoting
-  mismatches. When set, it is also the default process name when the command is
-  launched in the background; with no name, the command line itself becomes the
-  process name.
+- A **name** — a short, stable handle the LLM passes to `execute_allowed` instead
+  of reproducing the exact command line, which avoids brittle whitespace/quoting
+  mismatches. Names must be **unique** across all registered commands. When set, it
+  is also the default process name when the command is launched in the background;
+  with no name, the command line itself becomes the process name (and is what the
+  LLM must pass to run it). If a name collides with a registered script's path, the
+  command wins.
 - A **description** — shown to the LLM at session start so it can pick the right
   command for a task.
 - The **Background** flag — for a watcher or dev server. Running a

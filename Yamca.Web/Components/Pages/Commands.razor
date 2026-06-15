@@ -92,9 +92,11 @@ else
     <MudDialog @bind-Visible="_dialogOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true })">
         <TitleContent>@(_editRow is null ? "Add command" : "Edit command")</TitleContent>
         <DialogContent>
-            <MudTextField T="string" @bind-Value="_formName"
+            <MudTextField T="string" Value="_formName" ValueChanged="OnFormNameChanged" Immediate="true"
                           Label="Name (optional)"
                           HelperText="Lets the LLM reference the command by this handle; also the default process name when run in the background."
+                          Error="@(!FormNameValid)"
+                          ErrorText="Another registered command already uses this name."
                           Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
                           Placeholder="install" />
             <MudTextField T="string" @bind-Value="_formCommand"
@@ -127,7 +129,7 @@ else
         <DialogActions>
             <MudButton OnClick="@(() => _dialogOpen = false)">Cancel</MudButton>
             <MudButton Color="Color.Primary" Variant="Variant.Filled"
-                       Disabled="@(string.IsNullOrWhiteSpace(_formCommand))"
+                       Disabled="@(string.IsNullOrWhiteSpace(_formCommand) || !FormNameValid)"
                        OnClick="ConfirmDialog">
                 @(_editRow is null ? "Add" : "Save")
             </MudButton>
@@ -167,6 +169,25 @@ else
     private readonly List<InlineRow> _userInline = new();
 
     private List<InlineRow> CurrentInlineRows => _tier == SettingsTier.Project ? _projectInline : _userInline;
+
+    // Command names are the handle the LLM (and execute_allowed) resolve against, so they must be
+    // unique across every registered command — both tiers — to keep resolution unambiguous. A blank
+    // name is allowed (the command is then referenced by its verbatim command line).
+    private bool FormNameValid => !NameConflicts(_formName);
+
+    private bool NameConflicts(string? name)
+    {
+        var candidate = name?.Trim();
+        if (string.IsNullOrWhiteSpace(candidate)) return false;
+        return _projectInline.Concat(_userInline)
+            .Where(r => !ReferenceEquals(r, _editRow))
+            .Any(r => string.Equals(r.Name?.Trim(), candidate, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void OnFormNameChanged(string value)
+    {
+        _formName = value;
+    }
 
     private void OnTierChanged(SettingsTier tier)
     {
@@ -252,7 +273,7 @@ else
 
     private void ConfirmDialog()
     {
-        if (string.IsNullOrWhiteSpace(_formCommand)) return;
+        if (string.IsNullOrWhiteSpace(_formCommand) || !FormNameValid) return;
 
         var row = _editRow ?? new InlineRow();
         row.Name = NullIfBlank(_formName);

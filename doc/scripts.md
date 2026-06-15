@@ -8,27 +8,25 @@ registered scripts at `/scripts`.
 
 ## Why the distinction
 
-A registered script is one you've explicitly told yamca about, so it can run
-under different (typically looser) tool permissions than an arbitrary script the
-LLM happens to find through file operations. This lets you green-light your known
-build/test/lint entry points without granting blanket execution rights.
+A registered script is one you've explicitly told yamca about, so it runs through
+the always-allowed execution path instead of prompting. This lets you green-light
+your known build/test/lint entry points without granting blanket execution rights.
 
 The relevant tools (see [tools-and-permissions.md](tools-and-permissions.md)):
 
-- **`execute_script`** — the single tool the LLM actually calls to run a script by
-  workspace-relative path. Internally it checks whether the path is registered and
-  dispatches the permission check under one of the two names below.
-- **`execute_registered_script`** — the permission identity for a known, registered
-  script. Defaults to *Allow*. (Not exposed to the LLM directly.)
-- **`execute_discovered_script`** — the permission identity for a script the LLM
-  found by other means. Defaults to *Ask*, and the approval prompt offers to add
-  the script to the registry. (Not exposed to the LLM directly.)
+- **`execute_allowed`** — runs a pre-allowed entry: a registered command by name, or
+  a registered script by its workspace-relative path (including any file under a
+  registered directory). Its permission is fixed at *Allow* — being the allowlist is
+  its whole purpose — so it isn't user-configurable.
+- **`execute_script`** — runs an **unregistered** script by workspace-relative path.
+  Defaults to *Ask*, and the approval prompt offers to add the script to the
+  registry; once registered it runs via `execute_allowed` instead. A path that is
+  already registered is refused and redirected to `execute_allowed`.
 - **`execute_command`** — a separate tool for running an arbitrary shell command
   line (not a script file). Defaults to *Ask*.
 
-Even though the LLM calls a single `execute_script` tool, the registered and
-discovered cases carry independent permissions — e.g. you can allow registered
-scripts while leaving discovered-script execution on *Ask*.
+So you can let your registered scripts run freely while leaving ad-hoc script
+execution on *Ask*.
 
 ## Registering a script
 

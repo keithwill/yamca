@@ -104,6 +104,34 @@ public class SessionSettingsMaterializeTests
         Assert.That(entry.Availability, Is.EqualTo(Availability.Hidden));
     }
 
+    [Test]
+    public void Hydrate_MigratesDiscoveredScript_ToExecuteScript()
+    {
+        var settings = new SessionSettings();
+        // A blob from before the split: the discovered identity carried the configurable Ask row.
+        settings.HydrateProject("""{"tools":{"execute_discovered_script":{"permission":"Ask","restrictToWorkspace":true,"availability":"Deferred"}}}""");
+
+        Assert.That(settings.Project.Get("execute_discovered_script"), Is.Null, "the legacy key is gone");
+        var entry = settings.Project.Get("execute_script")!;
+        Assert.That(entry.Permission, Is.EqualTo(PermissionLevel.Ask));
+        Assert.That(entry.RestrictToWorkspace, Is.True);
+        Assert.That(entry.Availability, Is.EqualTo(Availability.Deferred));
+    }
+
+    [Test]
+    public void Hydrate_MigratesRegisteredScript_ToExecuteAllowed_DroppingPermission()
+    {
+        var settings = new SessionSettings();
+        // execute_allowed is always Allow with no workspace toggle; only an availability override carries over.
+        settings.HydrateProject("""{"tools":{"execute_registered_script":{"permission":"Allow","restrictToWorkspace":true,"availability":"Hidden"}}}""");
+
+        Assert.That(settings.Project.Get("execute_registered_script"), Is.Null, "the legacy key is gone");
+        var entry = settings.Project.Get("execute_allowed")!;
+        Assert.That(entry.Permission, Is.Null, "permission is not configurable for execute_allowed");
+        Assert.That(entry.RestrictToWorkspace, Is.Null, "no workspace toggle for execute_allowed");
+        Assert.That(entry.Availability, Is.EqualTo(Availability.Hidden), "availability override is preserved");
+    }
+
     private sealed class FakeTool : ITool
     {
         public FakeTool(string name, PermissionLevel permission, Availability availability, bool supportsWorkspace)

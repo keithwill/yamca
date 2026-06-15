@@ -56,7 +56,7 @@ public class ProcessToolsTests
     {
         var tool = NewStartProcess();
         // Passes the AgentLoop gate so it can resolve the real identity internally, and isn't a
-        // settings row itself — the configurable rows are execute_registered_script / start_process_command.
+        // settings row itself — the identities are execute_allowed (always Allow) / start_process_command.
         Assert.That(tool.DefaultPermission, Is.EqualTo(PermissionLevel.Allow));
         Assert.That(tool.ExposedInSettings, Is.False);
     }

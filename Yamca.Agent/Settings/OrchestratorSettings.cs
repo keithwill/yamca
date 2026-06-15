@@ -60,13 +60,13 @@ public sealed record OrchestratorSettings(
     bool RestrictToWorkspace)
 {
     /// <summary>The curated tool set orchestrated runs start with: file and search tools, the
-    /// board tools (board_move_card is the completion signal), registered scripts, and git
+    /// board tools (board_move_card is the completion signal), allowed commands/scripts, and git
     /// (column instructions tell the agent to commit on the card's branch).</summary>
     public static readonly IReadOnlyList<string> DefaultAllowedTools = new[]
     {
         "read_file", "write_file", "edit_file", "delete_file",
         "list_directory", "find_files", "grep",
-        "execute_registered_script", "git",
+        "execute_allowed", "git",
         "board_list", "board_get_card", "board_get_step_instructions",
         "board_move_card", "board_update_card",
     };

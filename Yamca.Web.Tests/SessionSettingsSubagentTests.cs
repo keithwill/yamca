@@ -28,11 +28,11 @@ public class SessionSettingsSubagentTests
         Assert.That(settings.UserSubagents.Agents.Select(a => a.Name), Does.Contain("code"));
         var code = settings.UserSubagents.Agents.Single(a => a.Name == "code");
 
-        // The implementer edits files directly and can run registered scripts to build/test.
+        // The implementer edits files directly and can run allowed commands/scripts to build/test.
         Assert.That(code.AllowedTools, Does.Contain("write_file"));
         Assert.That(code.AllowedTools, Does.Contain("edit_file"));
-        Assert.That(code.AllowedTools, Does.Contain("execute_registered_script"));
-        // It is gated to registered scripts, not free-form command execution, by default.
+        Assert.That(code.AllowedTools, Does.Contain("execute_allowed"));
+        // It is gated to the curated registry, not free-form command execution, by default.
         Assert.That(code.AllowedTools, Has.None.EqualTo("execute_command"));
         // Inherits the global iteration cap rather than pinning its own.
         Assert.That(code.MaxIterations, Is.Null);

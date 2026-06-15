@@ -21,6 +21,12 @@ public interface ITool
     /// <summary>Default permission when neither project nor user settings override it.</summary>
     PermissionLevel DefaultPermission { get; }
 
+    /// <summary>False = the permission level is fixed at <see cref="DefaultPermission"/> and not
+    /// user-configurable (e.g. <c>execute_allowed</c>, which exists precisely to be the always-Allow
+    /// path for curated entry points). The settings UI renders a static chip instead of a dropdown
+    /// and the User tier never materializes a permission override for it. Default: true.</summary>
+    bool ConfigurablePermission => true;
+
     /// <summary>True (default) = include in the tool list sent to the LLM.</summary>
     bool ExposedToLlm => true;
 
