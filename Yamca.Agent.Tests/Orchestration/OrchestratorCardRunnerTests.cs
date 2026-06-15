@@ -132,7 +132,7 @@ public class OrchestratorCardRunnerTests
     }
 
     [Test]
-    public async Task SeedPrompt_InlinesCardAndInstructions()
+    public async Task SeedPrompt_IncludesInstructionsAndCardId_NotCardBody()
     {
         var client = new FakeChatCompletionClient().EnqueueText("ok");
         var tools = new ITool[] { new StubTool("read_file") };
@@ -144,10 +144,12 @@ public class OrchestratorCardRunnerTests
 
         await _runner.RunAsync(Request(client, tools, settings), CancellationToken.None);
 
+        // The seed carries the column instructions plus the bare card id — deliberately not the
+        // card title/body, which the agent re-fetches via tools (see BoardPrompts.BuildSeedPrompt).
         var seed = client.Calls[0].Messages.Last(m => m.Role == ChatRole.User).Content;
-        Assert.That(seed, Does.Contain("Test card"));
-        Assert.That(seed, Does.Contain("Do the thing."));
         Assert.That(seed, Does.Contain("Analyze the card."));
+        Assert.That(seed, Does.Contain("Card ID: 1"));
+        Assert.That(seed, Does.Not.Contain("Do the thing."));
     }
 
     [Test]
