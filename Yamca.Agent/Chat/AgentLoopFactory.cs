@@ -1,3 +1,4 @@
+using Yamca.Agent.Metrics;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Tools;
 using Yamca.Agent.Workspace;
@@ -19,6 +20,7 @@ public sealed class AgentLoopFactory
     private readonly IApprovalCoordinator _approvals;
     private readonly IPermissionStore _permissionStore;
     private readonly LoadedToolSet _loadedTools;
+    private readonly ITurnMetricSink? _metrics;
 
     public AgentLoopFactory(
         IToolRegistry tools,
@@ -26,7 +28,8 @@ public sealed class AgentLoopFactory
         IAvailabilityResolver availability,
         IApprovalCoordinator approvals,
         IPermissionStore permissionStore,
-        LoadedToolSet loadedTools)
+        LoadedToolSet loadedTools,
+        ITurnMetricSink? metrics = null)
     {
         ArgumentNullException.ThrowIfNull(tools);
         ArgumentNullException.ThrowIfNull(permissions);
@@ -41,6 +44,7 @@ public sealed class AgentLoopFactory
         _approvals = approvals;
         _permissionStore = permissionStore;
         _loadedTools = loadedTools;
+        _metrics = metrics;
     }
 
     /// <summary>Construct an <see cref="AgentLoop"/> for one session. <paramref name="workspace"/>
@@ -55,5 +59,5 @@ public sealed class AgentLoopFactory
         SessionDiagnosticsLog? diagnostics = null)
         => new(
             session, client, _tools, _permissions, _availability, _approvals,
-            _permissionStore, workspace, _loadedTools, options, isYoloEnabled, diagnostics);
+            _permissionStore, workspace, _loadedTools, options, isYoloEnabled, diagnostics, _metrics);
 }

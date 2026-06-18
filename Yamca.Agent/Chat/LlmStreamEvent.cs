@@ -33,11 +33,22 @@ public sealed record LlmToolCallStreamStarted : LlmStreamEvent
 /// <c>stream_options.include_usage</c>, llama-server's <c>timings</c>/<c>usage</c>
 /// trailer, vLLM's terminal usage chunk). Lets the UI display real prompt-token
 /// totals rather than our char/4 estimate. <paramref name="CachedTokens"/> is
-/// the llama-server prompt-cache hit count when available.</summary>
+/// the llama-server prompt-cache hit count when available.
+///
+/// The speed fields (<paramref name="PromptPerSecond"/>,
+/// <paramref name="PredictedPerSecond"/>, <paramref name="PromptMs"/>,
+/// <paramref name="PredictedMs"/>) come from llama-server's <c>timings</c> block
+/// and are the authoritative (Tier A) source for the throughput dashboard.
+/// They are null for servers that don't report timings (OpenAI / vLLM), where
+/// the agent loop falls back to client-side wall-clock measurement (Tier B).</summary>
 public sealed record LlmUsageUpdate(
     int PromptTokens,
     int CompletionTokens,
-    int? CachedTokens = null) : LlmStreamEvent;
+    int? CachedTokens = null,
+    double? PromptPerSecond = null,
+    double? PredictedPerSecond = null,
+    double? PromptMs = null,
+    double? PredictedMs = null) : LlmStreamEvent;
 
 /// <summary>Final event for one assistant turn. The adapter is responsible for
 /// aggregating fragmented tool-call deltas into completed requests before

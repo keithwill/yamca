@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Yamca.Agent.Metrics;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Tools;
 using Yamca.Agent.Workspace;
@@ -23,6 +25,7 @@ public sealed class AgentLoop
     private readonly AgentLoopOptions _options;
     private readonly Func<bool> _isYoloEnabled;
     private readonly SessionDiagnosticsLog? _diagnostics;
+    private readonly ITurnMetricSink? _metrics;
 
     public AgentLoop(
         ChatSession session,
@@ -36,7 +39,8 @@ public sealed class AgentLoop
         LoadedToolSet loadedTools,
         AgentLoopOptions? options = null,
         Func<bool>? isYoloEnabled = null,
-        SessionDiagnosticsLog? diagnostics = null)
+        SessionDiagnosticsLog? diagnostics = null,
+        ITurnMetricSink? metrics = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(client);
@@ -60,6 +64,7 @@ public sealed class AgentLoop
         _options = options ?? AgentLoopOptions.Default;
         _isYoloEnabled = isYoloEnabled ?? (static () => false);
         _diagnostics = diagnostics;
+        _metrics = metrics;
     }
 
     private void Log(DiagnosticCategory category, string message) =>
@@ -149,31 +154,45 @@ public sealed class AgentLoop
             string content = "";
             IReadOnlyList<LlmToolCallRequest> toolCalls = Array.Empty<LlmToolCallRequest>();
 
+            // Throughput bookkeeping for this round-trip. requestStart anchors prompt-processing
+            // time; firstTokenTs marks the prompt→generation boundary (TTFT); completeTs ends
+            // generation. lastUsage carries the server's token counts (and, for llama-server, its
+            // authoritative timings). See RecordMetric.
+            var requestStart = Stopwatch.GetTimestamp();
+            long? firstTokenTs = null;
+            long? completeTs = null;
+            LlmUsageUpdate? lastUsage = null;
+
             await foreach (var ev in _client.StreamAsync(_session.Messages, chatTools, cancellationToken)
                                             .ConfigureAwait(false))
             {
                 switch (ev)
                 {
                     case LlmContentDelta delta:
+                        firstTokenTs ??= Stopwatch.GetTimestamp();
                         yield return new AssistantTokenEvent(delta.Text);
                         break;
                     case LlmReasoningDelta rdelta:
+                        firstTokenTs ??= Stopwatch.GetTimestamp();
                         yield return new ReasoningTokenEvent(rdelta.Text);
                         break;
                     case LlmReasoningClose:
                         yield return ReasoningCompleteEvent.Instance;
                         break;
                     case LlmToolCallStreamStarted:
+                        firstTokenTs ??= Stopwatch.GetTimestamp();
                         Log(DiagnosticCategory.Model, "tool-call generation started");
                         yield return ToolCallGenerationStartedEvent.Instance;
                         break;
                     case LlmUsageUpdate usage:
+                        lastUsage = usage;
                         Log(DiagnosticCategory.Usage,
                             $"usage: prompt={usage.PromptTokens}, completion={usage.CompletionTokens}" +
                             (usage.CachedTokens is int c ? $", cached={c}" : ""));
                         yield return new UsageUpdateEvent(usage.PromptTokens, usage.CompletionTokens, usage.CachedTokens);
                         break;
                     case LlmAssistantTurnComplete done:
+                        completeTs = Stopwatch.GetTimestamp();
                         content = done.Content;
                         toolCalls = done.ToolCalls;
                         var names = done.ToolCalls.Count > 0
@@ -186,6 +205,8 @@ public sealed class AgentLoop
                         break;
                 }
             }
+
+            RecordMetric(requestStart, firstTokenTs, completeTs, lastUsage);
 
             _session.AppendAssistant(content, toolCalls);
             yield return new AssistantMessageEvent(content, toolCalls);
@@ -211,6 +232,66 @@ public sealed class AgentLoop
 
         Log(DiagnosticCategory.Session, $"turn stopped: reached iteration cap ({_options.MaxIterations})");
         yield return new TurnCompleteEvent(TurnCompletionReason.MaxIterationsReached);
+    }
+
+    /// <summary>Emit one throughput sample for the round-trip that just completed. Requires real
+    /// token counts (a server usage chunk) — without them there is no context-size axis to plot,
+    /// so the sample is dropped rather than fabricated from a char/4 estimate. Prefers
+    /// llama-server's measured timings (Tier A); otherwise derives speeds from the wall-clock
+    /// stamps captured during streaming (Tier B). Never throws: a metrics failure must not break
+    /// the turn.</summary>
+    private void RecordMetric(long requestStart, long? firstTokenTs, long? completeTs, LlmUsageUpdate? usage)
+    {
+        if (_metrics is null || usage is null || !_options.RecordMetrics) return;
+        try
+        {
+            var endTs = completeTs ?? Stopwatch.GetTimestamp();
+            var tierA = usage.PromptPerSecond is not null || usage.PredictedPerSecond is not null;
+
+            double promptMs, predictedMs;
+            double? promptPerSecond, predictedPerSecond;
+
+            if (tierA)
+            {
+                promptMs = usage.PromptMs ?? 0;
+                predictedMs = usage.PredictedMs ?? 0;
+                promptPerSecond = usage.PromptPerSecond;
+                predictedPerSecond = usage.PredictedPerSecond;
+            }
+            else
+            {
+                // Tier B wall-clock: prompt processing spans request start → first token;
+                // generation spans first token → completion. When nothing streamed (a silent
+                // round-trip) treat the whole span as prompt processing and skip gen speed.
+                promptMs = Stopwatch.GetElapsedTime(requestStart, firstTokenTs ?? endTs).TotalMilliseconds;
+                predictedMs = firstTokenTs is long ft
+                    ? Stopwatch.GetElapsedTime(ft, endTs).TotalMilliseconds
+                    : 0;
+                promptPerSecond = promptMs > 0 ? usage.PromptTokens / (promptMs / 1000.0) : null;
+                predictedPerSecond = predictedMs > 0 ? usage.CompletionTokens / (predictedMs / 1000.0) : null;
+            }
+
+            _metrics.Record(new TurnMetric(
+                Id: $"{DateTime.UtcNow.Ticks:D19}-{Guid.NewGuid():N}",
+                TimestampUtc: DateTimeOffset.UtcNow,
+                SessionId: _options.OwnerId,
+                EndpointId: _options.EndpointId,
+                EndpointName: _options.EndpointName,
+                Model: _options.Model,
+                EndpointBaseUrl: _options.EndpointBaseUrl,
+                PromptTokens: usage.PromptTokens,
+                CachedTokens: usage.CachedTokens,
+                CompletionTokens: usage.CompletionTokens,
+                PromptPerSecond: promptPerSecond,
+                PredictedPerSecond: predictedPerSecond,
+                PromptMs: promptMs,
+                PredictedMs: predictedMs,
+                TimingsFromServer: tierA));
+        }
+        catch
+        {
+            // Metrics are best-effort; never let a recording failure surface into the turn.
+        }
     }
 
     private async IAsyncEnumerable<ChatStreamEvent> HandleToolCallAsync(

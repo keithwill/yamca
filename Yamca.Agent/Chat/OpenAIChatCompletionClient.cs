@@ -290,16 +290,25 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient, IChatReq
                 cached = TryGetInt(details, "cached_tokens");
             }
 
-            // llama-server attaches a sibling `timings` block with prompt-cache hits.
-            if (cached is null && root.TryGetProperty("timings", out var timings) &&
+            // llama-server attaches a sibling `timings` block with prompt-cache hits
+            // and measured throughput. The throughput numbers are the authoritative
+            // (Tier A) source for the metrics dashboard; absent for OpenAI / vLLM.
+            double? promptPerSecond = null, predictedPerSecond = null, promptMs = null, predictedMs = null;
+            if (root.TryGetProperty("timings", out var timings) &&
                 timings.ValueKind == JsonValueKind.Object)
             {
-                cached = TryGetInt(timings, "cache_n");
+                cached ??= TryGetInt(timings, "cache_n");
+                promptPerSecond = TryGetDouble(timings, "prompt_per_second");
+                predictedPerSecond = TryGetDouble(timings, "predicted_per_second");
+                promptMs = TryGetDouble(timings, "prompt_ms");
+                predictedMs = TryGetDouble(timings, "predicted_ms");
             }
 
             if (prompt > 0 || completion > 0)
             {
-                update = new LlmUsageUpdate(prompt, completion, cached);
+                update = new LlmUsageUpdate(
+                    prompt, completion, cached,
+                    promptPerSecond, predictedPerSecond, promptMs, predictedMs);
                 return true;
             }
         }
@@ -310,6 +319,10 @@ public sealed class OpenAIChatCompletionClient : IChatCompletionClient, IChatReq
 
     private static int? TryGetInt(JsonElement el, string name) =>
         el.TryGetProperty(name, out var v) && v.TryGetInt32(out var i) ? i : null;
+
+    private static double? TryGetDouble(JsonElement el, string name) =>
+        el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number &&
+        v.TryGetDouble(out var d) ? d : null;
 
     private static string RoleString(ChatRole role) => role switch
     {

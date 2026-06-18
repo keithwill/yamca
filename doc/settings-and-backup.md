@@ -39,6 +39,11 @@ are user-only.
   inline scripts run through. Only shells detected on this machine are listed;
   auto-detect picks pwsh → Windows PowerShell → cmd.exe on Windows, and bash → sh
   elsewhere.
+- **Record throughput metrics** — whether prompt-processing and token-generation
+  speed are recorded for every model round-trip and plotted on the `/metrics` page.
+  On by default. A retention policy (keep at most N samples / drop past M days,
+  0 = keep regardless of age) bounds the separate `.yamca/metrics.db` store. See
+  [metrics.md](metrics.md).
 
 ## Backup (export / import)
 

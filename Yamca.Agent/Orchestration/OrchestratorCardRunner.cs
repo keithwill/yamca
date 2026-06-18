@@ -21,7 +21,12 @@ public sealed record OrchestratorRunRequest(
     OrchestratorSettings Settings,
     int SessionMaxToolIterations,
     string RunId,
-    IOrchestratorObserver Observer);
+    IOrchestratorObserver Observer,
+    Guid EndpointId,
+    string EndpointName,
+    string Model,
+    string EndpointBaseUrl,
+    bool RecordMetrics);
 
 /// <summary>Outcome plus the final LLM message log (for transcript persistence; safe to read
 /// once the run has stopped) and how many turns the run consumed.</summary>
@@ -45,10 +50,12 @@ public sealed class OrchestratorCardRunner
     private const int FailureTailChars = 600;
 
     private readonly BoardStore _boardStore;
+    private readonly Yamca.Agent.Metrics.ITurnMetricSink? _metrics;
 
-    public OrchestratorCardRunner(BoardStore boardStore)
+    public OrchestratorCardRunner(BoardStore boardStore, Yamca.Agent.Metrics.ITurnMetricSink? metrics = null)
     {
         _boardStore = boardStore;
+        _metrics = metrics;
     }
 
     public async Task<OrchestratorRunResult> RunAsync(OrchestratorRunRequest req, CancellationToken cancellationToken)
@@ -84,8 +91,14 @@ public sealed class OrchestratorCardRunner
             {
                 MaxIterations = req.Settings.MaxToolIterationsPerTurn ?? req.SessionMaxToolIterations,
                 OwnerId = req.RunId,
+                EndpointId = req.EndpointId,
+                EndpointName = req.EndpointName,
+                Model = req.Model,
+                EndpointBaseUrl = req.EndpointBaseUrl,
+                RecordMetrics = req.RecordMetrics,
             },
-            isYoloEnabled: static () => true);
+            isYoloEnabled: static () => true,
+            metrics: _metrics);
 
         var (outcome, turns) = await DriveAsync(req, loop, cancellationToken).ConfigureAwait(false);
         return new OrchestratorRunResult(outcome, session.Messages.ToList(), turns);

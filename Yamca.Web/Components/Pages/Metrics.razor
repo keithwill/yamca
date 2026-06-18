@@ -1,0 +1,312 @@
+@page "/metrics"
+@rendermode InteractiveServer
+@using Yamca.Web.Services.Metrics
+@inject MetricsQueryService Query
+@inject IDialogService Dialogs
+
+<PageTitle>Metrics — yamca</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.h6">Throughput metrics</MudText>
+            <MudSpacer />
+            <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small"
+                           OnClick="ReloadAsync" aria-label="Refresh" />
+        </div>
+        <MudText Typo="Typo.caption" Class="mb-3">
+            Prompt-processing and token-generation speed for every model round-trip, plotted against
+            the starting context size. Use it to see how a local model's throughput degrades as the
+            context grows, and to compare endpoints and models. Samples with a
+            <MudIcon Icon="@Icons.Material.Filled.Bolt" Size="Size.Small" /> server-reported timing are
+            exact; the rest are estimated from client-side wall-clock timing.
+        </MudText>
+
+        @if (_view is null)
+        {
+            <MudProgressLinear Indeterminate="true" Class="my-4" />
+        }
+        else
+        {
+            <div class="d-flex flex-wrap align-center gap-4 mb-2">
+                <MudText Typo="Typo.body2"><b>@_view.TotalSamples</b> samples</MudText>
+                <MudText Typo="Typo.body2">@SpanLabel()</MudText>
+                <MudText Typo="Typo.body2">@FormatBytes(Query.FileSizeBytes) on disk</MudText>
+                <MudSpacer />
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.DeleteSweep" OnClick="ClearAsync"
+                           Disabled="@(_seriesInfos.Count == 0)">
+                    Clear metrics
+                </MudButton>
+            </div>
+
+            <MudDivider Class="my-3" />
+
+            @* ---- Controls ---- *@
+            <div class="d-flex flex-wrap align-center gap-4 mb-3">
+                <MudSelect T="string" Label="Time range" Value="_range" ValueChanged="OnRangeChanged"
+                           Dense="true" Style="min-width:140px;">
+                    <MudSelectItem T="string" Value="@("all")">All time</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("1d")">Last 24 hours</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("7d")">Last 7 days</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("30d")">Last 30 days</MudSelectItem>
+                </MudSelect>
+
+                <MudSelect T="int" Label="Bucket size" Value="_bucketSize" ValueChanged="OnBucketChanged"
+                           Dense="true" Style="min-width:140px;">
+                    <MudSelectItem T="int" Value="250">250 tokens</MudSelectItem>
+                    <MudSelectItem T="int" Value="500">500 tokens</MudSelectItem>
+                    <MudSelectItem T="int" Value="1000">1k tokens</MudSelectItem>
+                    <MudSelectItem T="int" Value="2000">2k tokens</MudSelectItem>
+                    <MudSelectItem T="int" Value="5000">5k tokens</MudSelectItem>
+                    <MudSelectItem T="int" Value="10000">10k tokens</MudSelectItem>
+                </MudSelect>
+
+                <MudSwitch T="bool" Value="_serverOnly" ValueChanged="OnServerOnlyChanged"
+                           Color="Color.Primary" Label="Server-measured only" />
+            </div>
+
+            @if (_seriesInfos.Count == 0)
+            {
+                <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">
+                    No throughput data yet. Run a chat against an endpoint that reports token usage and
+                    the samples will appear here.
+                </MudText>
+            }
+            else
+            {
+                @* ---- Series picker ---- *@
+                <div class="d-flex flex-wrap gap-3 mb-3">
+                    @foreach (var s in _seriesInfos)
+                    {
+                        var key = s.Key;
+                        <MudCheckBox T="bool" Dense="true"
+                                     Value="@_selected.Contains(key)"
+                                     ValueChanged="@(v => ToggleSeriesAsync(key, v))"
+                                     Label="@($"{key.Label(s.EndpointName, s.EndpointBaseUrl)} ({s.SampleCount})")" />
+                    }
+                </div>
+
+                @if (_xLabels.Length == 0)
+                {
+                    <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled)">
+                        No samples match the current filters.
+                    </MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mt-2">Token generation speed (tokens/sec)</MudText>
+                    <MudChart ChartType="ChartType.Line" ChartSeries="_genSeries" ChartLabels="_xLabels"
+                              ChartOptions="_options" Width="100%" Height="320px" />
+
+                    <MudText Typo="Typo.subtitle2" Class="mt-6">Prompt processing speed (tokens/sec)</MudText>
+                    <MudChart ChartType="ChartType.Line" ChartSeries="_promptSeries" ChartLabels="_xLabels"
+                              ChartOptions="_options" Width="100%" Height="320px" />
+
+                    <MudText Typo="Typo.caption" Class="mt-2" Style="color:var(--mud-palette-text-disabled)">
+                        X axis: starting context size (tokens), bucketed in @FormatTokens(_bucketSize) bands;
+                        each point is the median speed for that band.
+                    </MudText>
+                }
+            }
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private IReadOnlyList<MetricSeriesInfo> _seriesInfos = Array.Empty<MetricSeriesInfo>();
+    private readonly HashSet<MetricSeriesKey> _selected = new();
+    private MetricsView? _view;
+
+    private string _range = "all";
+    private int _bucketSize = 2000;
+    private bool _serverOnly;
+
+    // Chart data, rebuilt on every reload. Both charts share one unified X axis (the union of the
+    // selected series' context buckets), since MudChart aligns series by index, not by X value.
+    private string[] _xLabels = Array.Empty<string>();
+    private List<ChartSeries<double>> _genSeries = new();
+    private List<ChartSeries<double>> _promptSeries = new();
+    private readonly ChartOptions _options = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _seriesInfos = await Query.GetSeriesAsync(CancellationToken.None);
+        foreach (var s in _seriesInfos) _selected.Add(s.Key); // default: all series on
+        await ReloadAsync();
+    }
+
+    private MetricsFilter BuildFilter() => new()
+    {
+        Series = _selected.Count > 0 ? _selected.ToList() : null,
+        From = _range switch
+        {
+            "1d" => DateTimeOffset.UtcNow.AddDays(-1),
+            "7d" => DateTimeOffset.UtcNow.AddDays(-7),
+            "30d" => DateTimeOffset.UtcNow.AddDays(-30),
+            _ => null,
+        },
+        ServerMeasuredOnly = _serverOnly,
+        BucketSize = _bucketSize,
+    };
+
+    private async Task ReloadAsync()
+    {
+        _view = await Query.QueryAsync(BuildFilter(), CancellationToken.None);
+        BuildChart();
+        StateHasChanged();
+    }
+
+    private void BuildChart()
+    {
+        var view = _view;
+        if (view is null || view.Series.Count == 0)
+        {
+            _xLabels = Array.Empty<string>();
+            _genSeries = new();
+            _promptSeries = new();
+            return;
+        }
+
+        // Unified, sorted X axis across all plotted series.
+        var midpoints = view.Series
+            .SelectMany(s => s.Buckets.Select(b => b.ContextMidpoint))
+            .Distinct().OrderBy(x => x).ToList();
+
+        // Degenerate single-bucket case: a MudChart line needs two vertices to draw a segment, so
+        // one context bucket (all samples in the same token band — common early on) would render as
+        // an invisible zero-length line and the chart looks empty. Plot that lone bucket as a flat
+        // span across its own band so the measured value is actually visible.
+        if (midpoints.Count == 1)
+        {
+            BuildSingleBucketChart(view, midpoints[0]);
+            return;
+        }
+
+        var index = new Dictionary<int, int>(midpoints.Count);
+        for (var i = 0; i < midpoints.Count; i++) index[midpoints[i]] = i;
+
+        // Thin the labels so a wide axis stays readable; blank labels still occupy their slot.
+        var step = Math.Max(1, (int)Math.Ceiling(midpoints.Count / 12.0));
+        _xLabels = midpoints
+            .Select((m, i) => i % step == 0 ? FormatTokens(m) : string.Empty)
+            .ToArray();
+
+        _genSeries = new List<ChartSeries<double>>(view.Series.Count);
+        _promptSeries = new List<ChartSeries<double>>(view.Series.Count);
+        foreach (var s in view.Series)
+        {
+            var name = s.Key.Label(s.EndpointName, s.EndpointBaseUrl);
+            var genKnown = new Dictionary<int, double>();
+            var promptKnown = new Dictionary<int, double>();
+            foreach (var b in s.Buckets)
+            {
+                if (b.MedianPredictedPerSecond is { } g) genKnown[b.ContextMidpoint] = g;
+                if (b.MedianPromptPerSecond is { } p) promptKnown[b.ContextMidpoint] = p;
+            }
+            _genSeries.Add(new ChartSeries<double> { Name = name, Data = FillAlongAxis(midpoints, genKnown) });
+            _promptSeries.Add(new ChartSeries<double> { Name = name, Data = FillAlongAxis(midpoints, promptKnown) });
+        }
+    }
+
+    // Render a single context bucket as a flat two-point span across its token band [low edge, high
+    // edge], so the lone measurement shows as a visible horizontal line at its value rather than an
+    // invisible single point. Each series plots its own median; a series with no value for a metric
+    // stays at zero (no line of its own).
+    private void BuildSingleBucketChart(MetricsView view, int midpoint)
+    {
+        var half = Math.Max(1, _bucketSize / 2);
+        _xLabels = new[] { FormatTokens(Math.Max(0, midpoint - half)), FormatTokens(midpoint + half) };
+
+        _genSeries = new List<ChartSeries<double>>(view.Series.Count);
+        _promptSeries = new List<ChartSeries<double>>(view.Series.Count);
+        foreach (var s in view.Series)
+        {
+            var name = s.Key.Label(s.EndpointName, s.EndpointBaseUrl);
+            var bucket = s.Buckets.FirstOrDefault(b => b.ContextMidpoint == midpoint);
+            var gen = bucket?.MedianPredictedPerSecond ?? 0d;
+            var prompt = bucket?.MedianPromptPerSecond ?? 0d;
+            _genSeries.Add(new ChartSeries<double> { Name = name, Data = new[] { gen, gen } });
+            _promptSeries.Add(new ChartSeries<double> { Name = name, Data = new[] { prompt, prompt } });
+        }
+    }
+
+    // MudChart aligns all series to one shared, index-based X axis and draws a continuous line, so
+    // every slot needs a real value — a NaN (our previous "no data here" marker) corrupts the SVG
+    // path and the whole line vanishes. Instead we give each series a value at every axis point:
+    // exact where the series has a bucket, linearly interpolated between its known buckets (the
+    // straight segment a line chart would draw anyway), and flat-extrapolated past its first/last
+    // measured bucket. The result always renders; only the flat ends are an approximation.
+    private static double[] FillAlongAxis(IReadOnlyList<int> axis, IReadOnlyDictionary<int, double> known)
+    {
+        var data = new double[axis.Count];
+        if (known.Count == 0) return data; // all-zero; a series with no values in this metric
+
+        var xs = known.Keys.OrderBy(x => x).ToList();
+        for (var i = 0; i < axis.Count; i++)
+        {
+            var x = axis[i];
+            if (known.TryGetValue(x, out var exact)) { data[i] = exact; continue; }
+            if (x <= xs[0]) { data[i] = known[xs[0]]; continue; }
+            if (x >= xs[^1]) { data[i] = known[xs[^1]]; continue; }
+
+            var lo = xs[0];
+            var hi = xs[^1];
+            foreach (var kx in xs)
+            {
+                if (kx <= x) lo = kx;
+                if (kx >= x) { hi = kx; break; }
+            }
+            var t = (double)(x - lo) / (hi - lo);
+            data[i] = known[lo] + t * (known[hi] - known[lo]);
+        }
+        return data;
+    }
+
+    private async Task OnRangeChanged(string value) { _range = value; await ReloadAsync(); }
+    private async Task OnBucketChanged(int value) { _bucketSize = value; await ReloadAsync(); }
+    private async Task OnServerOnlyChanged(bool value) { _serverOnly = value; await ReloadAsync(); }
+
+    private async Task ToggleSeriesAsync(MetricSeriesKey key, bool on)
+    {
+        if (on) _selected.Add(key); else _selected.Remove(key);
+        await ReloadAsync();
+    }
+
+    private async Task ClearAsync()
+    {
+        var ok = await Dialogs.ShowMessageBoxAsync(
+            "Clear metrics?",
+            "This permanently deletes every recorded throughput sample. The board, chats, and settings are unaffected.",
+            yesText: "Clear", cancelText: "Cancel");
+        if (ok != true) return;
+
+        await Query.ClearAllAsync(CancellationToken.None);
+        _seriesInfos = await Query.GetSeriesAsync(CancellationToken.None);
+        _selected.Clear();
+        await ReloadAsync();
+    }
+
+    private string SpanLabel()
+    {
+        if (_view is not { FirstUtc: { } first, LastUtc: { } last }) return "no samples in range";
+        var f = first.ToLocalTime();
+        var l = last.ToLocalTime();
+        return f.Date == l.Date
+            ? $"{f:yyyy-MM-dd HH:mm} – {l:HH:mm}"
+            : $"{f:yyyy-MM-dd} – {l:yyyy-MM-dd}";
+    }
+
+    private static string FormatTokens(int n) =>
+        n >= 1000 ? $"{n / 1000.0:0.#}k" : n.ToString();
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0) return "0 B";
+        string[] units = { "B", "KB", "MB", "GB" };
+        double size = bytes;
+        var u = 0;
+        while (size >= 1024 && u < units.Length - 1) { size /= 1024; u++; }
+        return $"{size:0.#} {units[u]}";
+    }
+}

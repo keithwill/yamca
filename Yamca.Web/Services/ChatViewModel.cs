@@ -505,7 +505,9 @@ public sealed class ChatViewModel : IDisposable
 
         // Hand the subagent runner this chat's completion client so subagents launched from this
         // session inherit its endpoint/model by default (the workspace flows through ToolContext).
-        _subagentRunner.Bind(completion);
+        // The endpoint snapshot rides along so inherited-endpoint subagents can still attribute
+        // their throughput metrics to the right endpoint·model.
+        _subagentRunner.Bind(completion, endpoint);
 
         ChatSession session;
         if (_restoredMessages is { } restored)
@@ -537,7 +539,16 @@ public sealed class ChatViewModel : IDisposable
 
         _loop = _loopFactory.Create(
             session, completion, _workspace,
-            new AgentLoopOptions { MaxIterations = _settings.MaxToolIterations, OwnerId = Id.ToString() },
+            new AgentLoopOptions
+            {
+                MaxIterations = _settings.MaxToolIterations,
+                OwnerId = Id.ToString(),
+                EndpointId = endpoint.Id,
+                EndpointName = endpoint.Name ?? "",
+                Model = endpoint.Model,
+                EndpointBaseUrl = endpoint.BaseUrl,
+                RecordMetrics = _settings.MetricsEnabled,
+            },
             isYoloEnabled: () => YoloMode,
             diagnostics: _diagnostics);
 

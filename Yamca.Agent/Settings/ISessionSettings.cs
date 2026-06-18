@@ -48,4 +48,9 @@ public interface ISessionSettings
     /// <summary>Project-tier board-orchestrator configuration. The orchestrator re-reads this
     /// every poll tick, so edits apply to future dispatch without a restart.</summary>
     OrchestratorSettings Orchestrator { get; }
+
+    /// <summary>Whether throughput metrics are recorded for this session's model round-trips
+    /// (chat, subagent, and orchestrator loops). Default on. When off, no <see
+    /// cref="Chat.AgentLoop"/> built for this session emits samples to the metrics store.</summary>
+    bool MetricsEnabled { get; }
 }

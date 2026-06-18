@@ -88,7 +88,7 @@ public class SubagentRunToolTests
 
     private sealed class NoopRunner : ISubagentRunner
     {
-        public void Bind(IChatCompletionClient parentClient) { }
+        public void Bind(IChatCompletionClient parentClient, EndpointSettings? parentEndpoint = null) { }
 
         public Task<ToolResult> RunAsync(string agentName, string prompt, ToolContext parentContext, CancellationToken cancellationToken) =>
             Task.FromResult(ToolResult.Ok(""));

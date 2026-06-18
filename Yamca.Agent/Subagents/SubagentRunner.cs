@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Yamca.Agent.Chat;
 using Yamca.Agent.Chat.Prompts;
+using Yamca.Agent.Metrics;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
@@ -25,6 +26,7 @@ public sealed class SubagentRunner : ISubagentRunner
     private readonly ISubagentObserver _observer;
 
     private IChatCompletionClient? _parentClient;
+    private EndpointSettings? _parentEndpoint;
 
     // IToolRegistry is resolved lazily (at RunAsync time), not injected, to avoid a construction
     // cycle: IToolRegistry's factory enumerates every ITool — including SubagentRunTool, which
@@ -49,10 +51,11 @@ public sealed class SubagentRunner : ISubagentRunner
         _observer = observer ?? NoopSubagentObserver.Instance;
     }
 
-    public void Bind(IChatCompletionClient parentClient)
+    public void Bind(IChatCompletionClient parentClient, EndpointSettings? parentEndpoint = null)
     {
         ArgumentNullException.ThrowIfNull(parentClient);
         _parentClient = parentClient;
+        _parentEndpoint = parentEndpoint;
     }
 
     public async Task<ToolResult> RunAsync(
@@ -104,7 +107,7 @@ public sealed class SubagentRunner : ISubagentRunner
                 return Mechanical($"Subagent '{def.Name}' was not approved to run.");
         }
 
-        var client = ResolveClient(def);
+        var (client, endpoint) = ResolveClient(def);
         if (client is null)
             return Mechanical(
                 $"Subagent '{def.Name}' references an endpoint that no longer exists and no parent endpoint is available.");
@@ -141,8 +144,17 @@ public sealed class SubagentRunner : ISubagentRunner
             new NoopPermissionStore(),
             parentContext.Workspace,
             new LoadedToolSet(),
-            new AgentLoopOptions { MaxIterations = maxIterations },
-            isYoloEnabled: static () => true);
+            new AgentLoopOptions
+            {
+                MaxIterations = maxIterations,
+                EndpointId = endpoint?.Id ?? Guid.Empty,
+                EndpointName = endpoint?.Name ?? "",
+                Model = endpoint?.Model ?? "",
+                EndpointBaseUrl = endpoint?.BaseUrl ?? "",
+                RecordMetrics = _settings.MetricsEnabled,
+            },
+            isYoloEnabled: static () => true,
+            metrics: _services.GetService(typeof(ITurnMetricSink)) as ITurnMetricSink);
 
         // Mirror the run to any observer (the UI) so it can be watched live. The run id keys
         // the live session; the parent tool-call id (when present) lets the UI open the matching
@@ -267,17 +279,22 @@ public sealed class SubagentRunner : ISubagentRunner
         return new ChatSession(parentContext.Workspace, systemPrompt, instructions);
     }
 
-    private IChatCompletionClient? ResolveClient(SubagentDefinition def)
+    private (IChatCompletionClient? Client, EndpointSettings? Endpoint) ResolveClient(SubagentDefinition def)
     {
         if (def.EndpointId is Guid id)
         {
             var endpoint = _settings.Endpoints.FindById(id);
-            return endpoint is null ? null : _clientFactory.CreateCompletionClient(endpoint);
+            return endpoint is null ? (null, null) : (_clientFactory.CreateCompletionClient(endpoint), endpoint);
         }
 
-        // Default: inherit the parent's client. Fall back to the configured default endpoint
-        // when the runner was never bound (e.g. invoked outside a live chat).
-        return _parentClient ?? _clientFactory.CreateCompletionClient(_settings.Endpoints.Default);
+        // Default: inherit the parent's client (and its endpoint identity, when the runner was
+        // bound with one). Fall back to the configured default endpoint when the runner was never
+        // bound (e.g. invoked outside a live chat).
+        if (_parentClient is not null)
+            return (_parentClient, _parentEndpoint);
+
+        var fallback = _settings.Endpoints.Default;
+        return (_clientFactory.CreateCompletionClient(fallback), fallback);
     }
 
     private static string FailureMessage(string name, TurnCompletionReason? reason, string lastAssistant)

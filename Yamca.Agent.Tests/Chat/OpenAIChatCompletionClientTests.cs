@@ -320,6 +320,11 @@ public class OpenAIChatCompletionClientTests
         Assert.That(usage.PromptTokens, Is.EqualTo(123));
         Assert.That(usage.CompletionTokens, Is.EqualTo(4));
         Assert.That(usage.CachedTokens, Is.EqualTo(50));
+        // OpenAI / vLLM omit the `timings` block, so the Tier-A speed fields are absent.
+        Assert.That(usage.PromptPerSecond, Is.Null);
+        Assert.That(usage.PredictedPerSecond, Is.Null);
+        Assert.That(usage.PromptMs, Is.Null);
+        Assert.That(usage.PredictedMs, Is.Null);
     }
 
     [Test]
@@ -338,6 +343,27 @@ public class OpenAIChatCompletionClientTests
         var usage = events.OfType<LlmUsageUpdate>().Single();
         Assert.That(usage.PromptTokens, Is.EqualTo(200));
         Assert.That(usage.CachedTokens, Is.EqualTo(42));
+    }
+
+    [Test]
+    public async Task UsageChunk_LlamaCppTimings_ProvidesThroughput()
+    {
+        // llama-server's full `timings` block carries measured prompt-processing and
+        // generation speeds — the authoritative (Tier A) source for the metrics dashboard.
+        var sse = Sse(
+            """{"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}""",
+            """{"choices":[],"usage":{"prompt_tokens":200,"completion_tokens":10},"timings":{"cache_n":42,"prompt_n":158,"prompt_ms":500.0,"prompt_per_second":316.0,"predicted_ms":250.0,"predicted_per_second":40.0}}""");
+
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(SseResponse(sse)));
+        var client = new OpenAIChatCompletionClient(ClientFor(handler), "test-model");
+
+        var events = await Collect(client.StreamAsync(Msgs, Array.Empty<ChatTool>(), CancellationToken.None));
+
+        var usage = events.OfType<LlmUsageUpdate>().Single();
+        Assert.That(usage.PromptPerSecond, Is.EqualTo(316.0));
+        Assert.That(usage.PredictedPerSecond, Is.EqualTo(40.0));
+        Assert.That(usage.PromptMs, Is.EqualTo(500.0));
+        Assert.That(usage.PredictedMs, Is.EqualTo(250.0));
     }
 
     [Test]

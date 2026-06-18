@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Yamca.Agent.Chat;
+using Yamca.Agent.Metrics;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
@@ -35,6 +36,15 @@ public sealed class SessionSettings : ISessionSettings
     private const int MaxMaxToolIterations = 100;
     private const DeferredToolsHint DefaultDeferredToolsHint = DeferredToolsHint.Names;
     private const ShellPreference DefaultShellPreference = ShellPreference.Auto;
+    private const bool DefaultMetricsEnabled = true;
+    // Retention for the metrics store (a user-tier setting; the singleton MetricSinkWriter reads
+    // these off the shared user blob via ReadMetricsRetention). MaxAgeDays of 0 means "no age cap".
+    private const int DefaultMetricsRetentionMaxSamples = 50_000;
+    private const int MinMetricsRetentionMaxSamples = 1_000;
+    private const int MaxMetricsRetentionMaxSamples = 5_000_000;
+    private const int DefaultMetricsRetentionMaxAgeDays = 90;
+    private const int MinMetricsRetentionMaxAgeDays = 0;
+    private const int MaxMetricsRetentionMaxAgeDays = 3650;
 
     // Clamp ranges for the orchestrator's numeric settings, applied both when the UI
     // mutates them (SetOrchestrator) and when a blob is hydrated off disk.
@@ -83,6 +93,10 @@ public sealed class SessionSettings : ISessionSettings
     public SubagentRegistry ProjectSubagents { get; private set; } = SubagentRegistry.Empty;
 
     public OrchestratorSettings Orchestrator { get; private set; } = OrchestratorSettings.Default;
+
+    public bool MetricsEnabled { get; private set; } = DefaultMetricsEnabled;
+    public int MetricsRetentionMaxSamples { get; private set; } = DefaultMetricsRetentionMaxSamples;
+    public int MetricsRetentionMaxAgeDays { get; private set; } = DefaultMetricsRetentionMaxAgeDays;
 
     /// <summary>Fired when the named tier has been mutated. The handler is expected
     /// to serialize that tier and write it to disk.</summary>
@@ -211,6 +225,50 @@ public sealed class SessionSettings : ISessionSettings
         Changed?.Invoke(SettingsTier.User);
     }
 
+    public void SetMetricsEnabled(bool enabled)
+    {
+        if (MetricsEnabled == enabled) return;
+        MetricsEnabled = enabled;
+        Changed?.Invoke(SettingsTier.User);
+    }
+
+    public void SetMetricsRetentionMaxSamples(int maxSamples)
+    {
+        var clamped = Math.Clamp(maxSamples, MinMetricsRetentionMaxSamples, MaxMetricsRetentionMaxSamples);
+        if (MetricsRetentionMaxSamples == clamped) return;
+        MetricsRetentionMaxSamples = clamped;
+        Changed?.Invoke(SettingsTier.User);
+    }
+
+    public void SetMetricsRetentionMaxAgeDays(int maxAgeDays)
+    {
+        var clamped = Math.Clamp(maxAgeDays, MinMetricsRetentionMaxAgeDays, MaxMetricsRetentionMaxAgeDays);
+        if (MetricsRetentionMaxAgeDays == clamped) return;
+        MetricsRetentionMaxAgeDays = clamped;
+        Changed?.Invoke(SettingsTier.User);
+    }
+
+    /// <summary>Parse just the metrics-retention policy out of a raw user-settings blob, applying the
+    /// same defaults and clamps as live hydration. Lets the singleton <c>MetricSinkWriter</c> (which
+    /// has no per-circuit <see cref="SessionSettings"/>) read the user's retention choice straight
+    /// from disk via <c>UserSettingsStore</c>, keeping the blob contract owned here. Returns the
+    /// defaults for a missing/malformed blob.</summary>
+    public static MetricsRetention ReadMetricsRetention(string? userJson)
+    {
+        var blob = TryDeserialize<UserBlob>(userJson);
+        var samples = ClampMetricsRetentionMaxSamples(blob?.MetricsRetentionMaxSamples);
+        var ageDays = ClampMetricsRetentionMaxAgeDays(blob?.MetricsRetentionMaxAgeDays);
+        return new MetricsRetention(samples, ageDays > 0 ? TimeSpan.FromDays(ageDays) : null);
+    }
+
+    private static int ClampMetricsRetentionMaxSamples(int? value) => value is int v
+        ? Math.Clamp(v, MinMetricsRetentionMaxSamples, MaxMetricsRetentionMaxSamples)
+        : DefaultMetricsRetentionMaxSamples;
+
+    private static int ClampMetricsRetentionMaxAgeDays(int? value) => value is int v
+        ? Math.Clamp(v, MinMetricsRetentionMaxAgeDays, MaxMetricsRetentionMaxAgeDays)
+        : DefaultMetricsRetentionMaxAgeDays;
+
     public void SetInstructionFiles(SettingsTier tier, IReadOnlyList<string> paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -316,6 +374,9 @@ public sealed class SessionSettings : ISessionSettings
         MaxToolIterations = AgentLoopOptions.Default.MaxIterations;
         DeferredToolsHint = DefaultDeferredToolsHint;
         ShellPreference = DefaultShellPreference;
+        MetricsEnabled = DefaultMetricsEnabled;
+        MetricsRetentionMaxSamples = DefaultMetricsRetentionMaxSamples;
+        MetricsRetentionMaxAgeDays = DefaultMetricsRetentionMaxAgeDays;
         User = DefaultUserToolSettings();
         MaterializeUserToolDefaults(settingsTools);
         UserInstructionFiles = DefaultUserInstructionFiles;
@@ -434,6 +495,9 @@ public sealed class SessionSettings : ISessionSettings
             : AgentLoopOptions.Default.MaxIterations;
         DeferredToolsHint = blob.DeferredToolsHint ?? DefaultDeferredToolsHint;
         ShellPreference = blob.ShellPreference ?? DefaultShellPreference;
+        MetricsEnabled = blob.MetricsEnabled ?? DefaultMetricsEnabled;
+        MetricsRetentionMaxSamples = ClampMetricsRetentionMaxSamples(blob.MetricsRetentionMaxSamples);
+        MetricsRetentionMaxAgeDays = ClampMetricsRetentionMaxAgeDays(blob.MetricsRetentionMaxAgeDays);
         User = firstRun ? DefaultUserToolSettings() : MapFromDto(blob.Tools);
         UserInstructionFiles = firstRun
             ? DefaultUserInstructionFiles
@@ -557,6 +621,9 @@ public sealed class SessionSettings : ISessionSettings
             MaxToolIterations = MaxToolIterations,
             DeferredToolsHint = DeferredToolsHint,
             ShellPreference = ShellPreference,
+            MetricsEnabled = MetricsEnabled,
+            MetricsRetentionMaxSamples = MetricsRetentionMaxSamples,
+            MetricsRetentionMaxAgeDays = MetricsRetentionMaxAgeDays,
             Tools = MapToDto(User),
             InstructionFiles = NonEmpty(UserInstructionFiles),
             Scripts = ScriptsToDto(UserScripts),
@@ -732,6 +799,9 @@ public sealed class SessionSettings : ISessionSettings
         public int? MaxToolIterations { get; set; }
         public DeferredToolsHint? DeferredToolsHint { get; set; }
         public ShellPreference? ShellPreference { get; set; }
+        public bool? MetricsEnabled { get; set; }
+        public int? MetricsRetentionMaxSamples { get; set; }
+        public int? MetricsRetentionMaxAgeDays { get; set; }
         public Dictionary<string, ToolEntryDto>? Tools { get; set; }
         public List<string>? InstructionFiles { get; set; }
         public ScriptsDto? Scripts { get; set; }

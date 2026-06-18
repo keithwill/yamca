@@ -69,7 +69,8 @@ public sealed class OrchestratorService : IDisposable
         EndpointClientFactory clientFactory,
         OrchestratorRunRegistry registry,
         OrchestratorStartupOptions startup,
-        ILogger<OrchestratorService> log)
+        ILogger<OrchestratorService> log,
+        Yamca.Agent.Metrics.ITurnMetricSink? metrics = null)
     {
         _scopes = scopes;
         _rootWorkspace = rootWorkspace;
@@ -77,7 +78,7 @@ public sealed class OrchestratorService : IDisposable
         _provisioner = provisioner;
         _clientFactory = clientFactory;
         _registry = registry;
-        _runner = new OrchestratorCardRunner(boardStore);
+        _runner = new OrchestratorCardRunner(boardStore, metrics);
         // The orchestrator persists run transcripts itself; like every ChatStore consumer it
         // anchors on the root workspace. Its internal lock is separate from the per-circuit
         // instances', but index.json writes are atomic and the index self-heals by rescanning,
@@ -471,7 +472,8 @@ public sealed class OrchestratorService : IDisposable
             // 4. Drive the headless run.
             var request = new OrchestratorRunRequest(
                 card, column, instructions, worktreeWorkspace, client, tools,
-                settings, session.MaxToolIterations, runId, _registry);
+                settings, session.MaxToolIterations, runId, _registry,
+                endpoint.Id, endpoint.Name ?? "", endpoint.Model, endpoint.BaseUrl, session.MetricsEnabled);
             var result = await _runner.RunAsync(request, ct).ConfigureAwait(false);
             outcome = result.Outcome;
 

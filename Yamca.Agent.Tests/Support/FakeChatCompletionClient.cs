@@ -48,6 +48,9 @@ internal sealed class FakeChatCompletionClient : IChatCompletionClient
             await Task.Yield();
         }
 
+        if (response.Usage is not null)
+            yield return response.Usage;
+
         yield return new LlmAssistantTurnComplete(response.Content, response.ToolCalls, response.FinishReason);
     }
 
@@ -58,4 +61,5 @@ internal sealed record ScriptedResponse(
     string Content,
     IReadOnlyList<LlmToolCallRequest> ToolCalls,
     string? FinishReason,
-    IReadOnlyList<string>? ContentChunks = null);
+    IReadOnlyList<string>? ContentChunks = null,
+    LlmUsageUpdate? Usage = null);

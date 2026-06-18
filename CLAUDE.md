@@ -57,4 +57,4 @@ dotnet run --project Yamca.Web   # run the app locally (boots in Production)
 
 Feature docs in `doc/`: dev-board, orchestrator, chat-sessions, endpoints,
 tools-and-permissions, subagents, loop, worktrees, mcp, scripts,
-custom-instructions, settings-and-backup, commands.
+custom-instructions, settings-and-backup, metrics, commands.

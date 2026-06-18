@@ -1,4 +1,5 @@
 using Yamca.Agent.Chat;
+using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
 
 namespace Yamca.Agent.Subagents;
@@ -9,9 +10,11 @@ namespace Yamca.Agent.Subagents;
 /// by default.</summary>
 public interface ISubagentRunner
 {
-    /// <summary>Supply the parent chat's completion client. A subagent reuses it unless it
-    /// specifies its own endpoint override.</summary>
-    void Bind(IChatCompletionClient parentClient);
+    /// <summary>Supply the parent chat's completion client (and, optionally, the endpoint
+    /// snapshot it was built from). A subagent reuses the client unless it specifies its own
+    /// endpoint override; the endpoint snapshot lets inherited-endpoint runs attribute their
+    /// throughput metrics to the right endpoint·model.</summary>
+    void Bind(IChatCompletionClient parentClient, EndpointSettings? parentEndpoint = null);
 
     /// <summary>Look up <paramref name="agentName"/>, run it headless against
     /// <paramref name="parentContext"/>'s workspace with <paramref name="prompt"/>, and return

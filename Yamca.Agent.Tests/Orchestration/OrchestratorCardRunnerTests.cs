@@ -61,7 +61,12 @@ public class OrchestratorCardRunnerTests
             },
             SessionMaxToolIterations: 10,
             RunId: "run1",
-            Observer: NoopOrchestratorObserver.Instance);
+            Observer: NoopOrchestratorObserver.Instance,
+            EndpointId: Guid.Empty,
+            EndpointName: "test",
+            Model: "test-model",
+            EndpointBaseUrl: "http://localhost:8080",
+            RecordMetrics: true);
 
     // A board_move_card stand-in that really moves the card in the store, so the runner's
     // authoritative board re-read sees the change.

@@ -8,6 +8,7 @@ using Yamca.Agent.Chat;
 using Yamca.Agent.Chat.Persistence;
 using Yamca.Agent.Git;
 using Yamca.Agent.Mcp;
+using Yamca.Agent.Metrics;
 using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Settings.Persistence;
@@ -23,6 +24,7 @@ using Yamca.Agent.Tools.ShellExecution;
 using Yamca.Agent.Workspace;
 using Yamca.Web.Components;
 using Yamca.Web.Services;
+using Yamca.Web.Services.Metrics;
 using Yamca.Web.Services.Orchestration;
 
 var cli = CliOptions.Parse(args);
@@ -163,6 +165,17 @@ builder.Services.AddSingleton<GitService>();
 // lazily on first access; YamcaStoreHost warms it at startup and flushes/closes it on shutdown.
 builder.Services.AddSingleton<YamcaStore>();
 builder.Services.AddHostedService<YamcaStoreHost>();
+
+// Throughput metrics live in a *separate* VestPocket store (.yamca/metrics.db) — high-volume,
+// disposable telemetry kept apart from the curated board/chat state so it can grow and be cleared
+// without touching yamca.db. MetricSinkWriter is the ITurnMetricSink the agent loop records into;
+// it is its own hosted service (a background drain that batches samples to disk and enforces
+// retention). Registering it as a singleton and resolving that same instance for the interface and
+// the hosted service keeps the one buffer/drain shared.
+builder.Services.AddSingleton<MetricsStore>();
+builder.Services.AddSingleton<MetricSinkWriter>();
+builder.Services.AddSingleton<ITurnMetricSink>(sp => sp.GetRequiredService<MetricSinkWriter>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MetricSinkWriter>());
 // The board lives in that store under /board/* keys — a personal scratchpad shared by every chat
 // session independent of which code branch it is on. BoardStore is its repository.
 builder.Services.AddSingleton<BoardStore>();
@@ -359,6 +372,8 @@ builder.Services.AddScoped<ChatStore>();
 builder.Services.AddScoped<ChatSessionManager>();
 builder.Services.AddScoped<BoardStepLauncher>();
 builder.Services.AddScoped<McpConfigStore>();
+// Reads the metrics store and shapes samples for the throughput dashboard (/metrics).
+builder.Services.AddScoped<MetricsQueryService>();
 
 var app = builder.Build();
 

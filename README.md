@@ -60,6 +60,7 @@ Yamca listening on http://127.0.0.1:51234  (workspace: C:\Repos\yamca)
 - **[Scripts](https://github.com/keithwill/yamca/blob/main/doc/scripts.md)** — registered vs. discovered scripts, with distinct execution permissions.
 - **[Custom Instructions](https://github.com/keithwill/yamca/blob/main/doc/custom-instructions.md)** — system prompt and instruction files folded into every session.
 - **[Settings & Backup](https://github.com/keithwill/yamca/blob/main/doc/settings-and-backup.md)** — Project vs. User settings tiers, preferences, and user-settings export/import.
+- **[Metrics](https://github.com/keithwill/yamca/blob/main/doc/metrics.md)** — records prompt-processing and token-generation speed per model round-trip and charts how throughput degrades as context grows.
 
 ## Troubleshooting
 

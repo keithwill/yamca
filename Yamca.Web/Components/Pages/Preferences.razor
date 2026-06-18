@@ -74,6 +74,36 @@ else
                              Disabled="@(!Session.AutoCompactionEnabled)" />
         </div>
 
+        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Metrics</MudText>
+        <MudSwitch T="bool" Value="Session.MetricsEnabled"
+                   ValueChanged="@((bool v) => Session.SetMetricsEnabled(v))"
+                   Color="Color.Primary"
+                   Label="Record throughput metrics" />
+        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+            Records prompt-processing and token-generation speed for every model round-trip — chat,
+            subagent, and orchestrator alike — to a separate <code>.yamca/metrics.db</code> store, and
+            plots them against context size on the <MudLink Href="metrics">Metrics</MudLink> page. Turn
+            it off to stop collecting; existing samples are kept until cleared from that page.
+        </MudText>
+
+        <div class="d-flex mt-2" style="gap: 12px;">
+            <MudNumericField T="int" Value="Session.MetricsRetentionMaxSamples"
+                             ValueChanged="@((int v) => Session.SetMetricsRetentionMaxSamples(v))"
+                             Label="Keep at most (samples)"
+                             Min="1000" Max="5000000" Step="10000"
+                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudNumericField T="int" Value="Session.MetricsRetentionMaxAgeDays"
+                             ValueChanged="@((int v) => Session.SetMetricsRetentionMaxAgeDays(v))"
+                             Label="Keep for (days, 0 = forever)"
+                             Min="0" Max="3650" Step="30"
+                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+        <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary)">
+            Old samples are pruned at startup and periodically while running, keeping the most recent
+            count and dropping anything past the age limit (whichever bites first). Set the age to 0 to
+            keep samples regardless of age. Applies even while recording is off.
+        </MudText>
+
         <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Tools</MudText>
         <MudNumericField T="int" Value="Session.MaxToolIterations"
                          ValueChanged="@((int v) => Session.SetMaxToolIterations(v))"
