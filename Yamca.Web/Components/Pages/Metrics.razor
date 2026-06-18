@@ -231,27 +231,41 @@
         }
     }
 
-    // MudChart aligns all series to one shared, index-based X axis and draws a continuous line, so
-    // every slot needs a real value — a NaN (our previous "no data here" marker) corrupts the SVG
-    // path and the whole line vanishes. Instead we give each series a value at every axis point:
-    // exact where the series has a bucket, linearly interpolated between its known buckets (the
-    // straight segment a line chart would draw anyway), and flat-extrapolated past its first/last
-    // measured bucket. The result always renders; only the flat ends are an approximation.
+    // MudChart aligns all series to one shared, index-based X axis (it places a series' point i at
+    // x-slot i and draws a continuous line), so a series must occupy a contiguous run of slots from
+    // slot 0, and a NaN "no data here" marker is unusable — it both corrupts the Y-axis Min/Max scan
+    // and breaks the SVG path. We therefore fill each slot up to the series' LAST measured bucket:
+    // exact where it has a bucket, linearly interpolated between its known buckets (the straight
+    // segment a line chart draws anyway), and flat-padded before its first bucket.
+    //
+    // Crucially we STOP at the last measured bucket instead of flat-extrapolating to the end of the
+    // axis: a trailing flat line would falsely imply the series held that speed at context sizes it
+    // was never measured at (e.g. a 3-sample series appearing to keep pace out to 11k). Returning a
+    // shorter array is safe because the dropped slots are the trailing ones — every earlier point
+    // keeps its slot index, so the series stays aligned and its line simply ends at its real data.
+    // (The leading flat pad is an unavoidable approximation: a series can't start at slot >0 without
+    // shifting all its points left, so a late-starting series still draws a short flat head.)
     private static double[] FillAlongAxis(IReadOnlyList<int> axis, IReadOnlyDictionary<int, double> known)
     {
-        var data = new double[axis.Count];
-        if (known.Count == 0) return data; // all-zero; a series with no values in this metric
+        if (known.Count == 0) return Array.Empty<double>(); // no values in this metric: draw no line
 
         var xs = known.Keys.OrderBy(x => x).ToList();
-        for (var i = 0; i < axis.Count; i++)
+        var first = xs[0];
+        var last = xs[^1];
+
+        // Last axis slot this series reaches; everything past it is dropped rather than extrapolated.
+        var lastSlot = 0;
+        for (var i = 0; i < axis.Count; i++) if (axis[i] <= last) lastSlot = i;
+
+        var data = new double[lastSlot + 1];
+        for (var i = 0; i <= lastSlot; i++)
         {
             var x = axis[i];
             if (known.TryGetValue(x, out var exact)) { data[i] = exact; continue; }
-            if (x <= xs[0]) { data[i] = known[xs[0]]; continue; }
-            if (x >= xs[^1]) { data[i] = known[xs[^1]]; continue; }
+            if (x <= first) { data[i] = known[first]; continue; } // leading pad (alignment)
 
-            var lo = xs[0];
-            var hi = xs[^1];
+            var lo = first;
+            var hi = last;
             foreach (var kx in xs)
             {
                 if (kx <= x) lo = kx;
