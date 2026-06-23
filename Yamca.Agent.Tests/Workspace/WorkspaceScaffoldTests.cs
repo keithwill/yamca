@@ -35,6 +35,8 @@ public class WorkspaceScaffoldTests
         var lines = File.ReadAllLines(GitignorePath).Select(l => l.Trim()).ToArray();
         Assert.That(lines, Does.Contain("/chat/"));
         Assert.That(lines, Does.Contain("/project.json"));
+        // The dedicated throughput-metrics store must be ignored too.
+        Assert.That(lines, Does.Contain("/metrics.db"));
         // Self-ignoring: the file lists itself so an untracked .gitignore leaves git status clean.
         Assert.That(lines, Does.Contain("/.gitignore"));
     }
