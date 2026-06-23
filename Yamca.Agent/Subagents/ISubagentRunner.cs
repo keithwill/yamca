@@ -1,4 +1,5 @@
 using Yamca.Agent.Chat;
+using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Tools;
 
@@ -11,10 +12,14 @@ namespace Yamca.Agent.Subagents;
 public interface ISubagentRunner
 {
     /// <summary>Supply the parent chat's completion client (and, optionally, the endpoint
-    /// snapshot it was built from). A subagent reuses the client unless it specifies its own
-    /// endpoint override; the endpoint snapshot lets inherited-endpoint runs attribute their
-    /// throughput metrics to the right endpoint·model.</summary>
-    void Bind(IChatCompletionClient parentClient, EndpointSettings? parentEndpoint = null);
+    /// snapshot it was built from, plus the launching session's approval coordinator). A subagent
+    /// reuses the client unless it specifies its own endpoint override; the endpoint snapshot lets
+    /// inherited-endpoint runs attribute their throughput metrics to the right endpoint·model; the
+    /// approval coordinator routes a per-subagent RequireApproval prompt to the launching session.</summary>
+    void Bind(
+        IChatCompletionClient parentClient,
+        EndpointSettings? parentEndpoint = null,
+        IApprovalCoordinator? approvals = null);
 
     /// <summary>Look up <paramref name="agentName"/>, run it headless against
     /// <paramref name="parentContext"/>'s workspace with <paramref name="prompt"/>, and return

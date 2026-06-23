@@ -404,7 +404,9 @@ public sealed class AgentLoop
 
         yield return new ToolCallStartedEvent(call.CallId, target.ToolName, target.ArgumentsJson);
 
-        var context = new ToolContext(_workspace, _permissions.RestrictToWorkspace(target.ToolName), call.CallId, _options.OwnerId);
+        var context = new ToolContext(
+            _workspace, _permissions.RestrictToWorkspace(target.ToolName), call.CallId, _options.OwnerId,
+            _approvals, _loadedTools);
         var result = await ExecuteToolSafelyAsync(tool, args, context, cancellationToken).ConfigureAwait(false);
 
         _session.AppendToolResult(call.CallId, result.Content);

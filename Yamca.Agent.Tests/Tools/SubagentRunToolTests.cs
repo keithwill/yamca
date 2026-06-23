@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Yamca.Agent.Chat;
+using Yamca.Agent.Permissions;
 using Yamca.Agent.Settings;
 using Yamca.Agent.Subagents;
 using Yamca.Agent.Tests.Support;
@@ -88,7 +89,7 @@ public class SubagentRunToolTests
 
     private sealed class NoopRunner : ISubagentRunner
     {
-        public void Bind(IChatCompletionClient parentClient, EndpointSettings? parentEndpoint = null) { }
+        public void Bind(IChatCompletionClient parentClient, EndpointSettings? parentEndpoint = null, IApprovalCoordinator? approvals = null) { }
 
         public Task<ToolResult> RunAsync(string agentName, string prompt, ToolContext parentContext, CancellationToken cancellationToken) =>
             Task.FromResult(ToolResult.Ok(""));

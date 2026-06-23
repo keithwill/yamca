@@ -18,7 +18,15 @@ public sealed class ChatViewModel : IDisposable
     private readonly IWorkspace _workspace;
     private readonly IToolRegistry _tools;
     private readonly IPermissionResolver _permissions;
-    private readonly IApprovalCoordinator _approvals;
+    // Owned per session, not pulled from the DI scope: a scope spans the whole browser circuit, but
+    // each chat pane needs its own approval queue (otherwise a prompt raised by one pane surfaces in
+    // whichever pane's consumer happens to dequeue it). The coordinator lives for the whole VM — its
+    // single consumer task starts once and reads only this instance. See ToolContext.Approvals.
+    private readonly IApprovalCoordinator _approvals = new ApprovalCoordinator();
+    // Owned per session for the same reason (deferred tools one pane has loaded must not bleed into
+    // another pane's prompt prefix). Reassigned on Clear because a cleared chat is a fresh session
+    // whose model has not seen any deferred schema yet. See ToolContext.LoadedTools.
+    private LoadedToolSet _loadedTools = new();
     private readonly SessionSettings _settings;
     private readonly InstructionFilesLoader _instructionLoader;
     private readonly EndpointClientFactory _clientFactory;
@@ -49,7 +57,6 @@ public sealed class ChatViewModel : IDisposable
         IWorkspace workspace,
         IToolRegistry tools,
         IPermissionResolver permissions,
-        IApprovalCoordinator approvals,
         SessionSettings settings,
         InstructionFilesLoader instructionLoader,
         EndpointClientFactory clientFactory,
@@ -63,7 +70,6 @@ public sealed class ChatViewModel : IDisposable
         _workspace = workspace;
         _tools = tools;
         _permissions = permissions;
-        _approvals = approvals;
         _settings = settings;
         _instructionLoader = instructionLoader;
         _clientFactory = clientFactory;
@@ -382,6 +388,7 @@ public sealed class ChatViewModel : IDisposable
         Approvals.Clear();
         _diagnostics.Clear();
         _loop = null;     // forces a fresh ChatSession (system prompt re-rendered) on next send
+        _loadedTools = new();  // fresh session: the model has not seen any deferred schema yet
         LockedEndpoint = null;  // a cleared chat is a fresh chat — re-pick endpoint on next send
         _lastReportedPromptTokens = null;
         _lastReportedCompletionTokens = null;
@@ -506,8 +513,9 @@ public sealed class ChatViewModel : IDisposable
         // Hand the subagent runner this chat's completion client so subagents launched from this
         // session inherit its endpoint/model by default (the workspace flows through ToolContext).
         // The endpoint snapshot rides along so inherited-endpoint subagents can still attribute
-        // their throughput metrics to the right endpoint·model.
-        _subagentRunner.Bind(completion, endpoint);
+        // their throughput metrics to the right endpoint·model; the approval coordinator so a
+        // per-subagent RequireApproval prompt surfaces in this session, not an arbitrary pane.
+        _subagentRunner.Bind(completion, endpoint, _approvals);
 
         ChatSession session;
         if (_restoredMessages is { } restored)
@@ -538,7 +546,7 @@ public sealed class ChatViewModel : IDisposable
         }
 
         _loop = _loopFactory.Create(
-            session, completion, _workspace,
+            session, completion, _workspace, _approvals, _loadedTools,
             new AgentLoopOptions
             {
                 MaxIterations = _settings.MaxToolIterations,

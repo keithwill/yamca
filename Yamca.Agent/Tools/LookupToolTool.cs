@@ -29,14 +29,11 @@ public sealed class LookupToolTool : ITool
     // enumerates ITool services (including this one), so taking IToolRegistry directly would
     // close the loop and stall scope construction. Same pattern as ExecuteScriptTool.
     private readonly IServiceProvider _services;
-    private readonly LoadedToolSet _loaded;
 
-    public LookupToolTool(IServiceProvider services, LoadedToolSet loaded)
+    public LookupToolTool(IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(loaded);
         _services = services;
-        _loaded = loaded;
     }
 
     public string Name => ToolName;
@@ -140,7 +137,9 @@ public sealed class LookupToolTool : ITool
             if (byName.TryGetValue(name, out var tool))
             {
                 if (!found.Contains(tool)) found.Add(tool);
-                _loaded.MarkLoaded(name);
+                // Mark loaded on the session-owned set from the context (see ToolContext.LoadedTools)
+                // so the agent loop's self-correction check sees the same instance.
+                context.LoadedTools?.MarkLoaded(name);
             }
             else
             {

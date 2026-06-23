@@ -42,12 +42,15 @@ public class LookupToolToolTests
             .Add<IAvailabilityResolver>(availability)
             .Add<ISessionSettings>(new InMemorySessionSettings { DeferredToolsHint = hint });
         var loaded = new LoadedToolSet();
-        return (new LookupToolTool(provider, loaded), loaded);
+        return (new LookupToolTool(provider), loaded);
     }
 
     private static JsonElement Args(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
-    private ToolContext Ctx() => new(_ws.Workspace, restrictToWorkspace: false);
+    // The loaded set now reaches lookup_tool through the context (owned per session), not its
+    // constructor — pass it here so the mark-loaded path exercises the same instance the test asserts on.
+    private ToolContext Ctx(LoadedToolSet? loaded = null) =>
+        new(_ws.Workspace, restrictToWorkspace: false, loadedTools: loaded);
 
     [Test]
     public async Task NoArguments_ListsDeferredToolsOnly()
@@ -66,7 +69,7 @@ public class LookupToolToolTests
     {
         var (tool, loaded) = Build();
 
-        var result = await tool.ExecuteAsync(Args("""{"tool_names":["delete_file"]}"""), Ctx(), CancellationToken.None);
+        var result = await tool.ExecuteAsync(Args("""{"tool_names":["delete_file"]}"""), Ctx(loaded), CancellationToken.None);
 
         Assert.That(result.IsError, Is.False);
         Assert.That(result.Content, Does.Contain("delete_file"));

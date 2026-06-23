@@ -26,7 +26,6 @@ public class SubagentDiResolutionTests
 
         services.AddScoped<SessionSettings>();
         services.AddScoped<ISessionSettings>(sp => sp.GetRequiredService<SessionSettings>());
-        services.AddScoped<IApprovalCoordinator, ApprovalCoordinator>();
 
         services.AddScoped<ISubagentRunner, SubagentRunner>();
         services.AddScoped<ITool, SubagentRunTool>();

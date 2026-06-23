@@ -235,8 +235,9 @@ builder.Services.AddSingleton<ITool, CodeSearchTool>();
 builder.Services.AddSingleton<ITool, CodeEditSymbolTool>();
 // Deferred-tool dispatcher: lookup_tool surfaces schemas as tool-result content, call_tool
 // invokes them. Both stay in the prefix for the whole session; deferred tool schemas never do,
-// which is what preserves the prompt-prefix cache. Scoped because lookup_tool reads the
-// per-session LoadedToolSet.
+// which is what preserves the prompt-prefix cache. Scoped to break the IToolRegistry construction
+// cycle (it resolves the registry lazily from the scope); the per-session LoadedToolSet it marks
+// reaches it through ToolContext, owned by ChatViewModel rather than the scope.
 builder.Services.AddScoped<ITool, LookupToolTool>();
 builder.Services.AddScoped<ITool, CallToolTool>();
 
@@ -339,17 +340,20 @@ builder.Services.AddSingleton<McpConfigFileStore>(_ => new McpConfigFileStore(Us
 builder.Services.AddScoped<IToolRegistry>(sp =>
     new ToolRegistry(sp.GetServices<ITool>(), sp.GetServices<IDynamicToolSource>()));
 
-// Per-session set of deferred tools whose schemas the LLM has seen (via lookup_tool or a
-// call_tool self-correction). Scoped so each browser circuit / chat session starts empty.
-builder.Services.AddScoped<LoadedToolSet>();
+// The set of deferred tools whose schemas the LLM has seen (via lookup_tool or a call_tool
+// self-correction) and the approval queue are NOT registered here: both are per chat session, but
+// a DI scope is per browser circuit and a circuit hosts several chat panes. Registering them scoped
+// would share one instance across panes — a loaded-tool set would bleed across panes' prompt
+// prefixes, and an approval prompt would surface in whichever pane's consumer dequeued it first.
+// They are instead owned by ChatViewModel (one per pane) and flowed explicitly into the agent loop
+// and onto ToolContext. See ChatViewModel and ToolContext.Approvals / ToolContext.LoadedTools.
 
-// Per-circuit (scoped) state — each browser tab gets its own settings, approval
-// queue, and permission resolver.
+// Per-circuit (scoped) state — each browser tab gets its own settings and permission resolver,
+// shared across that tab's chat panes (the settings pages edit one instance all panes read).
 builder.Services.AddScoped<SessionSettings>();
 builder.Services.AddScoped<ISessionSettings>(sp => sp.GetRequiredService<SessionSettings>());
 builder.Services.AddScoped<IPermissionResolver, PermissionResolver>();
 builder.Services.AddScoped<IAvailabilityResolver, AvailabilityResolver>();
-builder.Services.AddScoped<IApprovalCoordinator, ApprovalCoordinator>();
 builder.Services.AddScoped<IPermissionStore, SessionSettingsPermissionStore>();
 builder.Services.AddScoped<AgentLoopFactory>();
 

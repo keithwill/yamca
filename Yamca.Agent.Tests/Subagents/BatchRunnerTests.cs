@@ -32,8 +32,8 @@ public class BatchRunnerTests
     {
         var registry = new ToolRegistry(tools);
         var services = new SingleServiceProvider(typeof(IToolRegistry), registry);
-        var runner = new SubagentRunner(_settings, services, _approvals, new EndpointClientFactory(new ThrowingHttpClientFactory()));
-        runner.Bind(_llm);
+        var runner = new SubagentRunner(_settings, services, new EndpointClientFactory(new ThrowingHttpClientFactory()));
+        runner.Bind(_llm, approvals: _approvals);
         return new BatchRunner(runner, _settings);
     }
 

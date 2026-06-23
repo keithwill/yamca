@@ -85,7 +85,11 @@ public sealed class GitTool : ITool
         var level = permissions.Resolve(effectiveName);
         if (level == PermissionLevel.Ask)
         {
-            var approvals = _services.GetRequiredService<IApprovalCoordinator>();
+            // Prompt through the originating session's coordinator (from the context), never one
+            // resolved from the DI scope — see ToolContext.Approvals. Absent only outside the agent
+            // loop, where this gate is unreachable; fall back to a deny-by-default rather than NRE.
+            if (context.Approvals is not { } approvals)
+                return ToolResult.Error($"Permission for '{effectiveName}' could not be resolved (no approval coordinator).");
             var decision = await approvals.RequestApprovalAsync(effectiveName, arguments, cancellationToken).ConfigureAwait(false);
             level = decision.Approved ? PermissionLevel.Allow : PermissionLevel.Deny;
             // Persist approvals only; a rejection is one-shot (no stored Deny — use Hidden instead).

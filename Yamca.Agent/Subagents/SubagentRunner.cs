@@ -21,12 +21,18 @@ public sealed class SubagentRunner : ISubagentRunner
 
     private readonly ISessionSettings _settings;
     private readonly IServiceProvider _services;
-    private readonly IApprovalCoordinator _approvals;
     private readonly EndpointClientFactory _clientFactory;
     private readonly ISubagentObserver _observer;
 
     private IChatCompletionClient? _parentClient;
     private EndpointSettings? _parentEndpoint;
+
+    // The launching session's approval coordinator, set by Bind. Used only for the per-subagent
+    // RequireApproval gate, which must surface in the session that launched the subagent — not in
+    // an arbitrary pane of the circuit (see ToolContext.Approvals for the wider rationale). Defaults
+    // to a no-op (auto-approve) so an unbound runner — e.g. one invoked outside a live chat — never
+    // blocks on a prompt that nothing is listening for.
+    private IApprovalCoordinator _approvals = new NoopApprovalCoordinator();
 
     // IToolRegistry is resolved lazily (at RunAsync time), not injected, to avoid a construction
     // cycle: IToolRegistry's factory enumerates every ITool — including SubagentRunTool, which
@@ -36,26 +42,31 @@ public sealed class SubagentRunner : ISubagentRunner
     public SubagentRunner(
         ISessionSettings settings,
         IServiceProvider services,
-        IApprovalCoordinator approvals,
         EndpointClientFactory clientFactory,
         ISubagentObserver? observer = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(approvals);
         ArgumentNullException.ThrowIfNull(clientFactory);
         _settings = settings;
         _services = services;
-        _approvals = approvals;
         _clientFactory = clientFactory;
         _observer = observer ?? NoopSubagentObserver.Instance;
     }
 
-    public void Bind(IChatCompletionClient parentClient, EndpointSettings? parentEndpoint = null)
+    /// <summary>Bind the runner to the launching session: its completion client (so subagents
+    /// inherit the parent's endpoint by default), the matching endpoint snapshot (for metric
+    /// attribution), and the session's approval coordinator (so a RequireApproval prompt lands in
+    /// that session). Called by <c>ChatViewModel</c> when its loop is created.</summary>
+    public void Bind(
+        IChatCompletionClient parentClient,
+        EndpointSettings? parentEndpoint = null,
+        IApprovalCoordinator? approvals = null)
     {
         ArgumentNullException.ThrowIfNull(parentClient);
         _parentClient = parentClient;
         _parentEndpoint = parentEndpoint;
+        if (approvals is not null) _approvals = approvals;
     }
 
     public async Task<ToolResult> RunAsync(
@@ -94,8 +105,8 @@ public sealed class SubagentRunner : ISubagentRunner
             return Mechanical("A non-empty 'prompt' is required to run a subagent.");
 
         // Per-subagent gate: force a parent approval prompt even when subagent_run itself is
-        // set to Allow (for the occasional expensive agent). Surfaces in the parent UI via the
-        // shared approval coordinator.
+        // set to Allow (for the occasional expensive agent). Surfaces in the launching session's
+        // UI via its bound approval coordinator (see Bind).
         if (def.RequireApproval)
         {
             using var argsDoc = JsonDocument.Parse(
